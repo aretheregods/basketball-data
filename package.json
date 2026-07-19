@@ -17,6 +17,9 @@
     }
   },
   "type": "module",
+  "imports": {
+  	"#utils": "./src/utils/index.mjs"
+  },
   "devDependencies": {
     "typescript": "^7.0.2"
   }
