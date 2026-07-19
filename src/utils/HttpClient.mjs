@@ -32,6 +32,8 @@ export class HTTPClient {
 	 * @param {string} endpoint - Endpoint or URL to fetch
 	 * @param {Object} options - Various options to be passed to the fetch call
 	 * @param {HTTPHeaders} options.headers - Additional HTTP headers to be passed to the fetch call
+	 * @returns {Object} - The resulting JSON response
+	 * @throws {Error} - If the fetch request returns an error or if the response is not ok
 	 */
 	async request(endpoint, options = {}, retries = 3, delay = 1000) {
 		const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
