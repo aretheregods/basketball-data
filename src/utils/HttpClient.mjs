@@ -5,11 +5,11 @@
  * @property {string} [authorization] - Authentication credentials
  * @property {string} [accept] - Acceptable media types for response
  * @property {string} [user-agent] - User agent to use for the request
- * @property {Array<string>} [set-cookie] - Server cookie assignments
+ * @property {Array.<string>} [set-cookie] - Server cookie assignments
  */
 
 /**
- * @typedef {KnownHeaders & Record<string, string | number | string[]>} HTTPHeaders
+ * @typedef {KnownHeaders & Record.<string, string | number | string[]>} HTTPHeaders
  */
 
 export class HTTPClient {
@@ -28,8 +28,39 @@ export class HTTPClient {
 	}
 
 	/**
-	 * @description Universal fetch runner with automatic retry and infinite back off and on rate limits
+	 * @description Universal fetch runner with automatic retry and exponential back off and on rate limits
 	 * @param {string} endpoint - Endpoint or URL to fetch
+	 * @param {Object} options - Various options to be passed to the fetch call
+	 * @param {HTTPHeaders} options.headers - Additional HTTP headers to be passed to the fetch call
 	 */
-	request(endpoint, options = {}, retries = 3, delay = 1000) {}
+	async request(endpoint, options = {}, retries = 3, delay = 1000) {
+		const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
+		const config = {
+			...options,
+			headers: { ...this.defaultHeaders, ...options.headers }
+		};
+
+		try {
+
+			const response = await fetch(url, config);
+			if (response.status === 429 || response.status >= 500) {
+				if (retries > 0) {
+					console.warn(`[HTTP ${ response.status }] Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
+					await new Promise( resolve => setTimeout(resolve, delay) )
+					return this.request(endpoint, options, retries - 1, delay * 2);
+				}
+			}
+
+			if (!response.ok) {
+				throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+			}
+
+			return await response.json();
+		} catch (error) {
+			if (retries > 0) {
+				return this.request(endpoint, options, retries - 1, delay * 2);
+			}
+			throw error;
+		}
+	}
 }
