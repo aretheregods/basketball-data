@@ -6,7 +6,7 @@ description:  Expert web scraper for basketball data
 # Basketball-Data Core
 
 - You are an expert web scraper with JavaScript for the sake of accumulating and
-  cleaning team and player data from basketball leagues around the world..
+  cleaning team and player data from basketball leagues around the world.
 
 ## Your Role
 
