@@ -19,16 +19,22 @@ let originalLog = console.log;
 let originalWarn = console.warn;
 let originalError = console.error;
 
-test.before(() => {
+test.before(async () => {
 	console.log = () => {};
 	console.warn = () => {};
 	console.error = () => {};
+
+	// Clean any previous SQL files for testing
+	await fs.rm(path.resolve('data/SQL'), { recursive: true, force: true });
 });
 
-test.after(() => {
+test.after(async () => {
 	console.log = originalLog;
 	console.warn = originalWarn;
 	console.error = originalError;
+
+	// Clean up SQL databases after tests complete
+	await fs.rm(path.resolve('data/SQL'), { recursive: true, force: true });
 });
 
 /**
@@ -106,7 +112,7 @@ test.describe('Pipeline Stages', () => {
 			await fs.rm(path.resolve('data/temp'), { recursive: true, force: true });
 
 			// Clean up SQLite database rows
-			const db = await initDatabase();
+			const db = await initDatabase(league);
 			try {
 				await db('player_game_stats').where({ league, season: year }).del();
 				await db('team_game_stats').where({ league, season: year }).del();
@@ -210,7 +216,7 @@ test.describe('Pipeline Stages', () => {
 			await loadStage(league, year, transformedData);
 
 			// Query SQLite using initDatabase helper to check if loaded correctly
-			const db = await initDatabase();
+			const db = await initDatabase(league);
 			try {
 				const playerRows = await db('player_game_stats').where({ league, season: year });
 				assert.equal(playerRows.length, 1);
@@ -249,7 +255,7 @@ test.describe('Pipeline Stages', () => {
 			await syncStage(league, year, { dryRun: true });
 
 			// Verify synced flag is STILL 0 because of dry run
-			const db = await initDatabase();
+			const db = await initDatabase(league);
 			try {
 				const playerRows = await db('player_game_stats').where({ league, season: year });
 				assert.equal(playerRows[0].synced, 0);
@@ -300,7 +306,7 @@ test.describe('Pipeline Stages', () => {
 				await syncStage(league, year, { databaseName: 'test_db' });
 
 				// Verify synced flag is now 1
-				const db = await initDatabase();
+				const db = await initDatabase(league);
 				try {
 					const playerRows = await db('player_game_stats').where({ league, season: year });
 					assert.equal(playerRows[0].synced, 1);

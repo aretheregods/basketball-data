@@ -2,14 +2,18 @@ import fs from 'fs/promises';
 import path from 'path';
 import knex from 'knex';
 
-const dbPath = path.resolve('data/basketball.sqlite');
-
 /**
- * @description Initializes the SQLite connection and ensures schema tables exist.
+ * @description Initializes the SQLite connection for a specific league and ensures schema tables exist.
+ * Saves the SQLite file to `data/SQL/<LEAGUE>.sqlite` (e.g., `data/SQL/WNBA.sqlite`).
+ *
+ * @param {string} [league='wnba'] - The lowercase or uppercase league identifier
  * @returns {Promise<import('knex').Knex>} - The initialized Knex database instance
  */
-export async function initDatabase() {
-	await fs.mkdir(path.dirname(dbPath), { recursive: true });
+export async function initDatabase(league = 'wnba') {
+	const dbDir = path.resolve('data/SQL');
+	await fs.mkdir(dbDir, { recursive: true });
+
+	const dbPath = path.join(dbDir, `${league.toUpperCase()}.sqlite`);
 
 	const db = knex({
 		client: 'sqlite3',
@@ -141,8 +145,8 @@ export async function loadStage(league, year, cleanedGamesArray) {
 		return;
 	}
 
-	console.log(`💾 Connecting to SQLite local staging database...`);
-	const db = await initDatabase();
+	console.log(`💾 Connecting to SQLite local staging database [data/SQL/${league.toUpperCase()}.sqlite]...`);
+	const db = await initDatabase(league);
 
 	try {
 		await db.transaction(async (trx) => {

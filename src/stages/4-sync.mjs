@@ -101,8 +101,8 @@ export async function syncStage(league, year, options = {}) {
 
 	console.log(`🚀 Starting Stage 4 [SYNC] for ${league.toUpperCase()} - ${year}`);
 
-	console.log(`💾 Querying local staging database for unsynced rows...`);
-	const db = await initDatabase();
+	console.log(`💾 Querying local staging database [data/SQL/${league.toUpperCase()}.sqlite] for unsynced rows...`);
+	const db = await initDatabase(league);
 
 	let playersToSync = [];
 	let teamsToSync = [];
