@@ -18,9 +18,13 @@
   },
   "type": "module",
   "imports": {
-  	"#utils": "./src/utils/index.mjs"
+    "#utils": "./src/utils/index.mjs"
   },
   "devDependencies": {
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "knex": "^3.3.0",
+    "sqlite3": "^6.0.1"
   }
 }
