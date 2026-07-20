@@ -7,7 +7,12 @@ import { validateSchema } from '#utils';
  * downloads raw traditional box score payloads, validates them against the JSON schema,
  * and saves them straight to disk without any data transformation.
  *
- * @param {import('../scrapers/wnba/wnba.mjs').WNBAScraper} scraper - The scraper client instance
+ * @param {Object} scraper - The scraper client instance
+ * @param {function(string): string} scraper.getGameEndpoint - Gets the endpoint for a given game ID
+ * @param {function(string): string} scraper.getGameUrl - Gets the complete URL for a given game ID
+ * @param {function(string, Object=, number=, number=): Promise<any>} scraper.request - Makes HTTP request
+ * @param {function(string|number): Promise<any>} scraper.getSeasonGameSlugs - Fetches game slugs for a season
+ * @param {string[]} scraper.gameSlugs - Array of fetched game slugs
  * @param {string} league - The lowercase league identifier (e.g., 'wnba')
  * @param {string|number} year - The season year (e.g., '2023')
  * @returns {Promise<string[]>} - Array of scraped game IDs
@@ -35,8 +40,8 @@ export async function extractStage(scraper, league, year) {
 
 	// 3. Download and save raw payload for each game
 	for (const gameId of gameIds) {
-		const endpoint = '/boxscoretraditionalv2';
-		const url = `${endpoint}?EndPeriod=10&EndRange=28800&GameID=${gameId}&RangeType=0&StartPeriod=1&StartRange=0`;
+		const endpoint = scraper.getGameEndpoint(gameId);
+		const url = scraper.getGameUrl(gameId);
 
 		try {
 			console.log(`🛰️ Fetching raw boxscore for Game ID: ${gameId}...`);

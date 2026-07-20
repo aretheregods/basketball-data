@@ -271,4 +271,17 @@ test.describe('WNBAScraper', () => {
 			await fs.rm(tempDir, { recursive: true, force: true });
 		}
 	});
+
+	test('getGameEndpoint should return the correct endpoint path', () => {
+		const scraper = new WNBAScraper();
+		const endpoint = scraper.getGameEndpoint('0042300101');
+		assert.equal(endpoint, '/boxscoretraditionalv2');
+	});
+
+	test('getGameUrl should return the correct URL including the game ID', () => {
+		const scraper = new WNBAScraper();
+		const url = scraper.getGameUrl('0042300101');
+		assert.match(url, /\/boxscoretraditionalv2/);
+		assert.match(url, /GameID=0042300101/);
+	});
 });

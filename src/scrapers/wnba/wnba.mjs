@@ -88,6 +88,25 @@ export class WNBAScraper extends HTTPClient {
 	}
 
 	/**
+	 * @description Returns the API endpoint for fetching box score data.
+	 * @param {string} gameId - The ID of the game
+	 * @returns {string} - The endpoint path
+	 */
+	getGameEndpoint(gameId) {
+		return '/boxscoretraditionalv2';
+	}
+
+	/**
+	 * @description Returns the complete URL (endpoint + query parameters) for fetching box score data.
+	 * @param {string} gameId - The ID of the game
+	 * @returns {string} - The full request URL
+	 */
+	getGameUrl(gameId) {
+		const endpoint = this.getGameEndpoint(gameId);
+		return `${endpoint}?EndPeriod=10&EndRange=28800&GameID=${gameId}&RangeType=0&StartPeriod=1&StartRange=0`;
+	}
+
+	/**
 	 * @description Fetches the traditional or advanced box score for a game, validates it, and returns mapped data.
 	 * @param {string} gameId - The ID of the game whose box score we need to fetch
 	 * @param {'traditional' | 'advanced'} [type='traditional'] - The type of box score to fetch
