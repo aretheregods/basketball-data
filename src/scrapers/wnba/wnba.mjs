@@ -33,8 +33,10 @@ import path from "path";
 export class WNBAScraper extends HTTPClient {
 	/**
 	 * @constructor
+	 * @param {Object} [options={}] - Scraper configuration options
+	 * @param {'traditional' | 'advanced'} [options.boxscoreType='traditional'] - The type of box score to fetch
 	 */
-	constructor() {
+	constructor(options = {}) {
 		super(
 			'https://stats.wnba.com/stats',
 			{
@@ -48,6 +50,8 @@ export class WNBAScraper extends HTTPClient {
 		);
 		/** @type {string[]} */
 		this.gameSlugs = [];
+		/** @type {'traditional' | 'advanced'} */
+		this.boxscoreType = options.boxscoreType || 'traditional';
 	}
 
 	/**
@@ -90,32 +94,36 @@ export class WNBAScraper extends HTTPClient {
 	/**
 	 * @description Returns the API endpoint for fetching box score data.
 	 * @param {string} gameId - The ID of the game
+	 * @param {'traditional' | 'advanced'} [type] - The type of box score to fetch
 	 * @returns {string} - The endpoint path
 	 */
-	getGameEndpoint(gameId) {
-		return '/boxscoretraditionalv2';
+	getGameEndpoint(gameId, type) {
+		const resolvedType = type || this.boxscoreType;
+		return `/boxscore${resolvedType}v2`;
 	}
 
 	/**
 	 * @description Returns the complete URL (endpoint + query parameters) for fetching box score data.
 	 * @param {string} gameId - The ID of the game
+	 * @param {'traditional' | 'advanced'} [type] - The type of box score to fetch
 	 * @returns {string} - The full request URL
 	 */
-	getGameUrl(gameId) {
-		const endpoint = this.getGameEndpoint(gameId);
+	getGameUrl(gameId, type) {
+		const resolvedType = type || this.boxscoreType;
+		const endpoint = this.getGameEndpoint(gameId, resolvedType);
 		return `${endpoint}?EndPeriod=10&EndRange=28800&GameID=${gameId}&RangeType=0&StartPeriod=1&StartRange=0`;
 	}
 
 	/**
 	 * @description Fetches the traditional or advanced box score for a game, validates it, and returns mapped data.
 	 * @param {string} gameId - The ID of the game whose box score we need to fetch
-	 * @param {'traditional' | 'advanced'} [type='traditional'] - The type of box score to fetch
+	 * @param {'traditional' | 'advanced'} [type] - The type of box score to fetch
 	 * @returns {Promise<MappedBoxScore>} - The mapped player and team stats
 	 * @throws {Error} - If the request fails or schema validation fails
 	 */
-	async getAPIBoxScore(gameId, type = 'traditional') {
-		const endpoint = `/boxscore${ type }v2`;
-		const url = `${endpoint}?EndPeriod=10&EndRange=28800&GameID=${ gameId }&RangeType=0&StartPeriod=1&StartRange=0`;
+	async getAPIBoxScore(gameId, type) {
+		const resolvedType = type || this.boxscoreType;
+		const url = this.getGameUrl(gameId, resolvedType);
 
 		const data = await this.request(url, {}, 3, 5000);
 
@@ -134,16 +142,17 @@ export class WNBAScraper extends HTTPClient {
 	/**
 	 * @description Fetches, validates, maps and saves a game's box score as JSON to the output directory.
 	 * @param {string} gameId - The ID of the game to fetch and save
-	 * @param {'traditional' | 'advanced'} [type='traditional'] - The type of box score to fetch
+	 * @param {'traditional' | 'advanced'} [type] - The type of box score to fetch
 	 * @param {string} [outputDir='data/JSON/WNBA'] - The output directory where the JSON file will be written
 	 * @returns {Promise<MappedBoxScore>} - The mapped box score data saved
 	 * @throws {Error} - If the request, schema validation, or writing file fails
 	 */
-	async scrapeAndSaveBoxScore(gameId, type = 'traditional', outputDir = 'data/JSON/WNBA') {
-		const mappedData = await this.getAPIBoxScore(gameId, type);
+	async scrapeAndSaveBoxScore(gameId, type, outputDir = 'data/JSON/WNBA') {
+		const resolvedType = type || this.boxscoreType;
+		const mappedData = await this.getAPIBoxScore(gameId, resolvedType);
 
 		await fs.mkdir(outputDir, { recursive: true });
-		const fileName = `boxscore_${gameId}_${type}.json`;
+		const fileName = `boxscore_${gameId}_${resolvedType}.json`;
 		const filePath = path.join(outputDir, fileName);
 
 		await fs.writeFile(filePath, JSON.stringify(mappedData, null, 2), 'utf8');

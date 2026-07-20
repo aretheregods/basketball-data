@@ -284,4 +284,24 @@ test.describe('WNBAScraper', () => {
 		assert.match(url, /\/boxscoretraditionalv2/);
 		assert.match(url, /GameID=0042300101/);
 	});
+
+	test('getGameEndpoint with advanced scraper configuration', () => {
+		const scraper = new WNBAScraper({ boxscoreType: 'advanced' });
+		const endpoint = scraper.getGameEndpoint('0042300101');
+		assert.equal(endpoint, '/boxscoreadvancedv2');
+
+		const explicitTraditionalEndpoint = scraper.getGameEndpoint('0042300101', 'traditional');
+		assert.equal(explicitTraditionalEndpoint, '/boxscoretraditionalv2');
+	});
+
+	test('getGameUrl with advanced scraper configuration', () => {
+		const scraper = new WNBAScraper({ boxscoreType: 'advanced' });
+		const url = scraper.getGameUrl('0042300101');
+		assert.match(url, /\/boxscoreadvancedv2/);
+		assert.match(url, /GameID=0042300101/);
+
+		const explicitTraditionalUrl = scraper.getGameUrl('0042300101', 'traditional');
+		assert.match(explicitTraditionalUrl, /\/boxscoretraditionalv2/);
+		assert.match(explicitTraditionalUrl, /GameID=0042300101/);
+	});
 });

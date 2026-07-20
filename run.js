@@ -36,8 +36,8 @@ function parseArgs() {
 
 // Master registry defining the scrapers for each league
 const LEAGUE_SCRAPERS = {
-	wnba: () => new WNBAScraper(),
-	// nba: () => new NBAScraper(),
+	wnba: (options) => new WNBAScraper(options),
+	// nba: (options) => new NBAScraper(options),
 };
 
 /**
@@ -55,6 +55,7 @@ async function main() {
 	const activeSteps = flags.step ? flags.step.split(',') : ['extract', 'transform', 'load', 'sync'];
 	const databaseName = flags.database || 'likelyhigh_db';
 	const dryRun = flags.dryRun === 'true' || flags['dry-run'] === 'true';
+	const boxscoreType = flags['boxscore-type'] || flags.type || 'traditional';
 
 	console.log(`🚀 LikelyHigh Pipeline Initialized.`);
 	console.log(`Steps: ${activeSteps.join(' -> ')} | Leagues: ${targetLeagues.join(', ')} | Years: ${targetYears.join(', ')}\n`);
@@ -66,7 +67,7 @@ async function main() {
 			continue;
 		}
 
-		const scraper = LEAGUE_SCRAPERS[lowerLeague]();
+		const scraper = LEAGUE_SCRAPERS[lowerLeague]({ boxscoreType });
 
 		for (const year of targetYears) {
 			console.log(`\n=== Processing [ ${lowerLeague.toUpperCase()} - ${year} ] ===`);
