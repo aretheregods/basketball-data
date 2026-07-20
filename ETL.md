@@ -2,7 +2,7 @@
 
 Welcome to the documentation for the **LikelyHigh Basketball ETL Pipeline**. This pipeline is designed to scrape, clean, process, load, and sync team and player-level statistics from various global basketball leagues.
 
-The pipeline architecture is structured into decoupled, sequential stages coordinates by a root CLI runner (`run.js`). This layout ensures modularity, testability, and isolated failure domains.
+The pipeline architecture is structured into decoupled, sequential stages coordinated by a root CLI runner (`run.js`). This layout ensures modularity, testability, and isolated failure domains.
 
 ---
 
