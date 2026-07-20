@@ -43,7 +43,6 @@ export class HTTPClient {
 		};
 
 		try {
-
 			const response = await fetch(url, config);
 			if (response.status === 429 || response.status >= 500) {
 				if (retries > 0) {

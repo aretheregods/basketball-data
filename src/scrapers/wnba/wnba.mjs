@@ -19,6 +19,7 @@ export class WNBAScraper extends HTTPClient {
 				'x-nba-stats-token': 'true'
 			}
 		);
+		this.gameSlugs = [];
 	}
 
 	/**
@@ -27,7 +28,7 @@ export class WNBAScraper extends HTTPClient {
 	async getSeasonGameSlugs(year) {
         const url = `/leaguegamelog?Counter=0&Direction=DESC&LeagueID=10&PlayerOrTeam=T&Season=${ year }&SeasonType=02&Sorter=DATE`;
 
-		const data = await this.request(url, { headers: this.defaultHeaders } );
+		const data = await this.request(url, { headers: this.defaultHeaders }, retires: 3, delay: 5000 );
 
 		const rows = data.resultSets[0].rowSet;
 		const columns = data.resultSets[0].headers;
@@ -42,7 +43,9 @@ export class WNBAScraper extends HTTPClient {
 			return `${ cleanMatchup }-${ gameId }`;
 		} );
 
-		return [...new Set(slugs)];
+		this.gameSlugs = [...new Set(slugs)];
+
+		return this;
 	}
 
 	/**
@@ -50,10 +53,10 @@ export class WNBAScraper extends HTTPClient {
 	 * @param {'traditional' | 'advanced'} [type='traditional'] - The type of box score to fetch, traditional or advanced
 	 */
 	async getAPIBoxScore(gameId, type = 'traditional') {
-		const endpoint = `boxscore${ type }v2`;
+		const endpoint = `/boxscore${ type }v2`;
 		const url = `${endpoint}?EndPeriod=10&EndRange=28800&GameID=${ gameId }&RangeType=0&StartPeriod=1&StartRange=0`;
 
-		const data = await this.request(url, { headers: this.defaultHeaders } );
+		const data = await this.request(url, { headers: this.defaultHeaders }, retires: 3, delay: 5000 );
 
 		const playerStatsSet = data.resultSets.find( set => set.name === 'PlayerStats' );
 		const teamStatsSet = data.resultSets.find( set => set.name === 'TeamStats' );
@@ -68,7 +71,7 @@ export class WNBAScraper extends HTTPClient {
 		if (!resultSet) return [];
 
 		const headers = resultSet.headers;
-		return resultsSet.rowSet.map( row => {
+		return resultSet.rowSet.map( row => {
 			let obj = {};
 			row.forEach( (value, index) => {
 				obj[ headers[ index ] ] = value;
