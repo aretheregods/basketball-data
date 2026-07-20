@@ -1,5 +1,11 @@
 import { HTTPClient } from "#utils";
 
+/**
+ * @description A result returned from a request to the WNBA stats API for box score data
+ * @typedef {Object} WNBAResultSet
+ * @property {'PlayerStats' | 'TeamStats'} name - The type of the result set
+ */
+
 export class WNBAScraper extends HTTPClient {
 	constructor() {
 		super(
@@ -15,6 +21,9 @@ export class WNBAScraper extends HTTPClient {
 		);
 	}
 
+	/**
+	 * @param {number | string} year - The year for which to fetch data
+	 */
 	async getSeasonGameSlugs(year) {
         const url = `/leaguegamelog?Counter=0&Direction=DESC&LeagueID=10&PlayerOrTeam=T&Season=${ year }&SeasonType=02&Sorter=DATE`;
 
@@ -36,6 +45,10 @@ export class WNBAScraper extends HTTPClient {
 		return [...new Set(slugs)];
 	}
 
+	/**
+	 * @param {string} gameId - The id of the game whose box score we need to fetch
+	 * @param {'traditional' | 'advanced'} [type='traditional'] - The type of box score to fetch, traditional or advanced
+	 */
 	async getAPIBoxScore(gameId, type = 'traditional') {
 		const endpoint = `boxscore${ type }v2`;
 		const url = `${endpoint}?EndPeriod=10&EndRange=28800&GameID=${ gameId }&RangeType=0&StartPeriod=1&StartRange=0`;
