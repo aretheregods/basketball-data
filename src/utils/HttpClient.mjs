@@ -41,32 +41,24 @@ export class HTTPClient {
 		/** @type {any} */
 		this.browser = null;
 		/** @type {any} */
-		this.page = null;
+		this.context = null;
 	}
 
 	/**
-	 * @description Initializes the Playwright browser and page contexts.
+	 * @description Initializes the Playwright browser and request contexts with ciphers & arguments.
 	 * @returns {Promise<void>}
 	 */
 	async initBrowser() {
 		if (!this.browser) {
 			console.log('Bypassing Akamai firewall with Playwright...');
-			this.browser = await chromium.launch({ headless: true });
-			const context = await this.browser.newContext({
-				userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+			this.browser = await chromium.launch({
+				headless: true,
+				args: ['--disable-blink-features=AutomationControlled']
 			});
-			this.page = await context.newPage();
-
-			// Resolve origin of baseUrl for Same-Origin requests (e.g. https://stats.wnba.com)
-			let origin = 'https://stats.wnba.com';
-			try {
-				const urlObj = new URL(this.baseUrl);
-				origin = urlObj.origin;
-			} catch (_) {}
-
-			const targetRobotsUrl = `${origin}/robots.txt`;
-			console.log(`Navigating to same-origin robots.txt: ${targetRobotsUrl}`);
-			await this.page.goto(targetRobotsUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+			this.context = await this.browser.newContext({
+				userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+				locale: 'en-US'
+			});
 		}
 	}
 
@@ -79,7 +71,7 @@ export class HTTPClient {
 			console.log('Closing Playwright browser context...');
 			await this.browser.close();
 			this.browser = null;
-			this.page = null;
+			this.context = null;
 		}
 	}
 
@@ -104,42 +96,26 @@ export class HTTPClient {
 			if (HTTPClient.usePlaywright && globalThis.fetch === originalFetch) {
 				await this.initBrowser();
 
-				console.log(`[Playwright Fetch] Navigating to target: ${url}`);
-				const data = await this.page.evaluate(async ({ targetUrl, headers, method }) => {
-					const response = await fetch(targetUrl, {
-						method,
-						headers
-					});
+				console.log(`[Playwright Fetch] Requesting: ${url}`);
+				const response = await this.context.request.get(url, {
+					headers: config.headers,
+					timeout: 15000
+				});
 
-					let body = null;
-					if (response.ok) {
-						body = await response.json();
-					} else {
-						try {
-							body = await response.text();
-						} catch (_) {}
-					}
-
-					return {
-						status: response.status,
-						statusText: response.statusText,
-						body
-					};
-				}, { targetUrl: url, headers: config.headers, method: config.method || 'GET' });
-
-				if (data.status === 429 || data.status >= 500) {
+				const status = response.status();
+				if (status === 429 || status >= 500) {
 					if (retries > 0) {
-						console.warn(`[HTTP ${ data.status }] Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
+						console.warn(`[HTTP ${ status }] Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
 						await new Promise( resolve => setTimeout(resolve, delay) );
 						return this.request(endpoint, options, retries - 1, delay * 2);
 					}
 				}
 
-				if (data.status < 200 || data.status >= 300) {
-					throw new Error(`HTTP Error: ${data.status} ${data.statusText || ''}`);
+				if (status < 200 || status >= 300) {
+					throw new Error(`HTTP Error: ${status} ${response.statusText()}`);
 				}
 
-				return data.body;
+				return await response.json();
 			} else {
 				const response = await fetch(url, config);
 				if (response.status === 429 || response.status >= 500) {
