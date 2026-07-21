@@ -46,6 +46,12 @@ If you run the ETL or migrations on Linux distributions (such as Debian or Ubunt
 ### The Solution (Automatic)
 The project root contains a `.npmrc` file with `build-from-source=true` configured. This forces `sqlite3` to compile locally from source during `pnpm install`, building the bundled SQLite version against your system's exact local GLIBC.
 
+**Note:** If you already performed a `pnpm install` prior to adding `.npmrc`, pnpm might have cached the prebuilt binary. To force a rebuild and compilation from source on your system, simply run:
+```bash
+pnpm rebuild sqlite3
+```
+This forces `pnpm` to re-compile the module against your system's local libraries (resolving any GLIBC mismatch errors).
+
 ### Using System-Installed SQLite3 via APT
 If you have `sqlite3` and `libsqlite3-dev` installed globally on your system (via `sudo apt install sqlite3 libsqlite3-dev`), you can optionally link the Node.js `sqlite3` package directly against your system's library by running:
 
