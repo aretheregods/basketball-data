@@ -1,50 +1,100 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "WNBALeagueGameLog",
-  "description": "Schema for WNBA Full Schedule (Data WNBA)",
-  "type": "object",
-  "properties": {
-    "lscd": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "mscd": {
+  "description": "Schema for WNBA Schedule (supporting both historical and current formats)",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "lscd": {
+          "type": "array",
+          "items": {
             "type": "object",
             "properties": {
-              "mon": { "type": "string" },
-              "g": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "gid": { "type": "string" },
-                    "gcode": { "type": "string" },
-                    "v": {
+              "mscd": {
+                "type": "object",
+                "properties": {
+                  "mon": { "type": "string" },
+                  "g": {
+                    "type": "array",
+                    "items": {
                       "type": "object",
                       "properties": {
-                        "ta": { "type": "string" }
+                        "gid": { "type": "string" },
+                        "gcode": { "type": "string" },
+                        "v": {
+                          "type": "object",
+                          "properties": {
+                            "ta": { "type": "string" }
+                          },
+                          "required": ["ta"]
+                        },
+                        "h": {
+                          "type": "object",
+                          "properties": {
+                            "ta": { "type": "string" }
+                          },
+                          "required": ["ta"]
+                        }
                       },
-                      "required": ["ta"]
-                    },
-                    "h": {
-                      "type": "object",
-                      "properties": {
-                        "ta": { "type": "string" }
-                      },
-                      "required": ["ta"]
+                      "required": ["gid", "gcode", "v", "h"]
                     }
-                  },
-                  "required": ["gid", "gcode", "v", "h"]
-                }
+                  }
+                },
+                "required": ["g"]
               }
             },
-            "required": ["g"]
+            "required": ["mscd"]
           }
-        },
-        "required": ["mscd"]
-      }
+        }
+      },
+      "required": ["lscd"]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "leagueSchedule": {
+          "type": "object",
+          "properties": {
+            "seasonYear": { "type": "string" },
+            "gameDates": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "games": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "gameId": { "type": "string" },
+                        "homeTeam": {
+                          "type": "object",
+                          "properties": {
+                            "teamTricode": { "type": "string" }
+                          },
+                          "required": ["teamTricode"]
+                        },
+                        "awayTeam": {
+                          "type": "object",
+                          "properties": {
+                            "teamTricode": { "type": "string" }
+                          },
+                          "required": ["teamTricode"]
+                        }
+                      },
+                      "required": ["gameId", "homeTeam", "awayTeam"]
+                    }
+                  }
+                },
+                "required": ["games"]
+              }
+            }
+          },
+          "required": ["gameDates"]
+        }
+      },
+      "required": ["leagueSchedule"]
     }
-  },
-  "required": ["lscd"]
+  ]
 }

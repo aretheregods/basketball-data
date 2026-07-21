@@ -61,9 +61,17 @@ export class WNBAScraper extends HTTPClient {
 	 * @throws {Error} - If the request fails or schema validation fails
 	 */
 	async getSeasonGameSlugs(year) {
-		const url = `https://data.wnba.com/data/10s/v2015/json/mobile_teams/wnba/${year}/league/10_full_schedule.json`;
+		const historicalUrl = `https://data.wnba.com/data/10s/v2015/json/mobile_teams/wnba/${year}/league/10_full_schedule.json`;
+		const currentSeasonUrl = `https://cdn.wnba.com/static/json/staticData/scheduleLeagueV2.json`;
 
-		const data = await this.request(url, {}, 3, 5000);
+		let data;
+		try {
+			// Try historical URL first with low retries and delay to fail-fast
+			data = await this.request(historicalUrl, {}, 1, 1000);
+		} catch (err) {
+			console.log(`⚠️ Historical schedule not found or forbidden for ${year}. Falling back to current season schedule...`);
+			data = await this.request(currentSeasonUrl, {}, 3, 5000);
+		}
 
 		// Validate against JSON schema
 		validateSchema('wnba/leaguegamelog.json', data);
@@ -72,6 +80,7 @@ export class WNBAScraper extends HTTPClient {
 		const slugs = [];
 
 		if (data && Array.isArray(data.lscd)) {
+			// Historical schedule format
 			for (const monthObj of data.lscd) {
 				if (monthObj && monthObj.mscd && Array.isArray(monthObj.mscd.g)) {
 					for (const game of monthObj.mscd.g) {
@@ -79,6 +88,24 @@ export class WNBAScraper extends HTTPClient {
 							const visitor = (game.v && game.v.ta) ? game.v.ta.toLowerCase() : '';
 							const home = (game.h && game.h.ta) ? game.h.ta.toLowerCase() : '';
 							const gameId = game.gid;
+							if (visitor && home) {
+								slugs.push(`${visitor}-vs-${home}-${gameId}`);
+							} else {
+								slugs.push(`matchup-${gameId}`);
+							}
+						}
+					}
+				}
+			}
+		} else if (data && data.leagueSchedule && Array.isArray(data.leagueSchedule.gameDates)) {
+			// Current season schedule format
+			for (const dateObj of data.leagueSchedule.gameDates) {
+				if (dateObj && Array.isArray(dateObj.games)) {
+					for (const game of dateObj.games) {
+						if (game && game.gameId) {
+							const visitor = (game.awayTeam && game.awayTeam.teamTricode) ? game.awayTeam.teamTricode.toLowerCase() : '';
+							const home = (game.homeTeam && game.homeTeam.teamTricode) ? game.homeTeam.teamTricode.toLowerCase() : '';
+							const gameId = game.gameId;
 							if (visitor && home) {
 								slugs.push(`${visitor}-vs-${home}-${gameId}`);
 							} else {
@@ -121,19 +148,28 @@ export class WNBAScraper extends HTTPClient {
 	 */
 	async request(endpoint, options = {}, retries = 3, delay = 1000) {
 		const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
+		const isStatsApi = url.includes('stats.wnba.com');
+		const originalHeaders = this.defaultHeaders;
 
-		if (url.includes('wnba.com/game/')) {
-			const config = {
-				...options,
-				headers: {
-					'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-					'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-					'accept-language': 'en-US,en;q=0.9',
-					...options.headers
-				}
+		if (!isStatsApi) {
+			this.defaultHeaders = {
+				'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+				'accept': 'application/json'
 			};
+		}
 
-			try {
+		try {
+			if (url.includes('wnba.com/game/')) {
+				const config = {
+					...options,
+					headers: {
+						'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+						'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+						'accept-language': 'en-US,en;q=0.9',
+						...options.headers
+					}
+				};
+
 				const response = await fetch(url, config);
 				if (response.status === 429 || response.status >= 500) {
 					if (retries > 0) {
@@ -160,17 +196,19 @@ export class WNBAScraper extends HTTPClient {
 				}
 
 				return this.mapNextDataToStatsAPI(game);
-			} catch (error) {
-				if (retries > 0) {
-					console.warn(`[HTTP Error] ${ error.message || error }. Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
-					await new Promise( resolve => setTimeout(resolve, delay) );
-					return this.request(endpoint, options, retries - 1, delay * 2);
-				}
-				throw error;
 			}
-		}
 
-		return super.request(endpoint, options, retries, delay);
+			return await super.request(endpoint, options, retries, delay);
+		} catch (error) {
+			if (retries > 0) {
+				console.warn(`[HTTP Error] ${ error.message || error }. Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
+				await new Promise( resolve => setTimeout(resolve, delay) );
+				return this.request(endpoint, options, retries - 1, delay * 2);
+			}
+			throw error;
+		} finally {
+			this.defaultHeaders = originalHeaders;
+		}
 	}
 
 	/**
