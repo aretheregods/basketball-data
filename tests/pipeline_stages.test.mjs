@@ -124,6 +124,79 @@ test.describe('Pipeline Stages', () => {
 		});
 	});
 
+	test('Stage 3 [LOAD] fallback to cached transformed file if no direct data passed', async () => {
+		await runWithCleanErrors(async () => {
+			const transformedData = {
+				players: [
+					{
+						game_id: '0012300002',
+						player_id: 1002,
+						player_name: 'Fallback Star',
+						normalized_name: 'Fallback Star',
+						team_id: 11,
+						team_abbreviation: 'LAS',
+						team_city: 'Los Angeles',
+						pts: 30,
+						ts_pct: 0.75,
+						game_score: 22.0,
+						season: year,
+						league: league,
+						synced: 0
+					}
+				],
+				teams: [
+					{
+						game_id: '0012300002',
+						team_id: 11,
+						team_name: 'Los Angeles Sparks',
+						pts: 90,
+						season: year,
+						league: league,
+						synced: 0
+					}
+				]
+			};
+
+			// 1. Setup cache file
+			const cacheDir = path.resolve('data/transformed', league, year);
+			await fs.mkdir(cacheDir, { recursive: true });
+			await fs.writeFile(path.join(cacheDir, 'transformed.json'), JSON.stringify(transformedData), 'utf8');
+
+			// 2. Call loadStage with empty / undefined data to trigger fallback
+			await loadStage(league, year, null);
+
+			// 3. Verify SQLite correctly got populated from cache
+			const db = await initDatabase(league);
+			try {
+				const playerRows = db.prepare(`SELECT * FROM player_game_stats WHERE league = ? AND season = ?`)
+					.all(league, year);
+				assert.equal(playerRows.length, 1);
+				assert.equal(playerRows[0].player_name, 'Fallback Star');
+
+				const teamRows = db.prepare(`SELECT * FROM team_game_stats WHERE league = ? AND season = ?`)
+					.all(league, year);
+				assert.equal(teamRows.length, 1);
+				assert.equal(teamRows[0].team_name, 'Los Angeles Sparks');
+			} finally {
+				db.destroy();
+			}
+		});
+	});
+
+	test('Stage 3 [LOAD] should throw Error if no data passed and cache file is missing', async () => {
+		await runWithCleanErrors(async () => {
+			// Ensure cache directory / file does not exist
+			const cacheDir = path.resolve('data/transformed', league, year);
+			await fs.rm(cacheDir, { recursive: true, force: true });
+
+			// Calling loadStage with null should fail/throw an error because cache does not exist
+			await assert.rejects(
+				loadStage(league, year, null),
+				/Failed to load data/
+			);
+		});
+	});
+
 	test('Stage 1 [EXTRACT] should download and save raw box score', async () => {
 		await runWithCleanErrors(async () => {
 			const scraper = new WNBAScraper();
