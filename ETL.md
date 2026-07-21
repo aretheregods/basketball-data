@@ -231,6 +231,10 @@ node run.js [options]
   LEAGUE=europe pnpm exec knex migrate:status --env development
   ```
 - **Programmatic Loader Migrations**: When Stage 3 (`load`) initializes a connection to any database via `initDatabase(league)`, it programmatically invokes `await db.migrate.latest()` to ensure all tables are correctly scaffolded and up-to-date automatically.
+- **Debian / Older GLIBC Compilation**: On Linux platforms with older library versions (such as Debian Bookworm), the pre-built `sqlite3` binary may fail with a `GLIBC_2.38 not found` error. To resolve this, a project-local `.npmrc` is configured with `build-from-source=true` to automatically compile the package during `pnpm install`. If you have system-installed `sqlite3` and `libsqlite3-dev` libraries via APT, you can instruct `sqlite3` to link against it dynamically:
+  ```bash
+  pnpm install --sqlite=/usr
+  ```
 
 ---
 
