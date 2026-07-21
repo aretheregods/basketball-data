@@ -11,23 +11,153 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '../');
 
 const mockLeagueGameLogResponse = {
-	resource: "leaguegamelog",
-	parameters: {
-		LeagueID: "10",
-		Season: "2023"
-	},
-	resultSets: [
+	lscd: [
 		{
-			name: "LeagueGameLog",
-			headers: ["GAME_ID", "MATCHUP"],
-			rowSet: [
-				["0042300101", "NYL @ CON"],
-				["0042300101", "CON vs NYL"],
-				["0042300102", "LAS @ MIN"]
-			]
+			mscd: {
+				mon: "May",
+				g: [
+					{
+						gid: "0042300101",
+						gcode: "20230519/NYLCON",
+						v: { ta: "NYL" },
+						h: { ta: "CON" }
+					},
+					{
+						gid: "0042300102",
+						gcode: "20230520/LASMIN",
+						v: { ta: "LAS" },
+						h: { ta: "MIN" }
+					}
+				]
+			}
 		}
 	]
 };
+
+const mockNextData = {
+	props: {
+		pageProps: {
+			game: {
+				gameId: "0042300101",
+				homeTeam: {
+					teamId: 1611661315,
+					teamName: "Sun",
+					teamCity: "Connecticut",
+					teamTricode: "CON",
+					statistics: {
+						minutes: "200:00",
+						points: 82,
+						fieldGoalsMade: 32,
+						fieldGoalsAttempted: 70,
+						threePointersMade: 5,
+						threePointersAttempted: 15,
+						freeThrowsMade: 13,
+						freeThrowsAttempted: 18,
+						reboundsOffensive: 10,
+						reboundsDefensive: 25,
+						reboundsTotal: 35,
+						assists: 18,
+						steals: 8,
+						blocks: 5,
+						turnovers: 12,
+						foulsPersonal: 15,
+						plusMinusPoints: -13
+					},
+					players: [
+						{
+							personId: 10001,
+							firstName: "Alyssa",
+							familyName: "Thomas",
+							position: "F",
+							comment: "",
+							statistics: {
+								minutes: "35:00",
+								points: 18,
+								fieldGoalsMade: 7,
+								fieldGoalsAttempted: 15,
+								threePointersMade: 0,
+								threePointersAttempted: 0,
+								freeThrowsMade: 4,
+								freeThrowsAttempted: 6,
+								reboundsOffensive: 3,
+								reboundsDefensive: 8,
+								reboundsTotal: 11,
+								assists: 6,
+								steals: 3,
+								blocks: 1,
+								turnovers: 2,
+								foulsPersonal: 3,
+								plusMinusPoints: -10
+							}
+						}
+					]
+				},
+				awayTeam: {
+					teamId: 1611661313,
+					teamName: "Liberty",
+					teamCity: "New York",
+					teamTricode: "NYL",
+					statistics: {
+						minutes: "200:00",
+						points: 95,
+						fieldGoalsMade: 36,
+						fieldGoalsAttempted: 75,
+						threePointersMade: 10,
+						threePointersAttempted: 22,
+						freeThrowsMade: 13,
+						freeThrowsAttempted: 15,
+						reboundsOffensive: 8,
+						reboundsDefensive: 28,
+						reboundsTotal: 36,
+						assists: 22,
+						steals: 6,
+						blocks: 4,
+						turnovers: 10,
+						foulsPersonal: 14,
+						plusMinusPoints: 13
+					},
+					players: [
+						{
+							personId: 10002,
+							firstName: "Sabrina",
+							familyName: "Ionescu",
+							position: "G",
+							comment: "",
+							statistics: {
+								minutes: "32:00",
+								points: 15,
+								fieldGoalsMade: 5,
+								fieldGoalsAttempted: 10,
+								threePointersMade: 3,
+								threePointersAttempted: 6,
+								freeThrowsMade: 2,
+								freeThrowsAttempted: 2,
+								reboundsOffensive: 1,
+								reboundsDefensive: 4,
+								reboundsTotal: 5,
+								assists: 5,
+								steals: 2,
+								blocks: 0,
+								turnovers: 1,
+								foulsPersonal: 2,
+								plusMinusPoints: 12
+							}
+						}
+					]
+				}
+			}
+		}
+	}
+};
+
+const mockGameHtmlResponse = `
+<html>
+<head>
+<script id="__NEXT_DATA__" type="application/json">${JSON.stringify(mockNextData)}</script>
+</head>
+<body></body>
+</html>
+`;
 
 const mockBoxScoreResponse = {
 	resource: "boxscore",
@@ -37,18 +167,18 @@ const mockBoxScoreResponse = {
 	resultSets: [
 		{
 			name: "PlayerStats",
-			headers: ["GAME_ID", "PLAYER_NAME", "PTS"],
+			headers: ["GAME_ID", "TEAM_ID", "TEAM_ABBREVIATION", "TEAM_CITY", "PLAYER_ID", "PLAYER_NAME", "START_POSITION", "COMMENT", "MIN", "FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT", "FTM", "FTA", "FT_PCT", "OREB", "DREB", "REB", "AST", "STL", "BLK", "TO", "PF", "PTS", "PLUS_MINUS"],
 			rowSet: [
-				["0042300101", "Sabrina Ionescu", 15],
-				["0042300101", "Breanna Stewart", 24]
+				["0042300101", 1611661315, "CON", "Connecticut", 10001, "Alyssa Thomas", "F", "", "35:00", 7, 15, 0.467, 0, 0, 0, 4, 6, 0.667, 3, 8, 11, 6, 3, 1, 2, 3, 18, -10],
+				["0042300101", 1611661313, "NYL", "New York", 10002, "Sabrina Ionescu", "G", "", "32:00", 5, 10, 0.5, 3, 6, 0.5, 2, 2, 1, 1, 4, 5, 5, 2, 0, 1, 2, 15, 12]
 			]
 		},
 		{
 			name: "TeamStats",
-			headers: ["GAME_ID", "TEAM_NAME", "PTS"],
+			headers: ["GAME_ID", "TEAM_ID", "TEAM_NAME", "TEAM_ABBREVIATION", "TEAM_CITY", "MIN", "FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT", "FTM", "FTA", "FT_PCT", "OREB", "DREB", "REB", "AST", "STL", "BLK", "TO", "PF", "PTS", "PLUS_MINUS"],
 			rowSet: [
-				["0042300101", "New York Liberty", 95],
-				["0042300101", "Connecticut Sun", 82]
+				["0042300101", 1611661315, "Connecticut Sun", "CON", "Connecticut", "200:00", 32, 70, 0.457, 5, 15, 0.333, 13, 18, 0.722, 10, 25, 35, 18, 8, 5, 12, 15, 82, -13],
+				["0042300101", 1611661313, "New York Liberty", "NYL", "New York", "200:00", 36, 75, 0.48, 10, 22, 0.455, 13, 15, 0.867, 8, 28, 36, 22, 6, 4, 10, 14, 95, 13]
 			]
 		}
 	]
@@ -168,7 +298,7 @@ test.describe('Schema Validator', () => {
 	});
 
 	test('should throw on invalid leaguegamelog schema', () => {
-		const invalidResponse = { ...mockLeagueGameLogResponse, resultSets: null };
+		const invalidResponse = { ...mockLeagueGameLogResponse, lscd: null };
 		assert.throws(
 			() => validateSchema('wnba/leaguegamelog.json', invalidResponse),
 			/JSON Schema Validation Error for schema wnba\/leaguegamelog.json/
@@ -194,7 +324,7 @@ test.describe('WNBAScraper', () => {
 		const scraper = new WNBAScraper();
 
 		fetchMock = async (url, config) => {
-			assert.match(url, /\/leaguegamelog\?/);
+			assert.match(url, /full_schedule\.json/);
 			return {
 				ok: true,
 				status: 200,
@@ -206,7 +336,6 @@ test.describe('WNBAScraper', () => {
 		assert.equal(result, scraper);
 		assert.deepEqual(scraper.gameSlugs, [
 			'nyl-vs-con-0042300101',
-			'convsnyl-0042300101',
 			'las-vs-min-0042300102'
 		]);
 	});
@@ -215,11 +344,11 @@ test.describe('WNBAScraper', () => {
 		const scraper = new WNBAScraper();
 
 		fetchMock = async (url, config) => {
-			assert.match(url, /\/boxscoretraditionalv2\?/);
+			assert.match(url, /wnba\.com\/game\//);
 			return {
 				ok: true,
 				status: 200,
-				json: async () => mockBoxScoreResponse
+				text: async () => mockGameHtmlResponse
 			};
 		};
 
@@ -227,16 +356,10 @@ test.describe('WNBAScraper', () => {
 		assert.equal(data.players.length, 2);
 		assert.equal(data.teams.length, 2);
 
-		assert.deepEqual(data.players[0], {
-			GAME_ID: '0042300101',
-			PLAYER_NAME: 'Sabrina Ionescu',
-			PTS: 15
-		});
-		assert.deepEqual(data.teams[0], {
-			GAME_ID: '0042300101',
-			TEAM_NAME: 'New York Liberty',
-			PTS: 95
-		});
+		assert.equal(data.players[0].PLAYER_NAME, 'Alyssa Thomas');
+		assert.equal(data.players[0].PTS, 18);
+		assert.equal(data.teams[1].TEAM_NAME, 'New York Liberty');
+		assert.equal(data.teams[1].PTS, 95);
 	});
 
 	test('scrapeAndSaveBoxScore should fetch, validate, map and write mapped data to file', async () => {
@@ -247,7 +370,7 @@ test.describe('WNBAScraper', () => {
 			return {
 				ok: true,
 				status: 200,
-				json: async () => mockBoxScoreResponse
+				text: async () => mockGameHtmlResponse
 			};
 		};
 
@@ -281,8 +404,7 @@ test.describe('WNBAScraper', () => {
 	test('getGameUrl should return the correct URL including the game ID', () => {
 		const scraper = new WNBAScraper();
 		const url = scraper.getGameUrl('0042300101');
-		assert.match(url, /\/boxscoretraditionalv2/);
-		assert.match(url, /GameID=0042300101/);
+		assert.equal(url, 'https://www.wnba.com/game/0042300101');
 	});
 
 	test('getGameEndpoint with advanced scraper configuration', () => {
@@ -297,11 +419,9 @@ test.describe('WNBAScraper', () => {
 	test('getGameUrl with advanced scraper configuration', () => {
 		const scraper = new WNBAScraper({ boxscoreType: 'advanced' });
 		const url = scraper.getGameUrl('0042300101');
-		assert.match(url, /\/boxscoreadvancedv2/);
-		assert.match(url, /GameID=0042300101/);
+		assert.equal(url, 'https://www.wnba.com/game/0042300101');
 
 		const explicitTraditionalUrl = scraper.getGameUrl('0042300101', 'traditional');
-		assert.match(explicitTraditionalUrl, /\/boxscoretraditionalv2/);
-		assert.match(explicitTraditionalUrl, /GameID=0042300101/);
+		assert.equal(explicitTraditionalUrl, 'https://www.wnba.com/game/0042300101');
 	});
 });
