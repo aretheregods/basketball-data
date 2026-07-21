@@ -41,11 +41,11 @@ export class HTTPClient {
 		/** @type {any} */
 		this.browser = null;
 		/** @type {any} */
-		this.context = null;
+		this.page = null;
 	}
 
 	/**
-	 * @description Initializes the Playwright browser and request contexts with ciphers & arguments.
+	 * @description Initializes the Playwright browser and page contexts with ciphers & arguments.
 	 * @returns {Promise<void>}
 	 */
 	async initBrowser() {
@@ -55,10 +55,30 @@ export class HTTPClient {
 				headless: true,
 				args: ['--disable-blink-features=AutomationControlled']
 			});
-			this.context = await this.browser.newContext({
+			const context = await this.browser.newContext({
 				userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 				locale: 'en-US'
 			});
+
+			// Hide webdriver flag from bot detection ciphers
+			await context.addInitScript(() => {
+				Object.defineProperty(navigator, 'webdriver', {
+					get: () => undefined
+				});
+			});
+
+			this.page = await context.newPage();
+
+			// Resolve origin of baseUrl for Same-Origin requests (e.g. https://stats.wnba.com)
+			let origin = 'https://stats.wnba.com';
+			try {
+				const urlObj = new URL(this.baseUrl);
+				origin = urlObj.origin;
+			} catch (_) {}
+
+			const targetRobotsUrl = `${origin}/robots.txt`;
+			console.log(`Navigating to same-origin robots.txt: ${targetRobotsUrl}`);
+			await this.page.goto(targetRobotsUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 		}
 	}
 
@@ -71,7 +91,7 @@ export class HTTPClient {
 			console.log('Closing Playwright browser context...');
 			await this.browser.close();
 			this.browser = null;
-			this.context = null;
+			this.page = null;
 		}
 	}
 
@@ -96,26 +116,59 @@ export class HTTPClient {
 			if (HTTPClient.usePlaywright && globalThis.fetch === originalFetch) {
 				await this.initBrowser();
 
-				console.log(`[Playwright Fetch] Requesting: ${url}`);
-				const response = await this.context.request.get(url, {
-					headers: config.headers,
-					timeout: 15000
-				});
+				console.log(`[Playwright Fetch] Navigating to target: ${url}`);
+				const data = await this.page.evaluate(async ({ targetUrl, headers, method }) => {
+					// Use AbortController inside browser context as a failsafe
+					const controller = new AbortController();
+					const timeoutId = setTimeout(() => controller.abort(), 15000);
 
-				const status = response.status();
-				if (status === 429 || status >= 500) {
+					try {
+						const response = await fetch(targetUrl, {
+							method,
+							headers,
+							signal: controller.signal
+						});
+
+						let body = null;
+						if (response.ok) {
+							body = await response.json();
+						} else {
+							try {
+								body = await response.text();
+							} catch (_) {}
+						}
+
+						return {
+							status: response.status,
+							statusText: response.statusText,
+							body
+						};
+					} catch (err) {
+						return {
+							error: err.message || String(err)
+						};
+					} finally {
+						clearTimeout(timeoutId);
+					}
+				}, { targetUrl: url, headers: config.headers, method: config.method || 'GET' });
+
+				if (data.error) {
+					throw new Error(data.error);
+				}
+
+				if (data.status === 429 || data.status >= 500) {
 					if (retries > 0) {
-						console.warn(`[HTTP ${ status }] Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
+						console.warn(`[HTTP ${ data.status }] Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
 						await new Promise( resolve => setTimeout(resolve, delay) );
 						return this.request(endpoint, options, retries - 1, delay * 2);
 					}
 				}
 
-				if (status < 200 || status >= 300) {
-					throw new Error(`HTTP Error: ${status} ${response.statusText()}`);
+				if (data.status < 200 || data.status >= 300) {
+					throw new Error(`HTTP Error: ${data.status} ${data.statusText || ''}`);
 				}
 
-				return await response.json();
+				return data.body;
 			} else {
 				const response = await fetch(url, config);
 				if (response.status === 429 || response.status >= 500) {
