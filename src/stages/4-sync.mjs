@@ -108,20 +108,20 @@ export async function syncStage(league, year, options = {}) {
 	let teamsToSync = [];
 
 	try {
-		playersToSync = await db('player_game_stats')
-			.where({ league, season: String(year), synced: 0 });
+		playersToSync = db.prepare(`SELECT * FROM player_game_stats WHERE league = ? AND season = ? AND synced = 0`)
+			.all(league, String(year));
 
-		teamsToSync = await db('team_game_stats')
-			.where({ league, season: String(year), synced: 0 });
+		teamsToSync = db.prepare(`SELECT * FROM team_game_stats WHERE league = ? AND season = ? AND synced = 0`)
+			.all(league, String(year));
 	} catch (error) {
 		console.warn(`⚠️ Failed to query local database. Have you run the load stage first?`);
-		await db.destroy();
+		db.destroy();
 		return;
 	}
 
 	if (playersToSync.length === 0 && teamsToSync.length === 0) {
 		console.log(`✅ Everything is already synced! 0 unsynced rows found for ${league.toUpperCase()} - ${year}.\n`);
-		await db.destroy();
+		db.destroy();
 		return;
 	}
 
@@ -142,7 +142,7 @@ export async function syncStage(league, year, options = {}) {
 
 	if (dryRun) {
 		console.log(`🧪 [DRY RUN] Skipping Wrangler sync execution.`);
-		await db.destroy();
+		db.destroy();
 		return;
 	}
 
@@ -152,18 +152,21 @@ export async function syncStage(league, year, options = {}) {
 		// If successful, update synced flag to 1 locally
 		console.log(`📝 Updating 'synced' flag to 1 in local staging database...`);
 
-		await db.transaction(async (trx) => {
+		db.exec('BEGIN TRANSACTION');
+		try {
 			if (playersToSync.length > 0) {
-				await trx('player_game_stats')
-					.where({ league, season: String(year), synced: 0 })
-					.update({ synced: 1 });
+				db.prepare(`UPDATE player_game_stats SET synced = 1 WHERE league = ? AND season = ? AND synced = 0`)
+					.run(league, String(year));
 			}
 			if (teamsToSync.length > 0) {
-				await trx('team_game_stats')
-					.where({ league, season: String(year), synced: 0 })
-					.update({ synced: 1 });
+				db.prepare(`UPDATE team_game_stats SET synced = 1 WHERE league = ? AND season = ? AND synced = 0`)
+					.run(league, String(year));
 			}
-		});
+			db.exec('COMMIT');
+		} catch (trxError) {
+			db.exec('ROLLBACK');
+			throw trxError;
+		}
 
 		console.log(`✅ Stage 4 [SYNC] complete. Cloudflare D1 is now fully synced.`);
 	} catch (error) {
@@ -181,6 +184,6 @@ export async function syncStage(league, year, options = {}) {
 		} catch (cleanupErr) {
 			console.error(`⚠️ Failed to cleanup ${tempFilePath}:`, cleanupErr);
 		}
-		await db.destroy();
+		db.destroy();
 	}
 }

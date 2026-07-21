@@ -1,13 +1,14 @@
 import fs from 'fs/promises';
 import path from 'path';
-import knex from 'knex';
+import { DatabaseSync } from 'node:sqlite';
+import { runMigrations } from '../db/migrations-runner.mjs';
 
 /**
  * @description Initializes the SQLite connection for a specific league and ensures schema tables exist.
  * Saves the SQLite file to `data/SQL/<LEAGUE>.sqlite` (e.g., `data/SQL/WNBA.sqlite`).
  *
  * @param {string} [league='wnba'] - The lowercase or uppercase league identifier
- * @returns {Promise<import('knex').Knex>} - The initialized Knex database instance
+ * @returns {Promise<import('node:sqlite').DatabaseSync>} - The initialized DatabaseSync instance
  */
 export async function initDatabase(league = 'wnba') {
 	const dbDir = path.resolve('data/SQL');
@@ -15,96 +16,15 @@ export async function initDatabase(league = 'wnba') {
 
 	const dbPath = path.join(dbDir, `${league.toUpperCase()}.sqlite`);
 
-	const db = knex({
-		client: 'sqlite3',
-		connection: {
-			filename: dbPath
-		},
-		useNullAsDefault: true
-	});
+	const db = new DatabaseSync(dbPath);
 
-	// Create player_game_stats table
-	const hasPlayersTable = await db.schema.hasTable('player_game_stats');
-	if (!hasPlayersTable) {
-		await db.schema.createTable('player_game_stats', (table) => {
-			table.string('game_id');
-			table.integer('player_id');
-			table.string('player_name');
-			table.string('normalized_name');
-			table.integer('team_id');
-			table.string('team_abbreviation');
-			table.string('team_city');
-			table.string('start_position');
-			table.string('comment');
-			table.string('min');
-			table.integer('fgm');
-			table.integer('fga');
-			table.float('fg_pct');
-			table.integer('fg3m');
-			table.integer('fg3a');
-			table.float('fg3_pct');
-			table.integer('ftm');
-			table.integer('fta');
-			table.float('ft_pct');
-			table.integer('oreb');
-			table.integer('dreb');
-			table.integer('reb');
-			table.integer('ast');
-			table.integer('stl');
-			table.integer('blk');
-			table.integer('tov');
-			table.integer('pf');
-			table.integer('pts');
-			table.float('plus_minus');
-			table.float('ts_pct');
-			table.float('efg_pct');
-			table.float('game_score');
-			table.string('season');
-			table.string('league');
-			table.integer('synced').defaultTo(0);
+	// Run pending database migrations
+	await runMigrations(db);
 
-			table.primary(['game_id', 'player_id']);
-		});
-	}
-
-	// Create team_game_stats table
-	const hasTeamsTable = await db.schema.hasTable('team_game_stats');
-	if (!hasTeamsTable) {
-		await db.schema.createTable('team_game_stats', (table) => {
-			table.string('game_id');
-			table.integer('team_id');
-			table.string('team_name');
-			table.string('team_abbreviation');
-			table.string('team_city');
-			table.string('min');
-			table.integer('fgm');
-			table.integer('fga');
-			table.float('fg_pct');
-			table.integer('fg3m');
-			table.integer('fg3a');
-			table.float('fg3_pct');
-			table.integer('ftm');
-			table.integer('fta');
-			table.float('ft_pct');
-			table.integer('oreb');
-			table.integer('dreb');
-			table.integer('reb');
-			table.integer('ast');
-			table.integer('stl');
-			table.integer('blk');
-			table.integer('tov');
-			table.integer('pf');
-			table.integer('pts');
-			table.float('plus_minus');
-			table.float('ts_pct');
-			table.float('efg_pct');
-			table.string('season');
-			table.string('league');
-			table.integer('synced').defaultTo(0);
-
-			table.primary(['game_id', 'team_id']);
-		});
-	}
+	// Add destroy method as compatibility wrapper for test cleanups and syncStage
+	db.destroy = () => {
+		db.close();
+	};
 
 	return db;
 }
@@ -149,30 +69,46 @@ export async function loadStage(league, year, cleanedGamesArray) {
 	const db = await initDatabase(league);
 
 	try {
-		await db.transaction(async (trx) => {
-			// Clear existing records for this league/year to keep stage runs idempotent
-			console.log(`🗑️ Clearing old database records for ${league.toUpperCase()} - ${year}...`);
-			await trx('player_game_stats').where({ league, season: String(year) }).del();
-			await trx('team_game_stats').where({ league, season: String(year) }).del();
+		db.exec('BEGIN TRANSACTION');
 
-			// Batch insert players in chunks of 100 to avoid SQLite limits
-			if (players.length > 0) {
-				console.log(`📥 Inserting ${players.length} player rows into 'player_game_stats'...`);
-				await trx.batchInsert('player_game_stats', players, 100);
+		// Clear existing records for this league/year to keep stage runs idempotent
+		console.log(`🗑️ Clearing old database records for ${league.toUpperCase()} - ${year}...`);
+		db.prepare(`DELETE FROM player_game_stats WHERE league = ? AND season = ?`)
+			.run(league, String(year));
+		db.prepare(`DELETE FROM team_game_stats WHERE league = ? AND season = ?`)
+			.run(league, String(year));
+
+		// Batch insert players in chunks of 100 to avoid SQLite limits
+		if (players.length > 0) {
+			console.log(`📥 Inserting ${players.length} player rows into 'player_game_stats'...`);
+			const keys = Object.keys(players[0]);
+			const placeholders = keys.map(() => '?').join(', ');
+			const insertStmt = db.prepare(`INSERT OR REPLACE INTO player_game_stats (${keys.join(', ')}) VALUES (${placeholders})`);
+			for (const player of players) {
+				const values = keys.map(k => player[k]);
+				insertStmt.run(...values);
 			}
+		}
 
-			// Batch insert teams in chunks of 100
-			if (teams.length > 0) {
-				console.log(`📥 Inserting ${teams.length} team rows into 'team_game_stats'...`);
-				await trx.batchInsert('team_game_stats', teams, 100);
+		// Batch insert teams in chunks of 100
+		if (teams.length > 0) {
+			console.log(`📥 Inserting ${teams.length} team rows into 'team_game_stats'...`);
+			const keys = Object.keys(teams[0]);
+			const placeholders = keys.map(() => '?').join(', ');
+			const insertStmt = db.prepare(`INSERT OR REPLACE INTO team_game_stats (${keys.join(', ')}) VALUES (${placeholders})`);
+			for (const team of teams) {
+				const values = keys.map(k => team[k]);
+				insertStmt.run(...values);
 			}
-		});
+		}
 
+		db.exec('COMMIT');
 		console.log(`✅ Stage 3 [LOAD] complete. Successfully saved records to local staging database.`);
 	} catch (error) {
+		db.exec('ROLLBACK');
 		console.error(`❌ Database TRANSACTION failure:`, error);
 		throw error;
 	} finally {
-		await db.destroy();
+		db.destroy();
 	}
 }

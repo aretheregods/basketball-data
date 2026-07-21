@@ -111,13 +111,15 @@ test.describe('Pipeline Stages', () => {
 			await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
 			await fs.rm(path.resolve('data/temp'), { recursive: true, force: true });
 
-			// Clean up SQLite database rows
+			// Clean up SQLite database rows using node:sqlite prepare / run
 			const db = await initDatabase(league);
 			try {
-				await db('player_game_stats').where({ league, season: year }).del();
-				await db('team_game_stats').where({ league, season: year }).del();
+				db.prepare(`DELETE FROM player_game_stats WHERE league = ? AND season = ?`)
+					.run(league, year);
+				db.prepare(`DELETE FROM team_game_stats WHERE league = ? AND season = ?`)
+					.run(league, year);
 			} finally {
-				await db.destroy();
+				db.destroy();
 			}
 		});
 	});
@@ -215,20 +217,22 @@ test.describe('Pipeline Stages', () => {
 			// Run load stage
 			await loadStage(league, year, transformedData);
 
-			// Query SQLite using initDatabase helper to check if loaded correctly
+			// Query SQLite using node:sqlite DatabaseSync to check if loaded correctly
 			const db = await initDatabase(league);
 			try {
-				const playerRows = await db('player_game_stats').where({ league, season: year });
+				const playerRows = db.prepare(`SELECT * FROM player_game_stats WHERE league = ? AND season = ?`)
+					.all(league, year);
 				assert.equal(playerRows.length, 1);
 				assert.equal(playerRows[0].player_name, 'Angel Spur');
 				assert.equal(playerRows[0].ts_pct, 0.8197);
 				assert.equal(playerRows[0].synced, 0);
 
-				const teamRows = await db('team_game_stats').where({ league, season: year });
+				const teamRows = db.prepare(`SELECT * FROM team_game_stats WHERE league = ? AND season = ?`)
+					.all(league, year);
 				assert.equal(teamRows.length, 1);
 				assert.equal(teamRows[0].team_name, 'Seattle Storm');
 			} finally {
-				await db.destroy();
+				db.destroy();
 			}
 		});
 	});
@@ -257,10 +261,11 @@ test.describe('Pipeline Stages', () => {
 			// Verify synced flag is STILL 0 because of dry run
 			const db = await initDatabase(league);
 			try {
-				const playerRows = await db('player_game_stats').where({ league, season: year });
+				const playerRows = db.prepare(`SELECT * FROM player_game_stats WHERE league = ? AND season = ?`)
+					.all(league, year);
 				assert.equal(playerRows[0].synced, 0);
 			} finally {
-				await db.destroy();
+				db.destroy();
 			}
 		});
 	});
@@ -308,10 +313,11 @@ test.describe('Pipeline Stages', () => {
 				// Verify synced flag is now 1
 				const db = await initDatabase(league);
 				try {
-					const playerRows = await db('player_game_stats').where({ league, season: year });
+					const playerRows = db.prepare(`SELECT * FROM player_game_stats WHERE league = ? AND season = ?`)
+						.all(league, year);
 					assert.equal(playerRows[0].synced, 1);
 				} finally {
-					await db.destroy();
+					db.destroy();
 				}
 			} finally {
 				// Restore original spawn
