@@ -12,17 +12,17 @@
  * @typedef {KnownHeaders & Record.<string, string | number | string[]>} HTTPHeaders
  */
 
-import { chromium } from 'playwright';
+import { gotScraping } from 'got-scraping';
 
 /** @type {typeof globalThis.fetch} */
 const originalFetch = globalThis.fetch;
 
 export class HTTPClient {
 	/**
-	 * @description Flag to control whether to use Playwright for TLS bypass.
+	 * @description Flag to control whether to use got-scraping for TLS bypass.
 	 * @type {boolean}
 	 */
-	static usePlaywright = true;
+	static useGotScraping = true;
 
 	/**
 	 * @constructor
@@ -38,69 +38,6 @@ export class HTTPClient {
 			'accept': 'application/json',
 			...defaultHeaders
 		};
-		/** @type {any} */
-		this.browser = null;
-		/** @type {any} */
-		this.page = null;
-	}
-
-	/**
-	 * @description Initializes the Playwright browser and page contexts with ciphers & arguments.
-	 * @returns {Promise<void>}
-	 */
-	async initBrowser() {
-		if (!this.browser) {
-			console.log('Bypassing Akamai firewall with Playwright...');
-			this.browser = await chromium.launch({
-				headless: true,
-				args: ['--disable-blink-features=AutomationControlled']
-			});
-			const context = await this.browser.newContext({
-				userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-				locale: 'en-US'
-			});
-
-			// Hide webdriver flag from bot detection ciphers
-			await context.addInitScript(() => {
-				Object.defineProperty(navigator, 'webdriver', {
-					get: () => undefined
-				});
-			});
-
-			this.page = await context.newPage();
-
-			// Block heavy assets to make page load extremely fast
-			await this.page.route('**/*', (route) => {
-				const type = route.request().resourceType();
-				if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
-					route.abort();
-				} else {
-					route.continue();
-				}
-			});
-
-			// Resolve main site URL (e.g. www.wnba.com or www.nba.com) for establishing session cookies
-			let mainSiteUrl = 'https://www.wnba.com';
-			if (this.baseUrl.includes('nba.com')) {
-				mainSiteUrl = 'https://www.nba.com';
-			}
-
-			console.log(`Navigating to same-origin main site: ${mainSiteUrl}`);
-			await this.page.goto(mainSiteUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-		}
-	}
-
-	/**
-	 * @description Closes the Playwright browser if initialized.
-	 * @returns {Promise<void>}
-	 */
-	async close() {
-		if (this.browser) {
-			console.log('Closing Playwright browser context...');
-			await this.browser.close();
-			this.browser = null;
-			this.page = null;
-		}
 	}
 
 	/**
@@ -121,45 +58,33 @@ export class HTTPClient {
 		};
 
 		try {
-			if (HTTPClient.usePlaywright && globalThis.fetch === originalFetch) {
-				await this.initBrowser();
-
-				console.log(`[Playwright Fetch] Navigating to target: ${url}`);
-				const data = await this.page.evaluate(async ({ targetUrl, headers, method }) => {
-					const response = await fetch(targetUrl, {
-						method,
-						headers
-					});
-
-					let body = null;
-					if (response.ok) {
-						body = await response.json();
-					} else {
-						try {
-							body = await response.text();
-						} catch (_) {}
+			if (HTTPClient.useGotScraping && globalThis.fetch === originalFetch) {
+				const response = await gotScraping({
+					url,
+					method: config.method || 'GET',
+					headers: config.headers,
+					responseType: 'json',
+					throwHttpErrors: false,
+					headerGeneratorOptions: {
+						browsers: [{ name: 'chrome', minVersion: 120 }],
+						devices: ['desktop'],
+						operatingSystems: ['windows']
 					}
+				});
 
-					return {
-						status: response.status,
-						statusText: response.statusText,
-						body
-					};
-				}, { targetUrl: url, headers: config.headers, method: config.method || 'GET' });
-
-				if (data.status === 429 || data.status >= 500) {
+				if (response.statusCode === 429 || response.statusCode >= 500) {
 					if (retries > 0) {
-						console.warn(`[HTTP ${ data.status }] Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
+						console.warn(`[HTTP ${ response.statusCode }] Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
 						await new Promise( resolve => setTimeout(resolve, delay) );
 						return this.request(endpoint, options, retries - 1, delay * 2);
 					}
 				}
 
-				if (data.status < 200 || data.status >= 300) {
-					throw new Error(`HTTP Error: ${data.status} ${data.statusText || ''}`);
+				if (response.statusCode < 200 || response.statusCode >= 300) {
+					throw new Error(`HTTP Error: ${response.statusCode} ${response.statusMessage || ''}`);
 				}
 
-				return data.body;
+				return response.body;
 			} else {
 				const response = await fetch(url, config);
 				if (response.status === 429 || response.status >= 500) {
