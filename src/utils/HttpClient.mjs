@@ -118,9 +118,9 @@ export class HTTPClient {
 
 				console.log(`[Playwright Fetch] Navigating to target: ${url}`);
 				const data = await this.page.evaluate(async ({ targetUrl, headers, method }) => {
-					// Use AbortController inside browser context as a failsafe
+					// WNBA endpoints are notoriously slow; use a generous 45-second timeout inside the browser context
 					const controller = new AbortController();
-					const timeoutId = setTimeout(() => controller.abort(), 15000);
+					const timeoutId = setTimeout(() => controller.abort(), 45000);
 
 					try {
 						const response = await fetch(targetUrl, {
