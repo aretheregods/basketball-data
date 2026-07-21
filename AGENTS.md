@@ -66,6 +66,17 @@ Follow these rules for all code you write.
   - Make sure all JavaScript fetch JSON responses are checked against their
     relevant schemas.
 
+- **Project Wide:**
+  - **DO NOT** directly edit the pnpm-lock.yaml file. All packages should be
+    managed added or removed from the package.json.
+  - **DO NOT** commit untested, untyped and undocumented code.
+    Test, document and type (using JSDoc) all code.
+  - **DO** make sure all code matches the coding patterns and
+    styles inherent within the application.
+  - **DO** use modern JavaScript and SQL in the application.
+  - **DO** prioritize correctness, memory efficiency, code size and speed
+    in both JavaScript and SQL.
+
 ## Testing Instructions
 
 - Add or update tests for the code you change even if nobody asked.
