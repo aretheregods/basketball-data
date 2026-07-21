@@ -69,16 +69,24 @@ export class HTTPClient {
 
 			this.page = await context.newPage();
 
-			// Resolve origin of baseUrl for Same-Origin requests (e.g. https://stats.wnba.com)
-			let origin = 'https://stats.wnba.com';
-			try {
-				const urlObj = new URL(this.baseUrl);
-				origin = urlObj.origin;
-			} catch (_) {}
+			// Block heavy assets to make page load extremely fast
+			await this.page.route('**/*', (route) => {
+				const type = route.request().resourceType();
+				if (['image', 'stylesheet', 'font', 'media'].includes(type)) {
+					route.abort();
+				} else {
+					route.continue();
+				}
+			});
 
-			const targetRobotsUrl = `${origin}/robots.txt`;
-			console.log(`Navigating to same-origin robots.txt: ${targetRobotsUrl}`);
-			await this.page.goto(targetRobotsUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+			// Resolve main site URL (e.g. www.wnba.com or www.nba.com) for establishing session cookies
+			let mainSiteUrl = 'https://www.wnba.com';
+			if (this.baseUrl.includes('nba.com')) {
+				mainSiteUrl = 'https://www.nba.com';
+			}
+
+			console.log(`Navigating to same-origin main site: ${mainSiteUrl}`);
+			await this.page.goto(mainSiteUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 		}
 	}
 
@@ -118,43 +126,26 @@ export class HTTPClient {
 
 				console.log(`[Playwright Fetch] Navigating to target: ${url}`);
 				const data = await this.page.evaluate(async ({ targetUrl, headers, method }) => {
-					// WNBA endpoints are notoriously slow; use a generous 45-second timeout inside the browser context
-					const controller = new AbortController();
-					const timeoutId = setTimeout(() => controller.abort(), 45000);
+					const response = await fetch(targetUrl, {
+						method,
+						headers
+					});
 
-					try {
-						const response = await fetch(targetUrl, {
-							method,
-							headers,
-							signal: controller.signal
-						});
-
-						let body = null;
-						if (response.ok) {
-							body = await response.json();
-						} else {
-							try {
-								body = await response.text();
-							} catch (_) {}
-						}
-
-						return {
-							status: response.status,
-							statusText: response.statusText,
-							body
-						};
-					} catch (err) {
-						return {
-							error: err.message || String(err)
-						};
-					} finally {
-						clearTimeout(timeoutId);
+					let body = null;
+					if (response.ok) {
+						body = await response.json();
+					} else {
+						try {
+							body = await response.text();
+						} catch (_) {}
 					}
-				}, { targetUrl: url, headers: config.headers, method: config.method || 'GET' });
 
-				if (data.error) {
-					throw new Error(data.error);
-				}
+					return {
+						status: response.status,
+						statusText: response.statusText,
+						body
+					};
+				}, { targetUrl: url, headers: config.headers, method: config.method || 'GET' });
 
 				if (data.status === 429 || data.status >= 500) {
 					if (retries > 0) {
