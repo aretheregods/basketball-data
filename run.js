@@ -69,56 +69,62 @@ async function main() {
 
 		const scraper = LEAGUE_SCRAPERS[lowerLeague]({ boxscoreType });
 
-		for (const year of targetYears) {
-			console.log(`\n=== Processing [ ${lowerLeague.toUpperCase()} - ${year} ] ===`);
+		try {
+			for (const year of targetYears) {
+				console.log(`\n=== Processing [ ${lowerLeague.toUpperCase()} - ${year} ] ===`);
 
-			// ------------------------------------------------------------
-			// STAGE 1: EXTRACT (Network Request -> Raw Local Disk JSON)
-			// ------------------------------------------------------------
-			if (activeSteps.includes('extract')) {
-				try {
-					await extractStage(scraper, lowerLeague, year);
-				} catch (err) {
-					console.error(`❌ Stage 1 [EXTRACT] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
-					if (activeSteps.length === 1) throw err; // rethrow if executing only this step
+				// ------------------------------------------------------------
+				// STAGE 1: EXTRACT (Network Request -> Raw Local Disk JSON)
+				// ------------------------------------------------------------
+				if (activeSteps.includes('extract')) {
+					try {
+						await extractStage(scraper, lowerLeague, year);
+					} catch (err) {
+						console.error(`❌ Stage 1 [EXTRACT] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
+						if (activeSteps.length === 1) throw err; // rethrow if executing only this step
+					}
+				}
+
+				// ------------------------------------------------------------
+				// STAGE 2: TRANSFORM (Read Raw JSON -> Clean/Normalize in Memory)
+				// ------------------------------------------------------------
+				let cleanedGamesArray = { players: [], teams: [] };
+				if (activeSteps.includes('transform')) {
+					try {
+						cleanedGamesArray = await transformStage(lowerLeague, year);
+					} catch (err) {
+						console.error(`❌ Stage 2 [TRANSFORM] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
+						if (activeSteps.length === 1) throw err;
+					}
+				}
+
+				// ------------------------------------------------------------
+				// STAGE 3: LOAD (Clean Array -> Local SQLite Database Staging)
+				// ------------------------------------------------------------
+				if (activeSteps.includes('load')) {
+					try {
+						await loadStage(lowerLeague, year, cleanedGamesArray);
+					} catch (err) {
+						console.error(`❌ Stage 3 [LOAD] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
+						if (activeSteps.length === 1) throw err;
+					}
+				}
+
+				// ------------------------------------------------------------
+				// STAGE 4: SYNC (Local SQLite Modifications -> Production D1 Edge)
+				// ------------------------------------------------------------
+				if (activeSteps.includes('sync')) {
+					try {
+						await syncStage(lowerLeague, year, { databaseName, dryRun });
+					} catch (err) {
+						console.error(`❌ Stage 4 [SYNC] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
+						if (activeSteps.length === 1) throw err;
+					}
 				}
 			}
-
-			// ------------------------------------------------------------
-			// STAGE 2: TRANSFORM (Read Raw JSON -> Clean/Normalize in Memory)
-			// ------------------------------------------------------------
-			let cleanedGamesArray = { players: [], teams: [] };
-			if (activeSteps.includes('transform')) {
-				try {
-					cleanedGamesArray = await transformStage(lowerLeague, year);
-				} catch (err) {
-					console.error(`❌ Stage 2 [TRANSFORM] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
-					if (activeSteps.length === 1) throw err;
-				}
-			}
-
-			// ------------------------------------------------------------
-			// STAGE 3: LOAD (Clean Array -> Local SQLite Database Staging)
-			// ------------------------------------------------------------
-			if (activeSteps.includes('load')) {
-				try {
-					await loadStage(lowerLeague, year, cleanedGamesArray);
-				} catch (err) {
-					console.error(`❌ Stage 3 [LOAD] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
-					if (activeSteps.length === 1) throw err;
-				}
-			}
-
-			// ------------------------------------------------------------
-			// STAGE 4: SYNC (Local SQLite Modifications -> Production D1 Edge)
-			// ------------------------------------------------------------
-			if (activeSteps.includes('sync')) {
-				try {
-					await syncStage(lowerLeague, year, { databaseName, dryRun });
-				} catch (err) {
-					console.error(`❌ Stage 4 [SYNC] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
-					if (activeSteps.length === 1) throw err;
-				}
+		} finally {
+			if (typeof scraper.close === 'function') {
+				await scraper.close();
 			}
 		}
 	}

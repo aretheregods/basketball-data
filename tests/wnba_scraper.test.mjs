@@ -57,8 +57,10 @@ const mockBoxScoreResponse = {
 // Global fetch mocking helper
 let fetchMock = null;
 const originalFetch = globalThis.fetch;
+const originalUsePlaywright = HTTPClient.usePlaywright;
 
 test.before(() => {
+	HTTPClient.usePlaywright = false;
 	globalThis.fetch = async (url, config) => {
 		if (fetchMock) {
 			return fetchMock(url, config);
@@ -68,6 +70,7 @@ test.before(() => {
 });
 
 test.after(() => {
+	HTTPClient.usePlaywright = true;
 	globalThis.fetch = originalFetch;
 });
 
@@ -76,8 +79,8 @@ test.beforeEach(() => {
 });
 
 test.describe('HTTPClient', () => {
-	test('should default static useGotScraping property to true', () => {
-		assert.equal(HTTPClient.useGotScraping, true);
+	test('should default static usePlaywright property to true', () => {
+		assert.equal(originalUsePlaywright, true);
 	});
 
 	test('should make a successful request and parse JSON', async () => {
