@@ -151,3 +151,6 @@ vite.config.ts.timestamp-*
 *.sqlite-journal
 *.sqlite-wal
 data/SQL/*.sqlite
+
+# raw data/raw json files
+data/raw/
