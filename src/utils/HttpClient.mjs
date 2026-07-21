@@ -106,22 +106,10 @@ export class HTTPClient {
 
 				console.log(`[Playwright Fetch] Navigating to target: ${url}`);
 				const data = await this.page.evaluate(async ({ targetUrl, headers, method }) => {
-					// Use clean iframe fetch to guarantee native unmodified browser fetch
-					const iframe = document.createElement('iframe');
-					iframe.style.display = 'none';
-					document.body.appendChild(iframe);
-					const cleanFetch = iframe.contentWindow.fetch;
-
-					let response;
-					try {
-						response = await cleanFetch(targetUrl, {
-							method,
-							headers
-						});
-					} finally {
-						// Always cleanup iframe
-						document.body.removeChild(iframe);
-					}
+					const response = await fetch(targetUrl, {
+						method,
+						headers
+					});
 
 					let body = null;
 					if (response.ok) {
