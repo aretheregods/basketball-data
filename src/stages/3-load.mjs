@@ -1,13 +1,14 @@
 import fs from 'fs/promises';
 import path from 'path';
-import knex from 'knex';
+import { DatabaseSync } from 'node:sqlite';
+import { runMigrations } from '../db/migrations-runner.mjs';
 
 /**
  * @description Initializes the SQLite connection for a specific league and ensures schema tables exist.
  * Saves the SQLite file to `data/SQL/<LEAGUE>.sqlite` (e.g., `data/SQL/WNBA.sqlite`).
  *
  * @param {string} [league='wnba'] - The lowercase or uppercase league identifier
- * @returns {Promise<import('knex').Knex>} - The initialized Knex database instance
+ * @returns {Promise<import('node:sqlite').DatabaseSync>} - The initialized DatabaseSync instance
  */
 export async function initDatabase(league = 'wnba') {
 	const dbDir = path.resolve('data/SQL');
@@ -15,20 +16,15 @@ export async function initDatabase(league = 'wnba') {
 
 	const dbPath = path.join(dbDir, `${league.toUpperCase()}.sqlite`);
 
-	const db = knex({
-		client: 'sqlite3',
-		connection: {
-			filename: dbPath
-		},
-		useNullAsDefault: true,
-		migrations: {
-			directory: path.resolve('src/db/migrations'),
-			tableName: 'knex_migrations'
-		}
-	});
+	const db = new DatabaseSync(dbPath);
 
-	// Run latest migrations programmatically
-	await db.migrate.latest();
+	// Run pending database migrations
+	await runMigrations(db);
+
+	// Add destroy method as compatibility wrapper for test cleanups and syncStage
+	db.destroy = () => {
+		db.close();
+	};
 
 	return db;
 }
@@ -73,30 +69,46 @@ export async function loadStage(league, year, cleanedGamesArray) {
 	const db = await initDatabase(league);
 
 	try {
-		await db.transaction(async (trx) => {
-			// Clear existing records for this league/year to keep stage runs idempotent
-			console.log(`🗑️ Clearing old database records for ${league.toUpperCase()} - ${year}...`);
-			await trx('player_game_stats').where({ league, season: String(year) }).del();
-			await trx('team_game_stats').where({ league, season: String(year) }).del();
+		db.exec('BEGIN TRANSACTION');
 
-			// Batch insert players in chunks of 100 to avoid SQLite limits
-			if (players.length > 0) {
-				console.log(`📥 Inserting ${players.length} player rows into 'player_game_stats'...`);
-				await trx.batchInsert('player_game_stats', players, 100);
+		// Clear existing records for this league/year to keep stage runs idempotent
+		console.log(`🗑️ Clearing old database records for ${league.toUpperCase()} - ${year}...`);
+		db.prepare(`DELETE FROM player_game_stats WHERE league = ? AND season = ?`)
+			.run(league, String(year));
+		db.prepare(`DELETE FROM team_game_stats WHERE league = ? AND season = ?`)
+			.run(league, String(year));
+
+		// Batch insert players in chunks of 100 to avoid SQLite limits
+		if (players.length > 0) {
+			console.log(`📥 Inserting ${players.length} player rows into 'player_game_stats'...`);
+			const keys = Object.keys(players[0]);
+			const placeholders = keys.map(() => '?').join(', ');
+			const insertStmt = db.prepare(`INSERT OR REPLACE INTO player_game_stats (${keys.join(', ')}) VALUES (${placeholders})`);
+			for (const player of players) {
+				const values = keys.map(k => player[k]);
+				insertStmt.run(...values);
 			}
+		}
 
-			// Batch insert teams in chunks of 100
-			if (teams.length > 0) {
-				console.log(`📥 Inserting ${teams.length} team rows into 'team_game_stats'...`);
-				await trx.batchInsert('team_game_stats', teams, 100);
+		// Batch insert teams in chunks of 100
+		if (teams.length > 0) {
+			console.log(`📥 Inserting ${teams.length} team rows into 'team_game_stats'...`);
+			const keys = Object.keys(teams[0]);
+			const placeholders = keys.map(() => '?').join(', ');
+			const insertStmt = db.prepare(`INSERT OR REPLACE INTO team_game_stats (${keys.join(', ')}) VALUES (${placeholders})`);
+			for (const team of teams) {
+				const values = keys.map(k => team[k]);
+				insertStmt.run(...values);
 			}
-		});
+		}
 
+		db.exec('COMMIT');
 		console.log(`✅ Stage 3 [LOAD] complete. Successfully saved records to local staging database.`);
 	} catch (error) {
+		db.exec('ROLLBACK');
 		console.error(`❌ Database TRANSACTION failure:`, error);
 		throw error;
 	} finally {
-		await db.destroy();
+		db.destroy();
 	}
 }

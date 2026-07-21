@@ -222,25 +222,16 @@ node run.js [options]
 ### Database Paths & Migrations Management
 - **Local DB Location**: `data/SQL/<LEAGUE>.sqlite` (e.g., `data/SQL/WNBA.sqlite`). Note: The `data/SQL/` directory is registered in `.gitignore` to prevent tracking staging databases in Git.
 - **Multi-League Support**: We have distinct database files per league or continent (e.g., `WNBA.sqlite`, `NBA.sqlite`, `EUROPE.sqlite`).
-- **Dynamic Knexfile Resolution**: The `knexfile.js` configuration dynamically resolves the target league database using the `LEAGUE` environment variable (defaulting to `WNBA`). For example:
+- **Dynamic Migrations Resolution**: The database utilizes a zero-dependency custom migrations runner dynamically resolving target league databases using the `LEAGUE` environment variable (defaulting to `WNBA`). For example:
   ```bash
   # To run migrations for NBA:
-  LEAGUE=nba pnpm exec knex migrate:latest --env development
+  LEAGUE=nba node src/db/migrate.mjs
 
-  # To check status for Europe:
-  LEAGUE=europe pnpm exec knex migrate:status --env development
+  # To run migrations for Europe:
+  LEAGUE=europe node src/db/migrate.mjs
   ```
-- **Programmatic Loader Migrations**: When Stage 3 (`load`) initializes a connection to any database via `initDatabase(league)`, it programmatically invokes `await db.migrate.latest()` to ensure all tables are correctly scaffolded and up-to-date automatically.
-- **Debian / Older GLIBC Compilation**: On Linux platforms with older library versions (such as Debian Bookworm), the pre-built `sqlite3` binary may fail with a `GLIBC_2.38 not found` error. To resolve this, a project-local `.npmrc` is configured with `build-from-source=true` to automatically compile the package during `pnpm install`.
-
-  **If you already ran install and have the cached binary, rebuild it from source with:**
-  ```bash
-  pnpm rebuild sqlite3
-  ```
-  If you have system-installed `sqlite3` and `libsqlite3-dev` libraries via APT, you can instruct `sqlite3` to link against it dynamically:
-  ```bash
-  pnpm install --sqlite=/usr
-  ```
+- **Programmatic Loader Migrations**: When Stage 3 (`load`) initializes a connection to any database via `initDatabase(league)`, it programmatically invokes `await runMigrations(db)` to ensure all tables are correctly scaffolded and up-to-date automatically.
+- **Zero-Dependency Native Driver**: Using Node's built-in `node:sqlite` module completely eliminates external binary compilation (node-gyp/Python), prebuilt download steps, and GLIBC version mismatches, guaranteeing absolute platform portability and reliability across Debian/Ubuntu/CentOS/Alpine/macOS/Windows out-of-the-box.
 
 ---
 
