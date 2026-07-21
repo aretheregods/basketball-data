@@ -12,7 +12,18 @@
  * @typedef {KnownHeaders & Record.<string, string | number | string[]>} HTTPHeaders
  */
 
+import { gotScraping } from 'got-scraping';
+
+/** @type {typeof globalThis.fetch} */
+const originalFetch = globalThis.fetch;
+
 export class HTTPClient {
+	/**
+	 * @description Flag to control whether to use got-scraping for TLS bypass.
+	 * @type {boolean}
+	 */
+	static useGotScraping = true;
+
 	/**
 	 * @constructor
 	 * @param {string} baseUrl - The URL to fetch
@@ -47,20 +58,49 @@ export class HTTPClient {
 		};
 
 		try {
-			const response = await fetch(url, config);
-			if (response.status === 429 || response.status >= 500) {
-				if (retries > 0) {
-					console.warn(`[HTTP ${ response.status }] Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
-					await new Promise( resolve => setTimeout(resolve, delay) );
-					return this.request(endpoint, options, retries - 1, delay * 2);
+			if (HTTPClient.useGotScraping && globalThis.fetch === originalFetch) {
+				const response = await gotScraping({
+					url,
+					method: config.method || 'GET',
+					headers: config.headers,
+					responseType: 'json',
+					throwHttpErrors: false,
+					headerGeneratorOptions: {
+						browsers: [{ name: 'chrome', minVersion: 120 }],
+						devices: ['desktop'],
+						operatingSystems: ['windows']
+					}
+				});
+
+				if (response.statusCode === 429 || response.statusCode >= 500) {
+					if (retries > 0) {
+						console.warn(`[HTTP ${ response.statusCode }] Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
+						await new Promise( resolve => setTimeout(resolve, delay) );
+						return this.request(endpoint, options, retries - 1, delay * 2);
+					}
 				}
-			}
 
-			if (!response.ok) {
-				throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
-			}
+				if (response.statusCode < 200 || response.statusCode >= 300) {
+					throw new Error(`HTTP Error: ${response.statusCode} ${response.statusMessage || ''}`);
+				}
 
-			return await response.json();
+				return response.body;
+			} else {
+				const response = await fetch(url, config);
+				if (response.status === 429 || response.status >= 500) {
+					if (retries > 0) {
+						console.warn(`[HTTP ${ response.status }] Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
+						await new Promise( resolve => setTimeout(resolve, delay) );
+						return this.request(endpoint, options, retries - 1, delay * 2);
+					}
+				}
+
+				if (!response.ok) {
+					throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+				}
+
+				return await response.json();
+			}
 		} catch (error) {
 			if (retries > 0) {
 				console.warn(`[HTTP Error] ${ error.message || error }. Retrying ${ url } in ${ delay }ms... (${ retries } left)`);

@@ -76,6 +76,10 @@ test.beforeEach(() => {
 });
 
 test.describe('HTTPClient', () => {
+	test('should default static useGotScraping property to true', () => {
+		assert.equal(HTTPClient.useGotScraping, true);
+	});
+
 	test('should make a successful request and parse JSON', async () => {
 		const client = new HTTPClient('http://test.api');
 		fetchMock = async (url, config) => {
