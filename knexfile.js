@@ -1,11 +1,13 @@
 /**
  * @type { Object.<string, import("knex").Knex.Config> }
  */
+const league = (process.env.LEAGUE || 'WNBA').toUpperCase();
+
 export default {
 	development: {
 		client: 'sqlite3',
 		connection: {
-			filename: './data/SQL/WNBA.sqlite'
+			filename: `./data/SQL/${league}.sqlite`
 		},
 		useNullAsDefault: true,
 		migrations: {

@@ -219,8 +219,18 @@ node run.js [options]
    - **Batch Loading**: Inserts rows in small transaction-safe chunks of **100 rows** to avoid SQLite variables and statement limits.
 4. Closes connections gracefully after execution.
 
-### Database Paths
+### Database Paths & Migrations Management
 - **Local DB Location**: `data/SQL/<LEAGUE>.sqlite` (e.g., `data/SQL/WNBA.sqlite`). Note: The `data/SQL/` directory is registered in `.gitignore` to prevent tracking staging databases in Git.
+- **Multi-League Support**: We have distinct database files per league or continent (e.g., `WNBA.sqlite`, `NBA.sqlite`, `EUROPE.sqlite`).
+- **Dynamic Knexfile Resolution**: The `knexfile.js` configuration dynamically resolves the target league database using the `LEAGUE` environment variable (defaulting to `WNBA`). For example:
+  ```bash
+  # To run migrations for NBA:
+  LEAGUE=nba pnpm exec knex migrate:latest --env development
+
+  # To check status for Europe:
+  LEAGUE=europe pnpm exec knex migrate:status --env development
+  ```
+- **Programmatic Loader Migrations**: When Stage 3 (`load`) initializes a connection to any database via `initDatabase(league)`, it programmatically invokes `await db.migrate.latest()` to ensure all tables are correctly scaffolded and up-to-date automatically.
 
 ---
 
