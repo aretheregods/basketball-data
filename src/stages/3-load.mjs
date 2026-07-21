@@ -20,91 +20,15 @@ export async function initDatabase(league = 'wnba') {
 		connection: {
 			filename: dbPath
 		},
-		useNullAsDefault: true
+		useNullAsDefault: true,
+		migrations: {
+			directory: path.resolve('src/db/migrations'),
+			tableName: 'knex_migrations'
+		}
 	});
 
-	// Create player_game_stats table
-	const hasPlayersTable = await db.schema.hasTable('player_game_stats');
-	if (!hasPlayersTable) {
-		await db.schema.createTable('player_game_stats', (table) => {
-			table.string('game_id');
-			table.integer('player_id');
-			table.string('player_name');
-			table.string('normalized_name');
-			table.integer('team_id');
-			table.string('team_abbreviation');
-			table.string('team_city');
-			table.string('start_position');
-			table.string('comment');
-			table.string('min');
-			table.integer('fgm');
-			table.integer('fga');
-			table.float('fg_pct');
-			table.integer('fg3m');
-			table.integer('fg3a');
-			table.float('fg3_pct');
-			table.integer('ftm');
-			table.integer('fta');
-			table.float('ft_pct');
-			table.integer('oreb');
-			table.integer('dreb');
-			table.integer('reb');
-			table.integer('ast');
-			table.integer('stl');
-			table.integer('blk');
-			table.integer('tov');
-			table.integer('pf');
-			table.integer('pts');
-			table.float('plus_minus');
-			table.float('ts_pct');
-			table.float('efg_pct');
-			table.float('game_score');
-			table.string('season');
-			table.string('league');
-			table.integer('synced').defaultTo(0);
-
-			table.primary(['game_id', 'player_id']);
-		});
-	}
-
-	// Create team_game_stats table
-	const hasTeamsTable = await db.schema.hasTable('team_game_stats');
-	if (!hasTeamsTable) {
-		await db.schema.createTable('team_game_stats', (table) => {
-			table.string('game_id');
-			table.integer('team_id');
-			table.string('team_name');
-			table.string('team_abbreviation');
-			table.string('team_city');
-			table.string('min');
-			table.integer('fgm');
-			table.integer('fga');
-			table.float('fg_pct');
-			table.integer('fg3m');
-			table.integer('fg3a');
-			table.float('fg3_pct');
-			table.integer('ftm');
-			table.integer('fta');
-			table.float('ft_pct');
-			table.integer('oreb');
-			table.integer('dreb');
-			table.integer('reb');
-			table.integer('ast');
-			table.integer('stl');
-			table.integer('blk');
-			table.integer('tov');
-			table.integer('pf');
-			table.integer('pts');
-			table.float('plus_minus');
-			table.float('ts_pct');
-			table.float('efg_pct');
-			table.string('season');
-			table.string('league');
-			table.integer('synced').defaultTo(0);
-
-			table.primary(['game_id', 'team_id']);
-		});
-	}
+	// Run latest migrations programmatically
+	await db.migrate.latest();
 
 	return db;
 }
