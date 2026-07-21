@@ -43,26 +43,36 @@ export async function loadStage(league, year, cleanedGamesArray) {
 	console.log(`📥 Starting Stage 3 [LOAD] for ${league.toUpperCase()} - ${year}`);
 
 	let data = cleanedGamesArray;
+	let hasDirectData = false;
 
-	// Load from cache if empty or not provided
-	if (!data || (!Array.isArray(data.players) && !Array.isArray(data.teams))) {
-		const cachePath = path.resolve('data/transformed', league, String(year), 'transformed.json');
-		try {
-			console.log(`📂 No memory cache passed. Loading transformed data from cache file: ${cachePath}`);
-			const cacheContent = await fs.readFile(cachePath, 'utf8');
-			data = JSON.parse(cacheContent);
-		} catch (error) {
-			console.warn(`⚠️ Transformed data cache file not found or failed to read at ${cachePath}. skipping Load.`);
-			return;
+	if (data && (Array.isArray(data.players) || Array.isArray(data.teams))) {
+		const playersCount = Array.isArray(data.players) ? data.players.length : 0;
+		const teamsCount = Array.isArray(data.teams) ? data.teams.length : 0;
+		if (playersCount > 0 || teamsCount > 0) {
+			hasDirectData = true;
 		}
 	}
 
-	const players = data.players || [];
-	const teams = data.teams || [];
+	// Load from cache if empty or not provided
+	if (!hasDirectData) {
+		const cachePath = path.resolve('data/transformed', league, String(year), 'transformed.json');
+		try {
+			console.log(`📂 No direct memory data passed. Loading transformed data from cache file: ${cachePath}`);
+			const cacheContent = await fs.readFile(cachePath, 'utf8');
+			data = JSON.parse(cacheContent);
+		} catch (error) {
+			console.error(`❌ Transformed data cache file not found or failed to read at ${cachePath}.`);
+			throw new Error(`Failed to load data for ${league.toUpperCase()} - ${year}. No direct data passed and fallback cache file not found or unreadable.`);
+		}
+	}
+
+	const players = (data && data.players) || [];
+	const teams = (data && data.teams) || [];
 
 	if (players.length === 0 && teams.length === 0) {
-		console.log(`⚠️ No player or team records to load for ${league.toUpperCase()} - ${year}.`);
-		return;
+		const msg = `❌ No player or team records to load for ${league.toUpperCase()} - ${year}.`;
+		console.error(msg);
+		throw new Error(msg);
 	}
 
 	console.log(`💾 Connecting to SQLite local staging database [data/SQL/${league.toUpperCase()}.sqlite]...`);
