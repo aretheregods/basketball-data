@@ -1,39 +1,50 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "WNBALeagueGameLog",
-  "description": "Schema for WNBA League Game Log API response",
+  "description": "Schema for WNBA Full Schedule (Data WNBA)",
   "type": "object",
   "properties": {
-    "resource": {
-      "type": "string"
-    },
-    "parameters": {
-      "type": "object"
-    },
-    "resultSets": {
+    "lscd": {
       "type": "array",
       "items": {
         "type": "object",
         "properties": {
-          "name": {
-            "type": "string"
-          },
-          "headers": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "rowSet": {
-            "type": "array",
-            "items": {
-              "type": "array"
-            }
+          "mscd": {
+            "type": "object",
+            "properties": {
+              "mon": { "type": "string" },
+              "g": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "gid": { "type": "string" },
+                    "gcode": { "type": "string" },
+                    "v": {
+                      "type": "object",
+                      "properties": {
+                        "ta": { "type": "string" }
+                      },
+                      "required": ["ta"]
+                    },
+                    "h": {
+                      "type": "object",
+                      "properties": {
+                        "ta": { "type": "string" }
+                      },
+                      "required": ["ta"]
+                    }
+                  },
+                  "required": ["gid", "gcode", "v", "h"]
+                }
+              }
+            },
+            "required": ["g"]
           }
         },
-        "required": ["name", "headers", "rowSet"]
+        "required": ["mscd"]
       }
     }
   },
-  "required": ["resource", "resultSets"]
+  "required": ["lscd"]
 }

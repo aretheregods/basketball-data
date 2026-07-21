@@ -61,30 +61,34 @@ export class WNBAScraper extends HTTPClient {
 	 * @throws {Error} - If the request fails or schema validation fails
 	 */
 	async getSeasonGameSlugs(year) {
-		const url = `/leaguegamelog?Counter=0&Direction=DESC&LeagueID=10&PlayerOrTeam=T&Season=${ year }&SeasonType=02&Sorter=DATE`;
+		const url = `https://data.wnba.com/data/10s/v2015/json/mobile_teams/wnba/${year}/league/10_full_schedule.json`;
 
 		const data = await this.request(url, {}, 3, 5000);
 
 		// Validate against JSON schema
 		validateSchema('wnba/leaguegamelog.json', data);
 
-		const rows = data.resultSets[0].rowSet;
-		const columns = data.resultSets[0].headers;
-
-		const gameIdIdx = columns.indexOf('GAME_ID');
-		const matchupIdx = columns.indexOf('MATCHUP');
-
-		if (gameIdIdx === -1 || matchupIdx === -1) {
-			throw new Error("Required headers 'GAME_ID' or 'MATCHUP' missing in response");
-		}
-
 		/** @type {string[]} */
-		const slugs = rows.map( row => {
-			const gameId = row[gameIdIdx];
-			const matchup = row[matchupIdx];
-			const cleanMatchup = matchup.toLowerCase().replace(/[\s\.]+/g, '').replace('@', '-vs-');
-			return `${ cleanMatchup }-${ gameId }`;
-		} );
+		const slugs = [];
+
+		if (data && Array.isArray(data.lscd)) {
+			for (const monthObj of data.lscd) {
+				if (monthObj && monthObj.mscd && Array.isArray(monthObj.mscd.g)) {
+					for (const game of monthObj.mscd.g) {
+						if (game && game.gid) {
+							const visitor = (game.v && game.v.ta) ? game.v.ta.toLowerCase() : '';
+							const home = (game.h && game.h.ta) ? game.h.ta.toLowerCase() : '';
+							const gameId = game.gid;
+							if (visitor && home) {
+								slugs.push(`${visitor}-vs-${home}-${gameId}`);
+							} else {
+								slugs.push(`matchup-${gameId}`);
+							}
+						}
+					}
+				}
+			}
+		}
 
 		this.gameSlugs = [...new Set(slugs)];
 
@@ -109,9 +113,189 @@ export class WNBAScraper extends HTTPClient {
 	 * @returns {string} - The full request URL
 	 */
 	getGameUrl(gameId, type) {
-		const resolvedType = type || this.boxscoreType;
-		const endpoint = this.getGameEndpoint(gameId, resolvedType);
-		return `${endpoint}?EndPeriod=10&EndRange=28800&GameID=${gameId}&RangeType=0&StartPeriod=1&StartRange=0`;
+		return `https://www.wnba.com/game/${gameId}`;
+	}
+
+	/**
+	 * @description Universal fetch runner with automatic retry and exponential back off on rate limits and network errors
+	 */
+	async request(endpoint, options = {}, retries = 3, delay = 1000) {
+		const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
+
+		if (url.includes('wnba.com/game/')) {
+			const config = {
+				...options,
+				headers: {
+					'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+					'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+					'accept-language': 'en-US,en;q=0.9',
+					...options.headers
+				}
+			};
+
+			try {
+				const response = await fetch(url, config);
+				if (response.status === 429 || response.status >= 500) {
+					if (retries > 0) {
+						console.warn(`[HTTP ${ response.status }] Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
+						await new Promise( resolve => setTimeout(resolve, delay) );
+						return this.request(endpoint, options, retries - 1, delay * 2);
+					}
+				}
+
+				if (!response.ok) {
+					throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+				}
+
+				const html = await response.text();
+				const match = html.match(/<script id=\"__NEXT_DATA__\" type=\"application\/json\">(.*?)<\/script>/s);
+				if (!match) {
+					throw new Error(`Could not find __NEXT_DATA__ script tag in HTML response from ${url}`);
+				}
+
+				const nextData = JSON.parse(match[1]);
+				const game = nextData?.props?.pageProps?.game;
+				if (!game) {
+					throw new Error(`Could not find game pageProps in __NEXT_DATA__ from ${url}`);
+				}
+
+				return this.mapNextDataToStatsAPI(game);
+			} catch (error) {
+				if (retries > 0) {
+					console.warn(`[HTTP Error] ${ error.message || error }. Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
+					await new Promise( resolve => setTimeout(resolve, delay) );
+					return this.request(endpoint, options, retries - 1, delay * 2);
+				}
+				throw error;
+			}
+		}
+
+		return super.request(endpoint, options, retries, delay);
+	}
+
+	/**
+	 * @description Maps the Next.js game pageProps state to standard Stats API traditional boxscore response structure.
+	 * @param {Object} game - The pageProps game object
+	 * @returns {Object} - Standardized Stats API-like JSON response
+	 */
+	mapNextDataToStatsAPI(game) {
+		const gameId = game.gameId || '';
+
+		const playerHeaders = [
+			"GAME_ID", "TEAM_ID", "TEAM_ABBREVIATION", "TEAM_CITY", "PLAYER_ID", "PLAYER_NAME", "START_POSITION", "COMMENT", "MIN",
+			"FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT", "FTM", "FTA", "FT_PCT", "OREB", "DREB", "REB", "AST", "STL", "BLK", "TO", "PF", "PTS", "PLUS_MINUS"
+		];
+
+		const teamHeaders = [
+			"GAME_ID", "TEAM_ID", "TEAM_NAME", "TEAM_ABBREVIATION", "TEAM_CITY", "MIN",
+			"FGM", "FGA", "FG_PCT", "FG3M", "FG3A", "FG3_PCT", "FTM", "FTA", "FT_PCT", "OREB", "DREB", "REB", "AST", "STL", "BLK", "TO", "PF", "PTS", "PLUS_MINUS"
+		];
+
+		const playerRowSet = [];
+		const teamRowSet = [];
+
+		const processTeam = (teamObj) => {
+			if (!teamObj) return;
+			const teamId = teamObj.teamId;
+			const teamName = teamObj.teamName || '';
+			const teamCity = teamObj.teamCity || '';
+			const teamAbbrev = teamObj.teamTricode || '';
+
+			// Process Team Stats
+			const tStats = teamObj.statistics || {};
+			const teamRow = [
+				gameId,
+				teamId,
+				`${teamCity} ${teamName}`.trim(),
+				teamAbbrev,
+				teamCity,
+				tStats.minutes || '200:00',
+				tStats.fieldGoalsMade ?? 0,
+				tStats.fieldGoalsAttempted ?? 0,
+				tStats.fieldGoalsPercentage ?? 0,
+				tStats.threePointersMade ?? 0,
+				tStats.threePointersAttempted ?? 0,
+				tStats.threePointersPercentage ?? 0,
+				tStats.freeThrowsMade ?? 0,
+				tStats.freeThrowsAttempted ?? 0,
+				tStats.freeThrowsPercentage ?? 0,
+				tStats.reboundsOffensive ?? 0,
+				tStats.reboundsDefensive ?? 0,
+				tStats.reboundsTotal ?? 0,
+				tStats.assists ?? 0,
+				tStats.steals ?? 0,
+				tStats.blocks ?? 0,
+				tStats.turnovers ?? 0,
+				tStats.foulsPersonal ?? 0,
+				tStats.points ?? 0,
+				tStats.plusMinusPoints ?? 0
+			];
+			teamRowSet.push(teamRow);
+
+			// Process Team Players
+			const players = teamObj.players || [];
+			for (const p of players) {
+				const playerId = p.personId;
+				const firstName = p.firstName || '';
+				const familyName = p.familyName || '';
+				const playerName = `${firstName} ${familyName}`.trim();
+				const startPosition = p.position || '';
+				const comment = p.comment || '';
+				const pStats = p.statistics || {};
+
+				const playerRow = [
+					gameId,
+					teamId,
+					teamAbbrev,
+					teamCity,
+					playerId,
+					playerName,
+					startPosition,
+					comment,
+					pStats.minutes || null,
+					pStats.fieldGoalsMade ?? 0,
+					pStats.fieldGoalsAttempted ?? 0,
+					pStats.fieldGoalsPercentage ?? 0,
+					pStats.threePointersMade ?? 0,
+					pStats.threePointersAttempted ?? 0,
+					pStats.threePointersPercentage ?? 0,
+					pStats.freeThrowsMade ?? 0,
+					pStats.freeThrowsAttempted ?? 0,
+					pStats.freeThrowsPercentage ?? 0,
+					pStats.reboundsOffensive ?? 0,
+					pStats.reboundsDefensive ?? 0,
+					pStats.reboundsTotal ?? 0,
+					pStats.assists ?? 0,
+					pStats.steals ?? 0,
+					pStats.blocks ?? 0,
+					pStats.turnovers ?? 0,
+					pStats.foulsPersonal ?? 0,
+					pStats.points ?? 0,
+					pStats.plusMinusPoints ?? 0
+				];
+				playerRowSet.push(playerRow);
+			}
+		};
+
+		processTeam(game.homeTeam);
+		processTeam(game.awayTeam);
+
+		return {
+			resource: "boxscore",
+			parameters: { GameID: gameId },
+			resultSets: [
+				{
+					name: "PlayerStats",
+					headers: playerHeaders,
+					rowSet: playerRowSet
+				},
+				{
+					name: "TeamStats",
+					headers: teamHeaders,
+					rowSet: teamRowSet
+				}
+			]
+		};
 	}
 
 	/**
