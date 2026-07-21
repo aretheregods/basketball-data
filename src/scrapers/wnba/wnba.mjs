@@ -61,7 +61,7 @@ export class WNBAScraper extends HTTPClient {
 	 * @throws {Error} - If the request fails or schema validation fails
 	 */
 	async getSeasonGameSlugs(year) {
-		const url = `/leaguegamelog?Counter=0&Direction=DESC&LeagueID=10&PlayerOrTeam=T&Season=${ year }&SeasonType=02&Sorter=DATE`;
+		const url = `/leaguegamelog?Counter=0&Direction=DESC&LeagueID=10&PlayerOrTeam=T&Season=${ year }&SeasonType=Regular+Season&Sorter=DATE`;
 
 		const data = await this.request(url, {}, 3, 5000);
 
