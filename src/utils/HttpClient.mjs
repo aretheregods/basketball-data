@@ -57,15 +57,16 @@ export class HTTPClient {
 			});
 			this.page = await context.newPage();
 
-			// Resolve target host main page for bypassing the firewall (e.g. https://stats.wnba.com)
-			let targetMainPage = 'https://www.wnba.com';
+			// Resolve origin of baseUrl for Same-Origin requests (e.g. https://stats.wnba.com)
+			let origin = 'https://stats.wnba.com';
 			try {
 				const urlObj = new URL(this.baseUrl);
-				targetMainPage = urlObj.origin;
+				origin = urlObj.origin;
 			} catch (_) {}
 
-			console.log(`Navigating to ${targetMainPage} to pass Akamai firewall...`);
-			await this.page.goto(targetMainPage, { waitUntil: 'domcontentloaded' });
+			const targetRobotsUrl = `${origin}/robots.txt`;
+			console.log(`Navigating to same-origin robots.txt: ${targetRobotsUrl}`);
+			await this.page.goto(targetRobotsUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
 		}
 	}
 
@@ -105,10 +106,22 @@ export class HTTPClient {
 
 				console.log(`[Playwright Fetch] Navigating to target: ${url}`);
 				const data = await this.page.evaluate(async ({ targetUrl, headers, method }) => {
-					const response = await fetch(targetUrl, {
-						method,
-						headers
-					});
+					// Use clean iframe fetch to guarantee native unmodified browser fetch
+					const iframe = document.createElement('iframe');
+					iframe.style.display = 'none';
+					document.body.appendChild(iframe);
+					const cleanFetch = iframe.contentWindow.fetch;
+
+					let response;
+					try {
+						response = await cleanFetch(targetUrl, {
+							method,
+							headers
+						});
+					} finally {
+						// Always cleanup iframe
+						document.body.removeChild(iframe);
+					}
 
 					let body = null;
 					if (response.ok) {
