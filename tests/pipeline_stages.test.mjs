@@ -77,6 +77,19 @@ test.describe('BaseNormalizer', () => {
 	test('calculateGameScore should calculate Game Score correctly', () => {
 		assert.equal(BaseNormalizer.calculateGameScore(20, 8, 15, 4, 3, 2, 5, 2, 4, 1, 3, 2), 17.5);
 	});
+
+	test('parseMinutesToFloat should correctly parse various formats', () => {
+		assert.equal(BaseNormalizer.parseMinutesToFloat('PT36M12.00S'), 36.2);
+		assert.equal(BaseNormalizer.parseMinutesToFloat('PT10M'), 10.0);
+		assert.equal(BaseNormalizer.parseMinutesToFloat('PT1H20M5S'), 80.1);
+		assert.equal(BaseNormalizer.parseMinutesToFloat('36:12'), 36.2);
+		assert.equal(BaseNormalizer.parseMinutesToFloat('05:03'), 5.1);
+		assert.equal(BaseNormalizer.parseMinutesToFloat('36'), 36.0);
+		assert.equal(BaseNormalizer.parseMinutesToFloat(36), 36.0);
+		assert.equal(BaseNormalizer.parseMinutesToFloat(''), 0.0);
+		assert.equal(BaseNormalizer.parseMinutesToFloat(null), 0.0);
+		assert.equal(BaseNormalizer.parseMinutesToFloat(undefined), 0.0);
+	});
 });
 
 test.describe('Pipeline Stages', () => {

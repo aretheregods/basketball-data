@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NBABoxScore",
+  "description": "Schema for NBA Box Score extracted directly from the __NEXT_DATA__ game state",
+  "type": "object",
+  "properties": {
+    "gameId": { "type": "string" },
+    "homeTeam": {
+      "type": "object",
+      "properties": {
+        "teamId": { "type": "integer" },
+        "teamName": { "type": "string" },
+        "teamCity": { "type": "string" },
+        "teamTricode": { "type": "string" },
+        "statistics": { "type": "object" },
+        "players": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "personId": { "type": "integer" },
+              "firstName": { "type": "string" },
+              "familyName": { "type": "string" },
+              "position": { "type": "string" },
+              "comment": { "type": "string" },
+              "statistics": { "type": "object" }
+            },
+            "required": ["personId", "firstName", "familyName"]
+          }
+        }
+      },
+      "required": ["teamId", "teamName", "teamTricode", "players"]
+    },
+    "awayTeam": {
+      "type": "object",
+      "properties": {
+        "teamId": { "type": "integer" },
+        "teamName": { "type": "string" },
+        "teamCity": { "type": "string" },
+        "teamTricode": { "type": "string" },
+        "statistics": { "type": "object" },
+        "players": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "personId": { "type": "integer" },
+              "firstName": { "type": "string" },
+              "familyName": { "type": "string" },
+              "position": { "type": "string" },
+              "comment": { "type": "string" },
+              "statistics": { "type": "object" }
+            },
+            "required": ["personId", "firstName", "familyName"]
+          }
+        }
+      },
+      "required": ["teamId", "teamName", "teamTricode", "players"]
+    }
+  },
+  "required": ["gameId", "homeTeam", "awayTeam"]
+}
