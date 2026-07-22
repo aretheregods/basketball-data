@@ -7,6 +7,7 @@
  */
 
 import { WNBAScraper } from './src/scrapers/wnba/wnba.mjs';
+import { NBAScraper } from './src/scrapers/nba/nba.mjs';
 import { extractStage } from './src/stages/1-extract.mjs';
 import { transformStage } from './src/stages/2-transform.mjs';
 import { loadStage } from './src/stages/3-load.mjs';
@@ -37,7 +38,7 @@ function parseArgs() {
 // Master registry defining the scrapers for each league
 const LEAGUE_SCRAPERS = {
 	wnba: (options) => new WNBAScraper(options),
-	// nba: (options) => new NBAScraper(options),
+	nba: (options) => new NBAScraper(options),
 };
 
 /**

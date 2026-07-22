@@ -57,133 +57,271 @@ export async function transformStage(league, year) {
 			const content = await fs.readFile(filePath, 'utf8');
 			const rawData = JSON.parse(content);
 
-			if (!rawData || !Array.isArray(rawData.resultSets)) {
+			if (!rawData) {
 				continue;
 			}
 
-			const playerStatsSet = rawData.resultSets.find(s => s.name === 'PlayerStats');
-			const teamStatsSet = rawData.resultSets.find(s => s.name === 'TeamStats');
+			if (league.toLowerCase() === 'nba') {
+				// Direct flat Next.js structure parsing for NBA
+				const gameId = String(rawData.gameId || '').trim();
+				if (!gameId) continue;
 
-			const rawPlayers = mapResultSet(playerStatsSet);
-			const rawTeams = mapResultSet(teamStatsSet);
+				const processNBATeam = (teamObj) => {
+					if (!teamObj) return;
+					const teamId = Number(teamObj.teamId || 0);
+					const teamName = teamObj.teamName ? BaseNormalizer.cleanString(teamObj.teamName) : '';
+					const teamCity = teamObj.teamCity ? BaseNormalizer.cleanString(teamObj.teamCity) : '';
+					const teamAbbrev = teamObj.teamTricode ? BaseNormalizer.cleanString(teamObj.teamTricode) : '';
 
-			// Transform Players
-			for (const p of rawPlayers) {
-				const gameId = String(p.GAME_ID || '').trim();
-				const playerId = Number(p.PLAYER_ID || 0);
+					const tStats = teamObj.statistics || {};
+					const pts = Number(tStats.points ?? 0);
+					const fgm = Number(tStats.fieldGoalsMade ?? 0);
+					const fga = Number(tStats.fieldGoalsAttempted ?? 0);
+					const fg3m = Number(tStats.threePointersMade ?? 0);
+					const fg3a = Number(tStats.threePointersAttempted ?? 0);
+					const ftm = Number(tStats.freeThrowsMade ?? 0);
+					const fta = Number(tStats.freeThrowsAttempted ?? 0);
+					const oreb = Number(tStats.reboundsOffensive ?? 0);
+					const dreb = Number(tStats.reboundsDefensive ?? 0);
+					const stl = Number(tStats.steals ?? 0);
+					const ast = Number(tStats.assists ?? 0);
+					const blk = Number(tStats.blocks ?? 0);
+					const pf = Number(tStats.foulsPersonal ?? 0);
+					const tov = Number(tStats.turnovers ?? 0);
 
-				if (!gameId || !playerId) continue;
+					const fullTeamName = `${teamCity} ${teamName}`.trim();
 
-				const pts = Number(p.PTS ?? 0);
-				const fgm = Number(p.FGM ?? 0);
-				const fga = Number(p.FGA ?? 0);
-				const fg3m = Number(p.FG3M ?? 0);
-				const fg3a = Number(p.FG3A ?? 0);
-				const ftm = Number(p.FTM ?? 0);
-				const fta = Number(p.FTA ?? 0);
-				const oreb = Number(p.OREB ?? 0);
-				const dreb = Number(p.DREB ?? 0);
-				const stl = Number(p.STL ?? 0);
-				const ast = Number(p.AST ?? 0);
-				const blk = Number(p.BLK ?? 0);
-				const pf = Number(p.PF ?? 0);
-				const tov = Number(p.TO ?? p.TOV ?? p.TURNOVERS ?? 0); // Handle TO/TOV keyword variations safely
+					allTeams.push({
+						game_id: gameId,
+						team_id: teamId,
+						team_name: fullTeamName,
+						team_abbreviation: teamAbbrev,
+						team_city: teamCity,
+						min: tStats.minutes ? String(BaseNormalizer.parseMinutesToFloat(tStats.minutes)) : null,
+						fgm,
+						fga,
+						fg_pct: Number(tStats.fieldGoalsPercentage ?? 0.0),
+						fg3m,
+						fg3a,
+						fg3_pct: Number(tStats.threePointersPercentage ?? 0.0),
+						ftm,
+						fta,
+						ft_pct: Number(tStats.freeThrowsPercentage ?? 0.0),
+						oreb,
+						dreb,
+						reb: Number(tStats.reboundsTotal ?? 0),
+						ast,
+						stl,
+						blk,
+						tov,
+						pf,
+						pts,
+						plus_minus: Number(tStats.plusMinusPoints ?? 0.0),
+						ts_pct: BaseNormalizer.calculateTSPct(pts, fga, fta),
+						efg_pct: BaseNormalizer.calculateEFGPct(fgm, fg3m, fga),
+						season: String(year),
+						league: 'nba',
+						synced: 0
+					});
 
-				allPlayers.push({
-					game_id: gameId,
-					player_id: playerId,
-					player_name: p.PLAYER_NAME ? BaseNormalizer.cleanString(p.PLAYER_NAME) : '',
-					normalized_name: p.PLAYER_NAME ? BaseNormalizer.normalizeName(p.PLAYER_NAME) : '',
-					team_id: Number(p.TEAM_ID || 0),
-					team_abbreviation: p.TEAM_ABBREVIATION ? BaseNormalizer.cleanString(p.TEAM_ABBREVIATION) : '',
-					team_city: p.TEAM_CITY ? BaseNormalizer.cleanString(p.TEAM_CITY) : '',
-					start_position: p.START_POSITION ? BaseNormalizer.cleanString(p.START_POSITION) : '',
-					comment: p.COMMENT ? BaseNormalizer.cleanString(p.COMMENT) : '',
-					min: p.MIN ? String(p.MIN).trim() : null,
-					fgm,
-					fga,
-					fg_pct: Number(p.FG_PCT ?? 0.0),
-					fg3m,
-					fg3a,
-					fg3_pct: Number(p.FG3_PCT ?? 0.0),
-					ftm,
-					fta,
-					ft_pct: Number(p.FT_PCT ?? 0.0),
-					oreb,
-					dreb,
-					reb: Number(p.REB ?? 0),
-					ast,
-					stl,
-					blk,
-					tov,
-					pf,
-					pts,
-					plus_minus: Number(p.PLUS_MINUS ?? 0.0),
-					ts_pct: BaseNormalizer.calculateTSPct(pts, fga, fta),
-					efg_pct: BaseNormalizer.calculateEFGPct(fgm, fg3m, fga),
-					game_score: BaseNormalizer.calculateGameScore(
-						pts, fgm, fga, fta, ftm, oreb, dreb, stl, ast, blk, pf, tov
-					),
-					season: String(year),
-					league: String(league),
-					synced: 0
-				});
-			}
+					const players = teamObj.players || [];
+					for (const p of players) {
+						const playerId = Number(p.personId || 0);
+						if (!playerId) continue;
 
-			// Transform Teams
-			for (const t of rawTeams) {
-				const gameId = String(t.GAME_ID || '').trim();
-				const teamId = Number(t.TEAM_ID || 0);
+						const firstName = p.firstName || '';
+						const familyName = p.familyName || '';
+						const rawPlayerName = `${firstName} ${familyName}`.trim();
 
-				if (!gameId || !teamId) continue;
+						const pStats = p.statistics || {};
+						const pPts = Number(pStats.points ?? 0);
+						const pFgm = Number(pStats.fieldGoalsMade ?? 0);
+						const pFga = Number(pStats.fieldGoalsAttempted ?? 0);
+						const pFg3m = Number(pStats.threePointersMade ?? 0);
+						const pFg3a = Number(pStats.threePointersAttempted ?? 0);
+						const pFtm = Number(pStats.freeThrowsMade ?? 0);
+						const pFta = Number(pStats.freeThrowsAttempted ?? 0);
+						const pOreb = Number(pStats.reboundsOffensive ?? 0);
+						const pDreb = Number(pStats.reboundsDefensive ?? 0);
+						const pStl = Number(pStats.steals ?? 0);
+						const pAst = Number(pStats.assists ?? 0);
+						const pBlk = Number(pStats.blocks ?? 0);
+						const pPf = Number(pStats.foulsPersonal ?? 0);
+						const pTov = Number(pStats.turnovers ?? 0);
 
-				const pts = Number(t.PTS ?? 0);
-				const fgm = Number(t.FGM ?? 0);
-				const fga = Number(t.FGA ?? 0);
-				const fg3m = Number(t.FG3M ?? 0);
-				const fg3a = Number(t.FG3A ?? 0);
-				const ftm = Number(t.FTM ?? 0);
-				const fta = Number(t.FTA ?? 0);
-				const oreb = Number(t.OREB ?? 0);
-				const dreb = Number(t.DREB ?? 0);
-				const stl = Number(t.STL ?? 0);
-				const ast = Number(t.AST ?? 0);
-				const blk = Number(t.BLK ?? 0);
-				const pf = Number(t.PF ?? 0);
-				const tov = Number(t.TO ?? t.TOV ?? t.TURNOVERS ?? 0);
+						allPlayers.push({
+							game_id: gameId,
+							player_id: playerId,
+							player_name: BaseNormalizer.cleanString(rawPlayerName),
+							normalized_name: BaseNormalizer.normalizeName(rawPlayerName),
+							team_id: teamId,
+							team_abbreviation: teamAbbrev,
+							team_city: teamCity,
+							start_position: p.position ? BaseNormalizer.cleanString(p.position) : '',
+							comment: p.comment ? BaseNormalizer.cleanString(p.comment) : '',
+							min: pStats.minutes ? String(BaseNormalizer.parseMinutesToFloat(pStats.minutes)) : null,
+							fgm: pFgm,
+							fga: pFga,
+							fg_pct: Number(pStats.fieldGoalsPercentage ?? 0.0),
+							fg3m: pFg3m,
+							fg3a: pFg3a,
+							fg3_pct: Number(pStats.threePointersPercentage ?? 0.0),
+							ftm: pFtm,
+							fta: pFta,
+							ft_pct: Number(pStats.freeThrowsPercentage ?? 0.0),
+							oreb: pOreb,
+							dreb: pDreb,
+							reb: Number(pStats.reboundsTotal ?? 0),
+							ast: pAst,
+							stl: pStl,
+							blk: pBlk,
+							tov: pTov,
+							pf: pPf,
+							pts: pPts,
+							plus_minus: Number(pStats.plusMinusPoints ?? 0.0),
+							ts_pct: BaseNormalizer.calculateTSPct(pPts, pFga, pFta),
+							efg_pct: BaseNormalizer.calculateEFGPct(pFgm, pFg3m, pFga),
+							game_score: BaseNormalizer.calculateGameScore(
+								pPts, pFgm, pFga, pFta, pFtm, pOreb, pDreb, pStl, pAst, pBlk, pPf, pTov
+							),
+							season: String(year),
+							league: 'nba',
+							synced: 0
+						});
+					}
+				};
 
-				allTeams.push({
-					game_id: gameId,
-					team_id: teamId,
-					team_name: t.TEAM_NAME ? BaseNormalizer.cleanString(t.TEAM_NAME) : '',
-					team_abbreviation: t.TEAM_ABBREVIATION ? BaseNormalizer.cleanString(t.TEAM_ABBREVIATION) : '',
-					team_city: t.TEAM_CITY ? BaseNormalizer.cleanString(t.TEAM_CITY) : '',
-					min: t.MIN ? String(t.MIN).trim() : null,
-					fgm,
-					fga,
-					fg_pct: Number(t.FG_PCT ?? 0.0),
-					fg3m,
-					fg3a,
-					fg3_pct: Number(t.FG3_PCT ?? 0.0),
-					ftm,
-					fta,
-					ft_pct: Number(t.FT_PCT ?? 0.0),
-					oreb,
-					dreb,
-					reb: Number(t.REB ?? 0),
-					ast,
-					stl,
-					blk,
-					tov,
-					pf,
-					pts,
-					plus_minus: Number(t.PLUS_MINUS ?? 0.0),
-					ts_pct: BaseNormalizer.calculateTSPct(pts, fga, fta),
-					efg_pct: BaseNormalizer.calculateEFGPct(fgm, fg3m, fga),
-					season: String(year),
-					league: String(league),
-					synced: 0
-				});
+				processNBATeam(rawData.homeTeam);
+				processNBATeam(rawData.awayTeam);
+			} else {
+				if (!Array.isArray(rawData.resultSets)) {
+					continue;
+				}
+
+				const playerStatsSet = rawData.resultSets.find(s => s.name === 'PlayerStats');
+				const teamStatsSet = rawData.resultSets.find(s => s.name === 'TeamStats');
+
+				const rawPlayers = mapResultSet(playerStatsSet);
+				const rawTeams = mapResultSet(teamStatsSet);
+
+				// Transform Players
+				for (const p of rawPlayers) {
+					const gameId = String(p.GAME_ID || '').trim();
+					const playerId = Number(p.PLAYER_ID || 0);
+
+					if (!gameId || !playerId) continue;
+
+					const pts = Number(p.PTS ?? 0);
+					const fgm = Number(p.FGM ?? 0);
+					const fga = Number(p.FGA ?? 0);
+					const fg3m = Number(p.FG3M ?? 0);
+					const fg3a = Number(p.FG3A ?? 0);
+					const ftm = Number(p.FTM ?? 0);
+					const fta = Number(p.FTA ?? 0);
+					const oreb = Number(p.OREB ?? 0);
+					const dreb = Number(p.DREB ?? 0);
+					const stl = Number(p.STL ?? 0);
+					const ast = Number(p.AST ?? 0);
+					const blk = Number(p.BLK ?? 0);
+					const pf = Number(p.PF ?? 0);
+					const tov = Number(p.TO ?? p.TOV ?? p.TURNOVERS ?? 0); // Handle TO/TOV keyword variations safely
+
+					allPlayers.push({
+						game_id: gameId,
+						player_id: playerId,
+						player_name: p.PLAYER_NAME ? BaseNormalizer.cleanString(p.PLAYER_NAME) : '',
+						normalized_name: p.PLAYER_NAME ? BaseNormalizer.normalizeName(p.PLAYER_NAME) : '',
+						team_id: Number(p.TEAM_ID || 0),
+						team_abbreviation: p.TEAM_ABBREVIATION ? BaseNormalizer.cleanString(p.TEAM_ABBREVIATION) : '',
+						team_city: p.TEAM_CITY ? BaseNormalizer.cleanString(p.TEAM_CITY) : '',
+						start_position: p.START_POSITION ? BaseNormalizer.cleanString(p.START_POSITION) : '',
+						comment: p.COMMENT ? BaseNormalizer.cleanString(p.COMMENT) : '',
+						min: p.MIN ? String(p.MIN).trim() : null,
+						fgm,
+						fga,
+						fg_pct: Number(p.FG_PCT ?? 0.0),
+						fg3m,
+						fg3a,
+						fg3_pct: Number(p.FG3_PCT ?? 0.0),
+						ftm,
+						fta,
+						ft_pct: Number(p.FT_PCT ?? 0.0),
+						oreb,
+						dreb,
+						reb: Number(p.REB ?? 0),
+						ast,
+						stl,
+						blk,
+						tov,
+						pf,
+						pts,
+						plus_minus: Number(p.PLUS_MINUS ?? 0.0),
+						ts_pct: BaseNormalizer.calculateTSPct(pts, fga, fta),
+						efg_pct: BaseNormalizer.calculateEFGPct(fgm, fg3m, fga),
+						game_score: BaseNormalizer.calculateGameScore(
+							pts, fgm, fga, fta, ftm, oreb, dreb, stl, ast, blk, pf, tov
+						),
+						season: String(year),
+						league: String(league),
+						synced: 0
+					});
+				}
+
+				// Transform Teams
+				for (const t of rawTeams) {
+					const gameId = String(t.GAME_ID || '').trim();
+					const teamId = Number(t.TEAM_ID || 0);
+
+					if (!gameId || !teamId) continue;
+
+					const pts = Number(t.PTS ?? 0);
+					const fgm = Number(t.FGM ?? 0);
+					const fga = Number(t.FGA ?? 0);
+					const fg3m = Number(t.FG3M ?? 0);
+					const fg3a = Number(t.FG3A ?? 0);
+					const ftm = Number(t.FTM ?? 0);
+					const fta = Number(t.FTA ?? 0);
+					const oreb = Number(t.OREB ?? 0);
+					const dreb = Number(t.DREB ?? 0);
+					const stl = Number(t.STL ?? 0);
+					const ast = Number(t.AST ?? 0);
+					const blk = Number(t.BLK ?? 0);
+					const pf = Number(t.PF ?? 0);
+					const tov = Number(t.TO ?? t.TOV ?? t.TURNOVERS ?? 0);
+
+					allTeams.push({
+						game_id: gameId,
+						team_id: teamId,
+						team_name: t.TEAM_NAME ? BaseNormalizer.cleanString(t.TEAM_NAME) : '',
+						team_abbreviation: t.TEAM_ABBREVIATION ? BaseNormalizer.cleanString(t.TEAM_ABBREVIATION) : '',
+						team_city: t.TEAM_CITY ? BaseNormalizer.cleanString(t.TEAM_CITY) : '',
+						min: t.MIN ? String(t.MIN).trim() : null,
+						fgm,
+						fga,
+						fg_pct: Number(t.FG_PCT ?? 0.0),
+						fg3m,
+						fg3a,
+						fg3_pct: Number(t.FG3_PCT ?? 0.0),
+						ftm,
+						fta,
+						ft_pct: Number(t.FT_PCT ?? 0.0),
+						oreb,
+						dreb,
+						reb: Number(t.REB ?? 0),
+						ast,
+						stl,
+						blk,
+						tov,
+						pf,
+						pts,
+						plus_minus: Number(t.PLUS_MINUS ?? 0.0),
+						ts_pct: BaseNormalizer.calculateTSPct(pts, fga, fta),
+						efg_pct: BaseNormalizer.calculateEFGPct(fgm, fg3m, fga),
+						season: String(year),
+						league: String(league),
+						synced: 0
+					});
+				}
 			}
 		} catch (error) {
 			console.error(`❌ Failed to transform file ${filePath}:`, error);

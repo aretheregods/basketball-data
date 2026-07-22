@@ -151,4 +151,61 @@ export class BaseNormalizer {
 	calculateGameScore(pts, fgm, fga, fta, ftm, oreb, dreb, stl, ast, blk, pf, to) {
 		return BaseNormalizer.calculateGameScore(pts, fgm, fga, fta, ftm, oreb, dreb, stl, ast, blk, pf, to);
 	}
+
+	/**
+	 * @description Parses ISO-8601 duration strings or traditional MM:SS strings into a floating-point number representing minutes.
+	 * @param {any} minStr - The minutes value to parse
+	 * @returns {number} The parsed minutes as a float rounded to 1 decimal place
+	 */
+	static parseMinutesToFloat(minStr) {
+		if (minStr === null || minStr === undefined || minStr === '') {
+			return 0.0;
+		}
+		if (typeof minStr === 'number') {
+			return Math.round(minStr * 10) / 10;
+		}
+		const cleaned = String(minStr).trim();
+		if (cleaned === '') {
+			return 0.0;
+		}
+
+		// Handle ISO-8601 duration, e.g. "PT36M12.00S", "PT10M", "PT1H20M5S"
+		if (cleaned.startsWith('PT')) {
+			const hoursMatch = cleaned.match(/(\d+)H/);
+			const minutesMatch = cleaned.match(/(\d+)M/);
+			const secondsMatch = cleaned.match(/(\d+(?:\.\d+)?)S/);
+
+			const hours = hoursMatch ? parseInt(hoursMatch[1], 10) : 0;
+			const minutes = minutesMatch ? parseInt(minutesMatch[1], 10) : 0;
+			const seconds = secondsMatch ? parseFloat(secondsMatch[1]) : 0.0;
+
+			const totalMinutes = (hours * 60) + minutes + (seconds / 60);
+			return Math.round(totalMinutes * 10) / 10;
+		}
+
+		// Handle traditional MM:SS, e.g. "36:12" or "05:03"
+		if (cleaned.includes(':')) {
+			const parts = cleaned.split(':');
+			const minutes = parseInt(parts[0], 10) || 0;
+			const seconds = parseFloat(parts[1]) || 0;
+			const totalMinutes = minutes + (seconds / 60);
+			return Math.round(totalMinutes * 10) / 10;
+		}
+
+		// Handle simple number string, e.g. "36"
+		const parsed = parseFloat(cleaned);
+		if (isNaN(parsed)) {
+			return 0.0;
+		}
+		return Math.round(parsed * 10) / 10;
+	}
+
+	/**
+	 * @description Parses ISO-8601 duration strings or traditional MM:SS strings into a floating-point number representing minutes.
+	 * @param {any} minStr - The minutes value to parse
+	 * @returns {number} The parsed minutes as a float rounded to 1 decimal place
+	 */
+	parseMinutesToFloat(minStr) {
+		return BaseNormalizer.parseMinutesToFloat(minStr);
+	}
 }
