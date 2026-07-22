@@ -27,13 +27,22 @@ export class EuroleagueEngine extends HTTPClient {
 		const competitionCode = competitionId === 'eurocup' ? 'U' : 'E';
 		const yearFull = String(year); // e.g. 2025 or 2021
 
-		// Let's return 3 representative game slugs for testing / initial runs
-		const slugs = [
-			`realmadrid-vs-panathinaikos-${competitionCode}${yearFull}_1`,
-			`fcbarcelona-vs-olympiacos-${competitionCode}${yearFull}_2`,
-			`fenerbahce-vs-monaco-${competitionCode}${yearFull}_3`
-		];
+		if (process.env.NODE_ENV === 'test') {
+			const slugs = [
+				`realmadrid-vs-panathinaikos-${competitionCode}${yearFull}_1`,
+				`fcbarcelona-vs-olympiacos-${competitionCode}${yearFull}_2`,
+				`fenerbahce-vs-monaco-${competitionCode}${yearFull}_3`
+			];
+			this.gameSlugs = slugs;
+			return slugs;
+		}
 
+		// Production Mode: Dynamically discover all games of the season sequentially
+		const maxGames = competitionId === 'eurocup' ? 200 : 330;
+		const slugs = [];
+		for (let i = 1; i <= maxGames; i++) {
+			slugs.push(`matchup-${competitionCode}${yearFull}_${i}`);
+		}
 		this.gameSlugs = slugs;
 		return slugs;
 	}
@@ -66,12 +75,57 @@ export class EuroleagueEngine extends HTTPClient {
 	}
 
 	/**
+	 * @description Overrides HTTPClient.request to gracefully handle empty Content-Length: 0 responses.
+	 */
+	async request(endpoint, options = {}, retries = 3, delay = 1000) {
+		const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
+		const config = {
+			...options,
+			headers: { ...this.defaultHeaders, ...options.headers }
+		};
+
+		try {
+			const response = await fetch(url, config);
+			if (response.status === 429 || response.status >= 500) {
+				if (retries > 0) {
+					console.warn(`[HTTP ${response.status}] Retrying ${url} in ${delay}ms... (${retries} left)`);
+					await new Promise(resolve => setTimeout(resolve, delay));
+					return this.request(endpoint, options, retries - 1, delay * 2);
+				}
+			}
+
+			if (!response.ok) {
+				throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+			}
+
+			const text = await response.text();
+			if (!text || text.trim() === '') {
+				return null;
+			}
+
+			return JSON.parse(text);
+		} catch (error) {
+			if (retries > 0) {
+				console.warn(`[HTTP Error] ${error.message || error}. Retrying ${url} in ${delay}ms... (${retries} left)`);
+				await new Promise(resolve => setTimeout(resolve, delay));
+				return this.request(endpoint, options, retries - 1, delay * 2);
+			}
+			throw error;
+		}
+	}
+
+	/**
 	 * @description Formats unified box score by querying /Header and /Boxscore endpoints.
 	 * @param {string} gameId - Combined game identifier, e.g. 'E25_1' (E = EuroLeague, 25 = 2025, 1 = gamecode)
 	 * @returns {Promise<Object>} Unified Europe BoxScore response
 	 */
 	async getUnifiedBoxScore(gameId) {
-		const { seasonCode, gameCode } = this.parseGameId(gameId);
+		const { competitionId, seasonCode, gameCode, yearPrefix } = this.parseGameId(gameId);
+
+		// If we are in test mode, return mock data directly to avoid any real network calls
+		if (process.env.NODE_ENV === 'test') {
+			return this.getMockUnifiedBoxScore(gameId);
+		}
 
 		// Construct URLs
 		const headerUrl = `https://live.euroleague.net/api/Header?gamecode=${gameCode}&seasoncode=${seasonCode}`;
@@ -85,11 +139,29 @@ export class EuroleagueEngine extends HTTPClient {
 			boxscoreData = await this.request(boxscoreUrl, {}, 3, 1000);
 		} catch (error) {
 			console.error(`⚠️ Failed to fetch Euroleague API for game ${gameId}:`, error);
-			// For testing / offline resilience, we can fallback to mock/generated data if we are in test mode
-			if (process.env.NODE_ENV === 'test') {
-				return this.getMockUnifiedBoxScore(gameId);
-			}
 			throw error;
+		}
+
+		// If the response is empty (game unplayed/future/invalid), return a standard unplayed skeleton
+		if (!headerData || !boxscoreData) {
+			return {
+				gameId,
+				competitionId,
+				seasonId: yearPrefix,
+				gameDate: "",
+				homeTeam: {
+					teamId: "",
+					teamName: "Unplayed",
+					score: 0,
+					players: []
+				},
+				awayTeam: {
+					teamId: "",
+					teamName: "Unplayed",
+					score: 0,
+					players: []
+				}
+			};
 		}
 
 		return this.mapToUnifiedSchema(gameId, headerData, boxscoreData);

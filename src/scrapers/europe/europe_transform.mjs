@@ -49,6 +49,11 @@ export async function transformEurope(rawDir, year) {
 
 			const { gameId, competitionId, seasonId, gameDate, homeTeam, awayTeam } = raw;
 
+			// Skip unplayed/postponed/future games
+			if (homeTeam.teamName === 'Unplayed' || !homeTeam.players || homeTeam.players.length === 0) {
+				continue;
+			}
+
 			// Define competition details
 			const compName = competitionId === 'euroleague' ? 'EuroLeague' : (competitionId === 'eurocup' ? 'EuroCup' : 'Competition');
 			competitionsMap.set(competitionId, {
