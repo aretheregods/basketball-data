@@ -20,6 +20,7 @@ let originalWarn = console.warn;
 let originalError = console.error;
 
 test.before(async () => {
+	process.env.NODE_ENV = 'test';
 	console.log = () => {};
 	console.warn = () => {};
 	console.error = () => {};
