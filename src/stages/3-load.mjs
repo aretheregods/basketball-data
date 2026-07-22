@@ -112,6 +112,47 @@ export async function loadStage(league, year, cleanedGamesArray) {
 			}
 		}
 
+		// Supplemental European Referential Tables
+		if (data && data.europe_competitions && data.europe_competitions.length > 0) {
+			console.log(`📥 Inserting ${data.europe_competitions.length} rows into 'competitions'...`);
+			const insertStmt = db.prepare(`INSERT OR REPLACE INTO competitions (id, name, type) VALUES (?, ?, ?)`);
+			for (const c of data.europe_competitions) {
+				insertStmt.run(c.id, c.name, c.type);
+			}
+		}
+
+		if (data && data.europe_teams && data.europe_teams.length > 0) {
+			console.log(`📥 Inserting ${data.europe_teams.length} rows into 'teams'...`);
+			const insertStmt = db.prepare(`INSERT OR REPLACE INTO teams (id, canonical_name, country_code, primary_domestic_league_id) VALUES (?, ?, ?, ?)`);
+			for (const t of data.europe_teams) {
+				insertStmt.run(t.id, t.canonical_name, t.country_code, t.primary_domestic_league_id);
+			}
+		}
+
+		if (data && data.europe_team_aliases && data.europe_team_aliases.length > 0) {
+			console.log(`📥 Inserting ${data.europe_team_aliases.length} rows into 'team_aliases'...`);
+			const insertStmt = db.prepare(`INSERT OR REPLACE INTO team_aliases (alias, team_id) VALUES (?, ?)`);
+			for (const ta of data.europe_team_aliases) {
+				insertStmt.run(ta.alias, ta.team_id);
+			}
+		}
+
+		if (data && data.europe_players && data.europe_players.length > 0) {
+			console.log(`📥 Inserting ${data.europe_players.length} rows into 'players'...`);
+			const insertStmt = db.prepare(`INSERT OR REPLACE INTO players (id, canonical_name, normalized_name) VALUES (?, ?, ?)`);
+			for (const p of data.europe_players) {
+				insertStmt.run(p.id, p.canonical_name, p.normalized_name);
+			}
+		}
+
+		if (data && data.europe_games && data.europe_games.length > 0) {
+			console.log(`📥 Inserting ${data.europe_games.length} rows into 'games'...`);
+			const insertStmt = db.prepare(`INSERT OR REPLACE INTO games (id, competition_id, season_id, game_date, home_team_id, away_team_id, home_score, away_score) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+			for (const g of data.europe_games) {
+				insertStmt.run(g.id, g.competition_id, g.season_id, g.game_date, g.home_team_id, g.away_team_id, g.home_score, g.away_score);
+			}
+		}
+
 		db.exec('COMMIT');
 		console.log(`✅ Stage 3 [LOAD] complete. Successfully saved records to local staging database.`);
 	} catch (error) {

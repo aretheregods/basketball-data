@@ -8,6 +8,7 @@
 
 import { WNBAScraper } from './src/scrapers/wnba/wnba.mjs';
 import { NBAScraper } from './src/scrapers/nba/nba.mjs';
+import { EuropeScraper } from './src/scrapers/europe/europe.mjs';
 import { extractStage } from './src/stages/1-extract.mjs';
 import { transformStage } from './src/stages/2-transform.mjs';
 import { loadStage } from './src/stages/3-load.mjs';
@@ -39,6 +40,7 @@ function parseArgs() {
 const LEAGUE_SCRAPERS = {
 	wnba: (options) => new WNBAScraper(options),
 	nba: (options) => new NBAScraper(options),
+	europe: (options) => new EuropeScraper(options),
 };
 
 /**
@@ -57,6 +59,7 @@ async function main() {
 	const databaseName = flags.database || 'likelyhigh_db';
 	const dryRun = flags.dryRun === 'true' || flags['dry-run'] === 'true';
 	const boxscoreType = flags['boxscore-type'] || flags.type || 'traditional';
+	const competitions = flags.competitions || 'euroleague';
 
 	console.log(`🚀 LikelyHigh Pipeline Initialized.`);
 	console.log(`Steps: ${activeSteps.join(' -> ')} | Leagues: ${targetLeagues.join(', ')} | Years: ${targetYears.join(', ')}\n`);
@@ -68,7 +71,7 @@ async function main() {
 			continue;
 		}
 
-		const scraper = LEAGUE_SCRAPERS[lowerLeague]({ boxscoreType });
+		const scraper = LEAGUE_SCRAPERS[lowerLeague]({ boxscoreType, competitions });
 
 		for (const year of targetYears) {
 			console.log(`\n=== Processing [ ${lowerLeague.toUpperCase()} - ${year} ] ===`);

@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EuropeBoxScore",
+  "description": "Schema for European leagues unified boxscore structure",
+  "type": "object",
+  "properties": {
+    "gameId": { "type": "string" },
+    "competitionId": { "type": "string" },
+    "seasonId": { "type": "string" },
+    "gameDate": { "type": "string" },
+    "homeTeam": {
+      "type": "object",
+      "properties": {
+        "teamId": { "type": "string" },
+        "teamName": { "type": "string" },
+        "score": { "type": "integer" },
+        "statistics": { "type": "object" },
+        "players": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "playerId": { "type": "string" },
+              "playerName": { "type": "string" },
+              "statistics": { "type": "object" }
+            },
+            "required": ["playerId", "playerName", "statistics"]
+          }
+        }
+      },
+      "required": ["teamName", "players"]
+    },
+    "awayTeam": {
+      "type": "object",
+      "properties": {
+        "teamId": { "type": "string" },
+        "teamName": { "type": "string" },
+        "score": { "type": "integer" },
+        "statistics": { "type": "object" },
+        "players": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "playerId": { "type": "string" },
+              "playerName": { "type": "string" },
+              "statistics": { "type": "object" }
+            },
+            "required": ["playerId", "playerName", "statistics"]
+          }
+        }
+      },
+      "required": ["teamName", "players"]
+    }
+  },
+  "required": ["gameId", "competitionId", "seasonId", "homeTeam", "awayTeam"]
+}

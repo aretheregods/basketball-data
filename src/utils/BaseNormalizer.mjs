@@ -24,7 +24,50 @@ export class BaseNormalizer {
 	}
 
 	/**
-	 * @description Normalizes a person's name by removing accents, diacritics, and formatting.
+	 * @description Transliterates Cyrillic and Greek characters to their Latin/ASCII equivalents.
+	 * @param {string} text - The input text to transliterate
+	 * @returns {string} The transliterated text
+	 */
+	static transliterate(text) {
+		if (typeof text !== 'string') {
+			return '';
+		}
+		const translitMap = {
+			// Greek uppercase
+			'Α': 'A', 'Β': 'V', 'Γ': 'G', 'Δ': 'D', 'Ε': 'E', 'Ζ': 'Z', 'Η': 'I', 'Θ': 'Th',
+			'Ι': 'I', 'Κ': 'K', 'Λ': 'L', 'Μ': 'M', 'Ν': 'N', 'Ξ': 'X', 'Ο': 'O', 'Π': 'P',
+			'Ρ': 'R', 'Σ': 'S', 'Τ': 'T', 'Υ': 'Y', 'Φ': 'F', 'Χ': 'Ch', 'Ψ': 'Ps', 'Ω': 'O',
+			// Greek lowercase
+			'α': 'a', 'β': 'v', 'γ': 'g', 'δ': 'd', 'ε': 'e', 'ζ': 'z', 'η': 'i', 'θ': 'th',
+			'ι': 'i', 'κ': 'k', 'λ': 'l', 'μ': 'm', 'ν': 'n', 'ξ': 'x', 'ο': 'o', 'π': 'p',
+			'ρ': 'r', 'σ': 's', 'ς': 's', 'τ': 't', 'υ': 'y', 'φ': 'f', 'χ': 'ch', 'ψ': 'ps', 'ω': 'o',
+			// Greek accented uppercase
+			'Ά': 'A', 'Έ': 'E', 'Ή': 'I', 'Ί': 'I', 'Ό': 'O', 'Ύ': 'Y', 'Ώ': 'O', 'Ϊ': 'I', 'Ϋ': 'Y',
+			// Greek accented lowercase
+			'ά': 'a', 'έ': 'e', 'ή': 'i', 'ί': 'i', 'ό': 'o', 'ύ': 'y', 'ώ': 'o', 'ϊ': 'i', 'ϋ': 'y', 'ΐ': 'i', 'ΰ': 'y',
+
+			// Cyrillic uppercase
+			'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo', 'Ж': 'Zh', 'З': 'Z',
+			'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R',
+			'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh',
+			'Щ': 'Shch', 'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya',
+			// Cyrillic lowercase
+			'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'zh', 'з': 'z',
+			'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r',
+			'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
+			'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+
+			// Other Slavic Cyrillic (Serbian, Macedonian, Ukrainian, etc.)
+			'Ђ': 'Dj', 'Ѓ': 'G', 'Є': 'Ye', 'Ѕ': 'Dz', 'І': 'I', 'Ї': 'Yi', 'Ј': 'J', 'Љ': 'Lj', 'Њ': 'Nj', 'Ћ': 'C', 'Ќ': 'K', 'Ў': 'W', 'Џ': 'Dz',
+			'ђ': 'dj', 'ѓ': 'g', 'є': 'ye', 'ѕ': 'dz', 'і': 'i', 'ї': 'yi', 'ј': 'j', 'љ': 'lj', 'њ': 'nj', 'ћ': 'c', 'ќ': 'k', 'ў': 'w', 'џ': 'dz',
+			'Ґ': 'G', 'ґ': 'g'
+		};
+
+		return text.split('').map(char => translitMap[char] ?? char).join('');
+	}
+
+	/**
+	 * @description Normalizes a person's name by transliterating, removing accents, diacritics, and formatting.
 	 * @param {any} name - The name to normalize
 	 * @returns {string} The normalized name without accents
 	 */
@@ -32,7 +75,8 @@ export class BaseNormalizer {
 		if (typeof name !== 'string') {
 			return '';
 		}
-		const cleaned = this.cleanString(name);
+		const transliterated = this.transliterate(name);
+		const cleaned = this.cleanString(transliterated);
 		return cleaned
 			.normalize('NFD')
 			.replace(/[\u0300-\u036f]/g, '');

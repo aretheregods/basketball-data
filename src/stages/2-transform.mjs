@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { BaseNormalizer } from '#utils';
+import { transformEurope } from '../scrapers/europe/europe_transform.mjs';
 
 /**
  * @description Map helper to convert a Stats API result set (headers + rowSet) to objects.
@@ -37,6 +38,22 @@ export async function transformStage(league, year) {
 	console.log(`⚙️ Starting Stage 2 [TRANSFORM] for ${league.toUpperCase()} - ${year}`);
 
 	const rawDir = path.resolve('data/raw', league, String(year));
+
+	if (league.toLowerCase() === 'europe') {
+		const result = await transformEurope(rawDir, year);
+
+		// Cache the transformed data to disk
+		const cacheDir = path.resolve('data/transformed', league, String(year));
+		await fs.mkdir(cacheDir, { recursive: true });
+		const cachePath = path.join(cacheDir, 'transformed.json');
+		await fs.writeFile(cachePath, JSON.stringify(result, null, 2), 'utf8');
+
+		console.log(`💾 Transformed output cached to ${cachePath}`);
+		console.log(`✅ Stage 2 [TRANSFORM] complete. Produced ${result.players.length} player rows, ${result.teams.length} team rows, and referential mappings.\n`);
+
+		return result;
+	}
+
 	let files = [];
 	try {
 		files = await fs.readdir(rawDir);
