@@ -30,7 +30,7 @@ test.describe('European ETL Pipeline Integration', () => {
 	});
 
 	test('should run extraction, transformation, and database load for Europe successfully', async () => {
-		const scraper = new EuropeScraper({ competitions: 'euroleague' });
+		const scraper = new EuropeScraper({ competitions: 'all' });
 
 		// 1. STAGE 1: Extract
 		const gameIds = await extractStage(scraper, league, year);
@@ -58,21 +58,28 @@ test.describe('European ETL Pipeline Integration', () => {
 		// 4. Query SQLite and verify
 		const db = await initDatabase(league);
 		try {
-			// Verify player_game_stats
-			const dbPlayers = db.prepare('SELECT * FROM player_game_stats WHERE league = ? AND season = ?').all('euroleague', String(year));
-			assert.ok(dbPlayers.length > 0);
-			assert.equal(dbPlayers[0].team_city, 'Europe');
+			// Verify player_game_stats for all three competitions
+			const leaguesToTest = ['euroleague', 'eurocup', 'bcl'];
+			for (const comp of leaguesToTest) {
+				const dbPlayers = db.prepare('SELECT * FROM player_game_stats WHERE league = ? AND season = ?').all(comp, String(year));
+				assert.ok(dbPlayers.length > 0, `Should have player stats for ${comp}`);
+				assert.equal(dbPlayers[0].team_city, 'Europe');
+			}
 
 			// Verify supplemental European tables
 			const dbCompetitions = db.prepare('SELECT * FROM competitions').all();
-			assert.ok(dbCompetitions.some(c => c.id === 'euroleague'));
+			assert.ok(dbCompetitions.some(c => c.id === 'euroleague' && c.name === 'EuroLeague' && c.type === 'continental'));
+			assert.ok(dbCompetitions.some(c => c.id === 'eurocup' && c.name === 'EuroCup' && c.type === 'continental'));
+			assert.ok(dbCompetitions.some(c => c.id === 'bcl' && c.name === 'Basketball Champions League' && c.type === 'continental'));
 
 			const dbTeams = db.prepare('SELECT * FROM teams').all();
 			assert.ok(dbTeams.some(t => t.id === 'real-madrid'));
 
 			const dbGames = db.prepare('SELECT * FROM games WHERE season_id = ?').all(String(year));
 			assert.ok(dbGames.length > 0);
-			assert.equal(dbGames[0].competition_id, 'euroleague');
+			assert.ok(dbGames.some(g => g.competition_id === 'euroleague'));
+			assert.ok(dbGames.some(g => g.competition_id === 'eurocup'));
+			assert.ok(dbGames.some(g => g.competition_id === 'bcl'));
 		} finally {
 			db.destroy();
 		}

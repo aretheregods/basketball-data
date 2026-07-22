@@ -24,7 +24,15 @@ export class EuroleagueEngine extends HTTPClient {
 		// EuroLeague regular season typically runs games 1 to 300+.
 		// We'll generate/return a handful of sample slugs or fetch an official list.
 		// To be robust and clean, we will return some standard slugs for the season to allow targeted scraping.
-		const competitionCode = competitionId === 'eurocup' ? 'U' : 'E';
+		let competitionCode = 'E';
+		if (competitionId === 'eurocup') {
+			competitionCode = 'U';
+		} else if (competitionId === 'bcl') {
+			competitionCode = 'B';
+		} else {
+			// Fallback for future domestic leagues/competitions: first char capitalized
+			competitionCode = String(competitionId).charAt(0).toUpperCase();
+		}
 		const yearFull = String(year); // e.g. 2025 or 2021
 
 		if (process.env.NODE_ENV === 'test') {
@@ -38,7 +46,12 @@ export class EuroleagueEngine extends HTTPClient {
 		}
 
 		// Production Mode: Dynamically discover all games of the season sequentially
-		const maxGames = competitionId === 'eurocup' ? 200 : 330;
+		let maxGames = 330;
+		if (competitionId === 'eurocup') {
+			maxGames = 200;
+		} else if (competitionId === 'bcl') {
+			maxGames = 250;
+		}
 		const slugs = [];
 		for (let i = 1; i <= maxGames; i++) {
 			slugs.push(`matchup-${competitionCode}${yearFull}_${i}`);
@@ -62,7 +75,19 @@ export class EuroleagueEngine extends HTTPClient {
 		const subParts = keyPart.split('-');
 		const seasonCode = subParts[subParts.length - 1] || 'E2025';
 
-		const competitionId = seasonCode.toUpperCase().startsWith('U') ? 'eurocup' : 'euroleague';
+		const codeChar = seasonCode.toUpperCase().charAt(0);
+		let competitionId = 'euroleague';
+		if (codeChar === 'U') {
+			competitionId = 'eurocup';
+		} else if (codeChar === 'B') {
+			competitionId = 'bcl';
+		} else if (codeChar === 'E') {
+			competitionId = 'euroleague';
+		} else {
+			// Fallback: take lowercase character to identify dynamic/future leagues
+			competitionId = codeChar.toLowerCase();
+		}
+
 		const yearShort = seasonCode.substring(1);
 		const yearPrefix = yearShort.length === 2 ? '20' + yearShort : yearShort;
 
