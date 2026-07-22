@@ -25,13 +25,13 @@ export class EuroleagueEngine extends HTTPClient {
 		// We'll generate/return a handful of sample slugs or fetch an official list.
 		// To be robust and clean, we will return some standard slugs for the season to allow targeted scraping.
 		const competitionCode = competitionId === 'eurocup' ? 'U' : 'E';
-		const yearShort = String(year).substring(2); // e.g. 2025 -> '25'
+		const yearFull = String(year); // e.g. 2025 or 2021
 
 		// Let's return 3 representative game slugs for testing / initial runs
 		const slugs = [
-			`realmadrid-vs-panathinaikos-${competitionCode}${yearShort}_1`,
-			`fcbarcelona-vs-olympiacos-${competitionCode}${yearShort}_2`,
-			`fenerbahce-vs-monaco-${competitionCode}${yearShort}_3`
+			`realmadrid-vs-panathinaikos-${competitionCode}${yearFull}_1`,
+			`fcbarcelona-vs-olympiacos-${competitionCode}${yearFull}_2`,
+			`fenerbahce-vs-monaco-${competitionCode}${yearFull}_3`
 		];
 
 		this.gameSlugs = slugs;
@@ -40,7 +40,7 @@ export class EuroleagueEngine extends HTTPClient {
 
 	/**
 	 * @description Parses the competition, season, and gamecode from a gameId.
-	 * Supports both standard short form (e.g. 'E99_1') and full slug form.
+	 * Supports both standard short form (e.g. 'E2099_1') and full slug form.
 	 * @param {string} gameId
 	 * @returns {{ competitionId: string, seasonCode: string, gameCode: string, yearPrefix: string }}
 	 */
@@ -51,11 +51,11 @@ export class EuroleagueEngine extends HTTPClient {
 		const gameCode = parts[1] || '1';
 
 		const subParts = keyPart.split('-');
-		const seasonCode = subParts[subParts.length - 1] || 'E25';
+		const seasonCode = subParts[subParts.length - 1] || 'E2025';
 
 		const competitionId = seasonCode.toUpperCase().startsWith('U') ? 'eurocup' : 'euroleague';
 		const yearShort = seasonCode.substring(1);
-		const yearPrefix = '20' + yearShort;
+		const yearPrefix = yearShort.length === 2 ? '20' + yearShort : yearShort;
 
 		return {
 			competitionId,
