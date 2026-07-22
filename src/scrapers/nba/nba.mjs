@@ -41,20 +41,49 @@ export class NBAScraper extends HTTPClient {
 	 * @throws {Error} - If the request fails or schema validation fails
 	 */
 	async getSeasonGameSlugs(year) {
-		const historicalUrl = `https://data.nba.com/data/10s/v2015/json/mobile_teams/nba/${year}/league/00_full_schedule.json`;
-		const currentSeasonUrl = `https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json`;
-
+		const scheduleCachePath = path.resolve('data/raw/nba', `schedule_${year}.json`);
 		let data;
-		try {
-			// Try historical URL first
-			data = await this.request(historicalUrl, {}, 1, 1000);
-		} catch (err) {
-			console.log(`⚠️ Historical schedule not found or forbidden for ${year}. Falling back to current season schedule...`);
-			data = await this.request(currentSeasonUrl, {}, 3, 5000);
-		}
 
-		// Validate against JSON schema
-		validateSchema('nba/leaguegamelog.json', data);
+		try {
+			const cacheContent = await fs.readFile(scheduleCachePath, 'utf8');
+			data = JSON.parse(cacheContent);
+			console.log(`💾 Loaded cached schedule from ${scheduleCachePath}`);
+		} catch (cacheErr) {
+			const historicalUrl = `https://data.nba.com/data/10s/v2015/json/mobile_teams/nba/${year}/league/00_full_schedule.json`;
+			const currentSeasonUrl = `https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json`;
+
+			try {
+				// Try historical URL first
+				data = await this.request(historicalUrl, {}, 1, 1000);
+			} catch (err) {
+				console.log(`⚠️ Historical schedule not found or forbidden for ${year}. Falling back to current season schedule...`);
+				try {
+					data = await this.request(currentSeasonUrl, {}, 3, 5000);
+				} catch (fallbackErr) {
+					console.warn(`⚠️ Schedule for ${year} is not available on the network:`, fallbackErr.message || fallbackErr);
+					this.gameSlugs = [];
+					return this;
+				}
+			}
+
+			// Validate against JSON schema
+			try {
+				validateSchema('nba/leaguegamelog.json', data);
+			} catch (schemaErr) {
+				console.warn(`⚠️ Schedule validation failed for ${year}:`, schemaErr.message || schemaErr);
+				this.gameSlugs = [];
+				return this;
+			}
+
+			// Save to cache
+			try {
+				await fs.mkdir(path.dirname(scheduleCachePath), { recursive: true });
+				await fs.writeFile(scheduleCachePath, JSON.stringify(data, null, 2), 'utf8');
+				console.log(`💾 Saved schedule cache to ${scheduleCachePath}`);
+			} catch (writeErr) {
+				console.warn(`⚠️ Could not write schedule cache:`, writeErr.message);
+			}
+		}
 
 		/** @type {string[]} */
 		const slugs = [];
@@ -192,10 +221,12 @@ export class NBAScraper extends HTTPClient {
 
 			return await super.request(endpoint, options, retries, delay);
 		} catch (error) {
-			if (retries > 0) {
-				console.warn(`[HTTP Error] ${ error.message || error }. Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
-				await new Promise( resolve => setTimeout(resolve, delay) );
-				return this.request(endpoint, options, retries - 1, delay * 2);
+			if (url.includes('nba.com/game/')) {
+				if (retries > 0) {
+					console.warn(`[HTTP Error] ${ error.message || error }. Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
+					await new Promise( resolve => setTimeout(resolve, delay) );
+					return this.request(endpoint, options, retries - 1, delay * 2);
+				}
 			}
 			throw error;
 		} finally {

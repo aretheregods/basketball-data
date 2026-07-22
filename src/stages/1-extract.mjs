@@ -40,6 +40,19 @@ export async function extractStage(scraper, league, year) {
 
 	// 3. Download and save raw payload for each game
 	for (const gameId of gameIds) {
+		const filePath = path.join(outputDir, `${gameId}.json`);
+
+		// Cache check: skip if the file already exists and is non-empty
+		try {
+			const stats = await fs.stat(filePath);
+			if (stats.size > 0) {
+				console.log(`⏭️ Game ID: ${gameId} already exists in raw cache. Skipping...`);
+				continue;
+			}
+		} catch (e) {
+			// File does not exist, proceed with extraction
+		}
+
 		const endpoint = scraper.getGameEndpoint(gameId);
 		const url = scraper.getGameUrl(gameId);
 
@@ -50,9 +63,14 @@ export async function extractStage(scraper, league, year) {
 			// Validate response against schema
 			validateSchema(`${league}/boxscore.json`, rawData);
 
-			const filePath = path.join(outputDir, `${gameId}.json`);
 			await fs.writeFile(filePath, JSON.stringify(rawData, null, 2), 'utf8');
 			console.log(`💾 Saved raw data to ${filePath}`);
+
+			// Add a short randomized delay to prevent rate-limiting (skipped in testing)
+			if (process.env.NODE_ENV !== 'test') {
+				const delay = 1000 + Math.floor(Math.random() * 1000);
+				await new Promise(resolve => setTimeout(resolve, delay));
+			}
 		} catch (error) {
 			console.error(`❌ Failed to extract/save box score for Game ID ${gameId}:`, error);
 			throw error;

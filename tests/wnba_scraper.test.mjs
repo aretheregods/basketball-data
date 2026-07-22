@@ -189,6 +189,7 @@ let fetchMock = null;
 const originalFetch = globalThis.fetch;
 
 test.before(() => {
+	process.env.NODE_ENV = 'test';
 	globalThis.fetch = async (url, config) => {
 		if (fetchMock) {
 			return fetchMock(url, config);
