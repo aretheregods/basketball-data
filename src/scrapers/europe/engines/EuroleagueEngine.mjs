@@ -113,9 +113,10 @@ export class EuroleagueEngine extends HTTPClient {
 			const response = await fetch(url, config);
 			if (response.status === 429 || response.status >= 500) {
 				if (retries > 0) {
-					console.warn(`[HTTP ${response.status}] Retrying ${url} in ${delay}ms... (${retries} left)`);
-					await new Promise(resolve => setTimeout(resolve, delay));
-					return this.request(endpoint, options, retries - 1, delay * 2);
+					const actualDelay = response.status === 429 ? Math.max(delay, 5000) : delay;
+					console.warn(`[HTTP ${response.status}] Retrying ${url} in ${actualDelay}ms... (${retries} left)`);
+					await new Promise(resolve => setTimeout(resolve, actualDelay));
+					return this.request(endpoint, options, retries - 1, actualDelay * 2);
 				}
 			}
 
@@ -163,8 +164,10 @@ export class EuroleagueEngine extends HTTPClient {
 			headerData = await this.request(headerUrl, {}, 3, 1000);
 			boxscoreData = await this.request(boxscoreUrl, {}, 3, 1000);
 		} catch (error) {
-			console.error(`⚠️ Failed to fetch Euroleague API for game ${gameId}:`, error);
-			throw error;
+			console.warn(`⚠️ Failed to fetch Euroleague API for game ${gameId}:`, error.message || error);
+			// Gracefully fallback to an unplayed skeleton instead of throwing to avoid catastrophic multi-year failure
+			headerData = null;
+			boxscoreData = null;
 		}
 
 		// If the response is empty (game unplayed/future/invalid), return a standard unplayed skeleton
