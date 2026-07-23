@@ -1,5 +1,8 @@
 import { HTTPClient } from '#utils';
 import { EuroleagueEngine } from './engines/EuroleagueEngine.mjs';
+import { FibaLiveStatsEngine } from './engines/FibaLiveStatsEngine.mjs';
+import { SsrHydrationEngine } from './engines/SsrHydrationEngine.mjs';
+import { DomesticRestEngine } from './engines/DomesticRestEngine.mjs';
 
 /**
  * @description EuropeScraper is the master orchestrator for European basketball competitions.
@@ -15,10 +18,15 @@ export class EuropeScraper extends HTTPClient {
 	constructor(options = {}) {
 		super('https://live.euroleague.net/api');
 
-		// Parse competitions list (can be 'all', or comma-separated list like 'euroleague,eurocup,bcl')
+		// Parse competitions list (can be 'all', or comma-separated list like 'euroleague,eurocup,bcl,acb,lba,lnb,aba,lkl,gbl,bbl,bsl,israel')
 		const rawComps = options.competitions || 'euroleague';
 		if (rawComps === 'all') {
-			this.competitions = ['euroleague', 'eurocup', 'bcl'];
+			this.competitions = [
+				'euroleague', 'eurocup', 'bcl',
+				'aba', 'lkl', 'gbl',               // Genius Sports / FIBA LiveStats
+				'acb', 'lba', 'lnb',               // SSR Hydration
+				'bbl', 'bsl', 'israel'             // REST APIs
+			];
 		} else if (Array.isArray(rawComps)) {
 			this.competitions = rawComps;
 		} else {
@@ -30,12 +38,28 @@ export class EuropeScraper extends HTTPClient {
 
 		// Instantiate available engines
 		this.engines = {
+			// Continental
 			euroleague: new EuroleagueEngine(),
-			eurocup: new EuroleagueEngine(), // Shared engine for Euroleague API
-			bcl: new EuroleagueEngine()      // Shared engine for BCL API
+			eurocup: new EuroleagueEngine(),
+			bcl: new EuroleagueEngine(),
+
+			// Genius Sports / FIBA LiveStats
+			aba: new FibaLiveStatsEngine(),
+			lkl: new FibaLiveStatsEngine(),
+			gbl: new FibaLiveStatsEngine(),
+
+			// SSR Hydration
+			acb: new SsrHydrationEngine(),
+			lba: new SsrHydrationEngine(),
+			lnb: new SsrHydrationEngine(),
+
+			// REST APIs
+			bbl: new DomesticRestEngine(),
+			bsl: new DomesticRestEngine(),
+			israel: new DomesticRestEngine()
 		};
 
-		// Dynamically register any other requested competitions/domestic leagues to share the EuroleagueEngine
+		// Dynamically register any other requested competitions/domestic leagues to share the EuroleagueEngine if not defined
 		for (const comp of this.competitions) {
 			if (!this.engines[comp]) {
 				this.engines[comp] = new EuroleagueEngine();
@@ -71,27 +95,38 @@ export class EuropeScraper extends HTTPClient {
 	}
 
 	/**
-	 * @description Resolves the proper engine based on game ID prefix.
-	 * @param {string} gameId - Game identifier, e.g. 'E25_1', 'U25_1', 'B25_1', or a full slug
+	 * @description Resolves the proper engine based on game ID prefix / competition code.
+	 * @param {string} gameId - Game identifier, e.g. 'E25_1', 'ABA25_1001', 'ACB25_2001', or a full slug
 	 * @returns {Object} Target engine instance
 	 */
 	getEngineForGame(gameId) {
 		const clean = String(gameId || '').trim().toUpperCase();
-		// Extract season code segment (e.g. "U25" from "E99_1" or "realmadrid-vs-panathinaikos-U99_1")
+		// Extract season code segment (e.g. "ABA25" from "ABA25_1001" or "kkpartizan-vs-kkcrvenazvezda-ABA25_1001")
 		const parts = clean.split('_')[0].split('-');
 		const seasonCode = parts[parts.length - 1] || 'E25';
-		const firstChar = seasonCode.charAt(0);
 
+		// Extract all alphabet letters from the prefix (e.g. "ABA", "ACB", "BBL")
+		const codeLetters = seasonCode.replace(/[^A-Z]/g, '').toLowerCase();
+
+		// Check registered engines
+		if (this.engines[codeLetters]) {
+			return this.engines[codeLetters];
+		}
+
+		// Handle specific legacy/special characters (U -> EuroCup, B -> BCL, E -> EuroLeague)
+		const firstChar = seasonCode.charAt(0);
 		if (firstChar === 'U') {
-			return this.engines.eurocup || (this.engines.eurocup = new EuroleagueEngine());
+			return this.engines.eurocup;
 		}
 		if (firstChar === 'B') {
-			return this.engines.bcl || (this.engines.bcl = new EuroleagueEngine());
+			return this.engines.bcl;
+		}
+		if (firstChar === 'E') {
+			return this.engines.euroleague;
 		}
 
 		// Fallback to competitionId-based lookup or euroleague
-		const competitionId = firstChar.toLowerCase();
-		return this.engines[competitionId] || this.engines.euroleague;
+		return this.engines[codeLetters] || this.engines.euroleague;
 	}
 
 	/**
