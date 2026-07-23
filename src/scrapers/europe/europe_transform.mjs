@@ -54,12 +54,27 @@ export async function transformEurope(rawDir, year) {
 				continue;
 			}
 
-			// Define competition details
-			const compName = competitionId === 'euroleague' ? 'EuroLeague' : (competitionId === 'eurocup' ? 'EuroCup' : 'Competition');
+			// Define competition details and type
+			const compNames = {
+				euroleague: 'EuroLeague',
+				eurocup: 'EuroCup',
+				bcl: 'Basketball Champions League',
+				acb: 'Liga ACB',
+				bsl: 'Basketbol Süper Ligi',
+				bbl: 'Basketball Bundesliga',
+				lnb: 'LNB Pro A',
+				lba: 'Lega Basket Serie A',
+				aba: 'ABA League',
+				vtb: 'VTB United League',
+				gbl: 'Greek Basketball League'
+			};
+			const compName = compNames[competitionId] || competitionId.toUpperCase();
+			const compType = ['euroleague', 'eurocup', 'bcl'].includes(competitionId) ? 'continental' : 'domestic';
+
 			competitionsMap.set(competitionId, {
 				id: competitionId,
 				name: compName,
-				type: 'continental'
+				type: compType
 			});
 
 			// Resolve team entities
