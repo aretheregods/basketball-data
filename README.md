@@ -2,6 +2,38 @@
 
 This project implements a modular, high-performance ETL pipeline to scrape, clean, process, load, and sync basketball player and team-level statistics across various international leagues and continents.
 
+## Supported Leagues
+
+- **NBA**: National Basketball Association
+- **WNBA**: Women's National Basketball Association
+- **Europe**: Specialized orchestrator mapping and running major European continental and domestic competitions:
+  - *Continental*: EuroLeague (`euroleague`), EuroCup (`eurocup`), Basketball Champions League (`bcl`).
+  - *Genius Sports/FIBA LiveStats*: ABA League (`aba`), LKL Lithuania (`lkl`), GBL Greece (`gbl`).
+  - *SSR Hydration*: Liga ACB Spain (`acb`), LBA Italy (`lba`), LNB Pro A France (`lnb`).
+  - *Direct REST APIs*: BBL Germany (`bbl`), BSL Turkey (`bsl`), Israeli Premier League (`israel`).
+
+---
+
+## Running the ETL Pipeline
+
+We coordinate execution via the root `run.js` script:
+
+```bash
+# Default (runs WNBA current season)
+node run.js
+
+# Scrape, Transform, Load, and Sync specific leagues & years
+node run.js --league=wnba,nba --years=2023,2024
+
+# Scrape specific European competitions (e.g., Liga ACB and EuroLeague)
+node run.js --league=europe --competitions=acb,euroleague --years=2025
+
+# Run a complete European sweep (Continental + all 9 domestic leagues)
+node run.js --league=europe --competitions=all --years=2025
+```
+
+---
+
 ## Database & Migrations
 
 To avoid the native package compilation difficulties and GLIBC version mismatches of heavy query builders, this project uses a custom, zero-dependency migrations engine powered by Node.js's built-in `node:sqlite` (`DatabaseSync`) module.

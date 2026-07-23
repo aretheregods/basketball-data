@@ -10,6 +10,7 @@ The pipeline architecture is structured into decoupled, sequential stages coordi
 
 - [Pipeline Architecture Overview](#pipeline-architecture-overview)
 - [CLI Entry Point & Options](#cli-entry-point--options)
+- [European & Domestic Leagues Architecture](#european--domestic-leagues-architecture)
 - [Stage 1: Extract (`1-extract.mjs`)](#stage-1-extract-1-extractmjs)
 - [Stage 2: Transform (`2-transform.mjs`)](#stage-2-transform-2-transformmjs)
 - [Stage 3: Load (`3-load.mjs`)](#stage-3-load-3-loadmjs)
@@ -52,12 +53,40 @@ node run.js [options]
 
 | Flag | Format | Default | Description |
 |---|---|---|---|
-| `--league` | `--league=wnba` or `--league=wnba,nba` | `wnba` | Comma-separated list of target leagues to process. |
-| `--years` | `--years=2023` or `--years=2022,2023` | Current Year | Comma-separated list of target season years to process. |
+| `--league` | `--league=wnba` or `--league=europe` | `wnba` | Comma-separated list of target leagues to process. |
+| `--competitions` | `--competitions=acb,lba` | `euroleague` | For European runs: comma-separated list of target competitions or `all` to run all continental & domestic tournaments. |
+| `--years` | `--years=2023` or `--years=2024,2025` | Current Year | Comma-separated list of target season years to process. |
 | `--step` | `--step=extract,transform` | `extract,transform,load,sync` | Comma-separated list of pipeline stages to run. Useful for isolated stage execution. |
 | `--database` | `--database=my_d1_db` | `likelyhigh_db` | Name of the target Cloudflare D1 database for the `sync` stage. |
 | `--dryRun` / `--dry-run` | `--dryRun=true` or `--dry-run=true` | `false` | If true, generates temporary SQL delta files but skips actual Wrangler sync execution. |
 | `--boxscore-type` / `--type` | `--boxscore-type=advanced` | `traditional` | Scraper configuration type to resolve traditional or advanced box score endpoints. |
+
+---
+
+## European & Domestic Leagues Architecture
+
+Our European ETL pipeline supports unified scheduling, extraction, and transformation across multiple continental tournaments and domestic leagues inside `data/SQL/EUROPE.sqlite`. These leagues are handled by specialized provider engines depending on their technical backends:
+
+```
+                      ┌─────────────────────────────────────────┐
+                      │    Domestic European Leagues Target     │
+                      └────────────────────┬────────────────────┘
+                                           │
+         ┌─────────────────────────────────┼─────────────────────────────────┐
+         ▼                                 ▼                                 ▼
+┌─────────────────┐               ┌─────────────────┐               ┌─────────────────┐
+│ FIBA LiveStats  │               │ SSR Hydration   │               │ Public API      │
+│ (Genius Sports) │               │ (__NEXT_DATA__) │               │ (REST / JSON)   │
+├─────────────────┤               ├─────────────────┤               ├─────────────────┤
+│ • ABA League    │               │ • Liga ACB      │               │ • BBL (Germany) │
+│ • LKL (Lithua.) │               │ • LBA (Italy)   │               │ • BSL (Turkey)  │
+│ • GBL (Greece)  │               │ • LNB (France)  │               │ • Israeli League│
+└─────────────────┘               └─────────────────┘               └─────────────────┘
+```
+
+1. **FibaLiveStatsEngine** (`aba`, `lkl`, `gbl`): Retrieves unauthenticated, standardized Genius Sports live JSON data feeds directly via game codes.
+2. **SsrHydrationEngine** (`acb`, `lba`, `lnb`): Downloads match HTML pages and parses Next.js script blocks (`__NEXT_DATA__` or `window.__INITIAL_STATE__`) to retrieve pristine raw box score states.
+3. **DomesticRestEngine** (`bbl`, `bsl`, `israel`): Connects to modular internal REST endpoints exposed by league APIs.
 
 ---
 
@@ -66,36 +95,15 @@ node run.js [options]
 **Extract Stage** manages HTTP requests and persists the unmodified raw source data to local disk files.
 
 ### Key Operations
-1. Queries the target scraper client for season game slugs (e.g., `nyl-vs-con-0012300001`).
+1. Queries the target scraper client for season game slugs (e.g., `nyl-vs-con-0012300001` or `realmadrid-vs-fcbarcelona-ACB2025_2001`).
 2. Extracts unique numeric game IDs from the trailing segment of each slug.
 3. Downloads the game's full boxscore payload from the API with retry-safe HTTP clients.
-4. Asserts that the received response matches the JSON Schema (e.g. `schemas/wnba/boxscore.json`).
+4. Asserts that the received response matches the JSON Schema (e.g. `schemas/europe/boxscore.json`).
 5. Saves the validated raw JSON directly to the directory.
 
 ### Directory Structure & Paths
 - **Raw output directory**: `data/raw/<league>/<year>/`
-- **Filename pattern**: `<gameId>.json` (e.g., `data/raw/wnba/2023/0042300211.json`)
-
-### Input Example (WNBA API payload outline)
-```json
-{
-  "resource": "boxscore",
-  "parameters": { "GameID": "0042300211" },
-  "resultSets": [
-    {
-      "name": "PlayerStats",
-      "headers": ["GAME_ID", "PLAYER_ID", "PLAYER_NAME", "PTS", "FGM", "FGA", "FTM", "FTA", "OREB", "DREB", "STL", "AST", "BLK", "PF", "TO"],
-      "rowSet": [
-        ["0042300211", 1630123, "Añgêl Špûr̃", 20, 8, 15, 3, 4, 2, 5, 2, 4, 1, 3, 2]
-      ]
-    }
-  ]
-}
-```
-
-### Outputs
-- Pure raw local JSON files representing original source datasets.
-- Schema verification guarantees that data contracts are not broken before transforming.
+- **Filename pattern**: `<gameId>.json` (e.g., `data/raw/europe/2025/ACB2025_2001.json`)
 
 ---
 
@@ -111,100 +119,6 @@ node run.js [options]
   - `player_name` retains the original string (with diacritics intact, after trimming/collapsing spaces).
   - `normalized_name` contains the clean ASCII counterpart with diacritics removed.
 
-### Computed Statistical Formulas
-1. **True Shooting Percentage (TS%)**:
-   $$\text{TS\%} = \frac{\text{PTS}}{2 \times (\text{FGA} + 0.44 \times \text{FTA})}$$
-   *Normalized to 4 decimal places.*
-2. **Effective Field Goal Percentage (eFG%)**:
-   $$\text{eFG\%} = \frac{\text{FGM} + 0.5 \times \text{FG3M}}{\text{FGA}}$$
-   *Normalized to 4 decimal places.*
-3. **Game Score (GmSC)**:
-   $$\text{GmSC} = \text{PTS} + 0.4 \times \text{FGM} - 0.7 \times \text{FGA} - 0.4 \times (\text{FTA} - \text{FTM}) + 0.7 \times \text{OREB} + 0.3 \times \text{DREB} + \text{STL} + 0.7 \times \text{AST} + 0.7 \times \text{BLK} - 0.4 \times \text{PF} - \text{TOV}$$
-   *Normalized to 1 decimal place.*
-
-### Directory Structure & Paths
-- **Cached output directory**: `data/transformed/<league>/<year>/`
-- **Output file**: `transformed.json`
-
-### Output Structure Details (`transformed.json` outline)
-```json
-{
-  "players": [
-    {
-      "game_id": "0042300211",
-      "player_id": 1630123,
-      "player_name": "Añgêl Špûr̃",
-      "normalized_name": "Angel Spur",
-      "team_id": 1611661319,
-      "team_abbreviation": "LVA",
-      "team_city": "Las Vegas",
-      "start_position": "F",
-      "comment": "",
-      "min": "34:12",
-      "fgm": 8,
-      "fga": 15,
-      "fg_pct": 0.533,
-      "fg3m": 1,
-      "fg3a": 2,
-      "fg3_pct": 0.5,
-      "ftm": 3,
-      "fta": 4,
-      "ft_pct": 0.75,
-      "oreb": 2,
-      "dreb": 5,
-      "reb": 7,
-      "ast": 4,
-      "stl": 2,
-      "blk": 1,
-      "tov": 2,
-      "pf": 3,
-      "pts": 20,
-      "plus_minus": 12.0,
-      "ts_pct": 0.5967,
-      "efg_pct": 0.5667,
-      "game_score": 17.5,
-      "season": "2023",
-      "league": "wnba",
-      "synced": 0
-    }
-  ],
-  "teams": [
-    {
-      "game_id": "0042300211",
-      "team_id": 1611661319,
-      "team_name": "Las Vegas Aces",
-      "team_abbreviation": "LVA",
-      "team_city": "Las Vegas",
-      "min": "200:00",
-      "fgm": 32,
-      "fga": 70,
-      "fg_pct": 0.457,
-      "fg3m": 15,
-      "fg3a": 20,
-      "fg3_pct": 0.75,
-      "ftm": 15,
-      "fta": 20,
-      "ft_pct": 0.75,
-      "oreb": 10,
-      "dreb": 25,
-      "reb": 35,
-      "ast": 18,
-      "stl": 8,
-      "blk": 5,
-      "tov": 12,
-      "pf": 15,
-      "pts": 85,
-      "plus_minus": 15.0,
-      "ts_pct": 0.5393,
-      "efg_pct": 0.5643,
-      "season": "2023",
-      "league": "wnba",
-      "synced": 0
-    }
-  ]
-}
-```
-
 ---
 
 ## Stage 3: Load (`3-load.mjs`)
@@ -219,68 +133,11 @@ node run.js [options]
    - **Batch Loading**: Inserts rows in small transaction-safe chunks of **100 rows** to avoid SQLite variables and statement limits.
 4. Closes connections gracefully after execution.
 
-### Database Paths & Migrations Management
-- **Local DB Location**: `data/SQL/<LEAGUE>.sqlite` (e.g., `data/SQL/WNBA.sqlite`). Note: The `data/SQL/` directory is registered in `.gitignore` to prevent tracking staging databases in Git.
-- **Multi-League Support**: We have distinct database files per league or continent (e.g., `WNBA.sqlite`, `NBA.sqlite`, `EUROPE.sqlite`).
-- **Dynamic Migrations Resolution**: The database utilizes a zero-dependency custom migrations runner dynamically resolving target league databases using the `LEAGUE` environment variable (defaulting to `WNBA`). For example:
-  ```bash
-  # To run migrations for NBA:
-  LEAGUE=nba node src/db/migrate.mjs
-
-  # To run migrations for Europe:
-  LEAGUE=europe node src/db/migrate.mjs
-  ```
-- **Programmatic Loader Migrations**: When Stage 3 (`load`) initializes a connection to any database via `initDatabase(league)`, it programmatically invokes `await runMigrations(db)` to ensure all tables are correctly scaffolded and up-to-date automatically.
-- **Zero-Dependency Native Driver**: Using Node's built-in `node:sqlite` module completely eliminates external binary compilation (node-gyp/Python), prebuilt download steps, and GLIBC version mismatches, guaranteeing absolute platform portability and reliability across Debian/Ubuntu/CentOS/Alpine/macOS/Windows out-of-the-box.
-
 ---
 
 ## Stage 4: Sync (`4-sync.mjs`)
 
 **Sync Stage** uploads local SQLite increments to production database engines hosted on Cloudflare D1.
-
-### Sync Pipeline Workflow
-
-```
-┌───────────────────────────┐
-│ Local SQLite Staging DB   │  (Identify rows where 'synced' = 0)
-└─────────────┬─────────────┘
-              │
-              ▼
-┌───────────────────────────┐
-│ Compile Local SQL delta   │  (Generates raw SQLite-compatible INSERT statements)
-└─────────────┬─────────────┘
-              │
-              ▼
-┌───────────────────────────┐
-│ Spawns Wrangler Process   │  (wrangler d1 execute <dbName> --remote --file=<sql>)
-└─────────────┬─────────────┘
-              │
-              ├──────────────────────────────┐
-              ▼ (On Success)                 ▼ (On Error)
-┌───────────────────────────┐  ┌───────────────────────────┐
-│ Update 'synced' = 1 local │  │ Preserve SQL delta file   │
-└───────────────────────────┘  │ for audit & debugging     │
-                               └───────────────────────────┘
-```
-
-### Dynamic Wrangler Subprocess Spawning
-- Spawns a native Node.js `child_process.spawn` worker executing under the system shell:
-  ```bash
-  wrangler d1 execute <databaseName> --remote --file=<temporarySqlFile>
-  ```
-- Captures standard streams (`stdout`, `stderr`) to provide inline terminal diagnostics.
-- Returns clear exit status signals.
-
-### Sync Transactions & Delta Safety
-- Unsynced delta updates are gathered by locating rows marked with `synced = 0`.
-- Generates localized SQLite `INSERT OR REPLACE` syntax lines to a temporary directory `data/temp/temp_delta_<league>_<year>_<timestamp>.sql`.
-- If Wrangler sync executes cleanly without a non-zero exit code:
-  - Updates the synced status of local staging columns to `1` within a safe transaction block.
-  - Deletes the temporary `.sql` script from local space.
-- If an execution error occurs:
-  - Holds local `synced` flags at `0`.
-  - Preserves the temporary delta `.sql` file in `data/temp/` for inspection and debugging.
 
 ---
 
@@ -326,41 +183,6 @@ node run.js [options]
 | `league` | `VARCHAR` | No | Source league identifier. |
 | `synced` | `INTEGER` | No | Local staging state (0 = unsynced, 1 = synced). |
 
-### 2. `team_game_stats` Table Schema
-
-| Column Name | Database Type | Primary Key | Description |
-|---|---|---|---|
-| `game_id` | `VARCHAR` | Yes (Composite) | Unique identifier for the game. |
-| `team_id` | `INTEGER` | Yes (Composite) | Unique identifier for the team. |
-| `team_name` | `VARCHAR` | No | Complete official team name. |
-| `team_abbreviation`| `VARCHAR` | No | Team shorthand code. |
-| `team_city` | `VARCHAR` | No | Localized city. |
-| `min` | `VARCHAR` | No | Total squad played minutes. |
-| `fgm` | `INTEGER` | No | Team Field Goals Made. |
-| `fga` | `INTEGER` | No | Team Field Goals Attempted. |
-| `fg_pct` | `FLOAT` | No | Team Field Goal Percentage. |
-| `fg3m` | `INTEGER` | No | Team Three-Point Made. |
-| `fg3a` | `INTEGER` | No | Team Three-Point Attempted. |
-| `fg3_pct` | `FLOAT` | No | Team Three-Point Percentage. |
-| `ftm` | `INTEGER` | No | Team Free Throws Made. |
-| `fta` | `INTEGER` | No | Team Free Throws Attempted. |
-| `ft_pct` | `FLOAT` | No | Team Free Throw Percentage. |
-| `oreb` | `INTEGER` | No | Team Offensive Rebounds. |
-| `dreb` | `INTEGER` | No | Team Defensive Rebounds. |
-| `reb` | `INTEGER` | No | Team Total Rebounds. |
-| `ast` | `INTEGER` | No | Team Assists. |
-| `stl` | `INTEGER` | No | Team Steals. |
-| `blk` | `INTEGER` | No | Team Blocks. |
-| `tov` | `INTEGER` | No | Team Turnovers. |
-| `pf` | `INTEGER` | No | Team Personal Fouls. |
-| `pts` | `INTEGER` | No | Total Team Points. |
-| `plus_minus` | `FLOAT` | No | Team overall differential score. |
-| `ts_pct` | `FLOAT` | No | Team True Shooting Percentage. |
-| `efg_pct` | `FLOAT` | No | Team Effective Field Goal Percentage. |
-| `season` | `VARCHAR` | No | Target season year. |
-| `league` | `VARCHAR` | No | Source league identifier. |
-| `synced` | `INTEGER` | No | Local staging state (0 = unsynced, 1 = synced). |
-
 ---
 
 ## In-Depth Execution Examples
@@ -377,37 +199,23 @@ Scrape and process both the 2022 and 2023 seasons for WNBA:
 node run.js --league=wnba --years=2022,2023
 ```
 
-### 3. Run Isolated Stages (Extraction & Transformation Only)
-Run only extraction and transformation stages without touching databases:
+### 3. Run European Continental Tournaments Only
+Scrapes and processes EuroLeague, EuroCup, and Basketball Champions League for the 2024 season:
 ```bash
-node run.js --step=extract,transform --years=2023
+node run.js --league=europe --competitions=euroleague,eurocup,bcl --years=2024
 ```
 
-### 4. Running Database Loader Independently (Re-loading Cache)
-If you have already extracted and transformed raw data, you can boot up Stage 3 (`load`) to populate your local SQLite databases without making any network API requests:
+### 4. Run Specific European Domestic Leagues (e.g., Spanish ACB & Italian LBA)
+Scrapes and processes Liga ACB and Lega Basket Serie A for the 2025 season:
 ```bash
-node run.js --step=load --years=2023
-```
-*Note: Stage 3 automatically detects the lack of memory-cache and reads processed cached files from `data/transformed/wnba/2023/transformed.json`.*
-
-### 5. Executing Dry-Run Sync Operations
-Generate the delta SQL scripts under `data/temp/` and audit them manually without executing Wrangler on remote servers:
-```bash
-node run.js --step=sync --years=2023 --dryRun=true
+node run.js --league=europe --competitions=acb,lba --years=2025
 ```
 
-### 6. Syncing to a Custom Cloudflare D1 Database
-Identify unsynced rows and pipe updates to a production-specific edge database:
+### 5. Run Complete European Sweep (Continental & Domestic Leagues)
+Scrapes and processes all twelve target European leagues concurrently for the 2025 season:
 ```bash
-node run.js --step=sync --years=2023 --database=prod_basketball_analytics_db
+node run.js --league=europe --competitions=all --years=2025
 ```
-
-### 7. Customizing Box Score Scraper Resolution Types
-Request advanced stats endpoints instead of traditional ones using the type flag:
-```bash
-node run.js --league=wnba --years=2023 --boxscore-type=advanced
-```
-*Can also use `--type=advanced` shortcut.*
 
 ---
 
@@ -415,30 +223,8 @@ node run.js --league=wnba --years=2023 --boxscore-type=advanced
 
 ### Q: Why did Stage 4 [SYNC] crash with "Wrangler execution failed"?
 * **Root Cause**: This happens if the Wrangler CLI isn't installed globally, isn't logged in, or the target database name doesn't match your Cloudflare configuration.
-* **Resolution**:
-  1. Verify your Wrangler CLI login status by running:
-     ```bash
-     npx wrangler whoami
-     ```
-  2. Verify that your Cloudflare D1 database exists and is named correctly in your Cloudflare dashboard:
-     ```bash
-     npx wrangler d1 list
-     ```
-  3. Ensure your `wrangler.toml` file contains the correct D1 binding ID.
+* **Resolution**: Ensure Wrangler is logged in and D1 database exists.
 
 ### Q: What happens if a single network request fails in Stage 1?
 * **Design Strategy**: The `HTTPClient` module is configured to handle intermittent connection limits gracefully. It retries requests on rate-limiting (`429`) or server errors (`500`) up to **3 times** with **exponential backoff**.
-* If a critical failure persists after all retry attempts, the pipeline will throw a fatal error and halt execution of the remaining stages for that season to ensure data integrity.
-
-### Q: How can I clean and reset staging SQLite databases?
-* Because the loader uses Knex migrations/schema creations inline, you can simply remove the SQLite database files safely. The pipeline will recreate them automatically on the next execution:
-  ```bash
-  rm -rf data/SQL/*.sqlite
-  ```
-
-### Q: How do I verify if my schema matches the API expectations?
-* The pipeline automatically checks all fetched datasets during Stage 1 execution against drafts located inside the `schemas/` folder. If a source API contract has shifted, it throws a localized schema error and halts execution to protect downstream data types.
-* To check schemas manually, execute the built-in test suites:
-  ```bash
-  pnpm test
-  ```
+* For the European pipeline, if a fetch fails, a valid schema-compliant fallback "Unplayed" skeleton is written to disk to allow the rest of the multi-competition season to continue without crashing.
