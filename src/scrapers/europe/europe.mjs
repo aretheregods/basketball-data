@@ -1,5 +1,6 @@
 import { HTTPClient } from '#utils';
 import { EuroleagueEngine } from './engines/EuroleagueEngine.mjs';
+import { AcbEngine } from './engines/AcbEngine.mjs';
 
 /**
  * @description EuropeScraper is the master orchestrator for European basketball competitions.
@@ -15,10 +16,10 @@ export class EuropeScraper extends HTTPClient {
 	constructor(options = {}) {
 		super('https://live.euroleague.net/api');
 
-		// Parse competitions list (can be 'all', or comma-separated list like 'euroleague,eurocup,bcl')
+		// Parse competitions list (can be 'all', or comma-separated list like 'euroleague,eurocup,bcl,acb')
 		const rawComps = options.competitions || 'euroleague';
 		if (rawComps === 'all') {
-			this.competitions = ['euroleague', 'eurocup', 'bcl'];
+			this.competitions = ['euroleague', 'eurocup', 'bcl', 'acb'];
 		} else if (Array.isArray(rawComps)) {
 			this.competitions = rawComps;
 		} else {
@@ -32,13 +33,18 @@ export class EuropeScraper extends HTTPClient {
 		this.engines = {
 			euroleague: new EuroleagueEngine(),
 			eurocup: new EuroleagueEngine(), // Shared engine for Euroleague API
-			bcl: new EuroleagueEngine()      // Shared engine for BCL API
+			bcl: new EuroleagueEngine(),      // Shared engine for BCL API
+			acb: new AcbEngine()
 		};
 
 		// Dynamically register any other requested competitions/domestic leagues to share the EuroleagueEngine
 		for (const comp of this.competitions) {
 			if (!this.engines[comp]) {
-				this.engines[comp] = new EuroleagueEngine();
+				if (comp === 'acb') {
+					this.engines[comp] = new AcbEngine();
+				} else {
+					this.engines[comp] = new EuroleagueEngine();
+				}
 			}
 		}
 	}
@@ -87,6 +93,9 @@ export class EuropeScraper extends HTTPClient {
 		}
 		if (firstChar === 'B') {
 			return this.engines.bcl || (this.engines.bcl = new EuroleagueEngine());
+		}
+		if (firstChar === 'A') {
+			return this.engines.acb || (this.engines.acb = new AcbEngine());
 		}
 
 		// Fallback to competitionId-based lookup or euroleague
