@@ -1,6 +1,7 @@
 import { HTTPClient } from '#utils';
 import { EuroleagueEngine } from './engines/EuroleagueEngine.mjs';
 import { AcbEngine } from './engines/AcbEngine.mjs';
+import { LnbScraper } from './LnbScraper.mjs';
 
 /**
  * @description EuropeScraper is the master orchestrator for European basketball competitions.
@@ -16,10 +17,10 @@ export class EuropeScraper extends HTTPClient {
 	constructor(options = {}) {
 		super('https://live.euroleague.net/api');
 
-		// Parse competitions list (can be 'all', or comma-separated list like 'euroleague,eurocup,bcl,acb')
+		// Parse competitions list (can be 'all', or comma-separated list like 'euroleague,eurocup,bcl,acb,lnb')
 		const rawComps = options.competitions || 'euroleague';
 		if (rawComps === 'all') {
-			this.competitions = ['euroleague', 'eurocup', 'bcl', 'acb'];
+			this.competitions = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb'];
 		} else if (Array.isArray(rawComps)) {
 			this.competitions = rawComps;
 		} else {
@@ -34,7 +35,8 @@ export class EuropeScraper extends HTTPClient {
 			euroleague: new EuroleagueEngine(),
 			eurocup: new EuroleagueEngine(), // Shared engine for Euroleague API
 			bcl: new EuroleagueEngine(),      // Shared engine for BCL API
-			acb: new AcbEngine()
+			acb: new AcbEngine(),
+			lnb: new LnbScraper()
 		};
 
 		// Dynamically register any other requested competitions/domestic leagues to share the EuroleagueEngine
@@ -42,6 +44,8 @@ export class EuropeScraper extends HTTPClient {
 			if (!this.engines[comp]) {
 				if (comp === 'acb') {
 					this.engines[comp] = new AcbEngine();
+				} else if (comp === 'lnb') {
+					this.engines[comp] = new LnbScraper();
 				} else {
 					this.engines[comp] = new EuroleagueEngine();
 				}
@@ -96,6 +100,9 @@ export class EuropeScraper extends HTTPClient {
 		}
 		if (firstChar === 'A') {
 			return this.engines.acb || (this.engines.acb = new AcbEngine());
+		}
+		if (firstChar === 'L') {
+			return this.engines.lnb || (this.engines.lnb = new LnbScraper());
 		}
 
 		// Fallback to competitionId-based lookup or euroleague
