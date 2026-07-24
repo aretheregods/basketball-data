@@ -36,14 +36,14 @@ test.describe('LNB French Basketball Scraper & Pipeline Integration', () => {
 		assert.ok(slugs.length > 0, 'Should return some slugs');
 		assert.ok(slugs[0].includes('-L2097_'), 'Slugs must be formatted with L season prefix segment');
 		const sampleGameId = slugs[0].split('-').pop();
-		assert.match(sampleGameId, /^L2097_[a-f0-9_]+$/, 'gameId Segment must match LNB pattern');
+		assert.match(sampleGameId, /^L2097_[a-z0-9_]+$/, 'gameId Segment must match LNB pattern');
 	});
 
 	test('LnbScraper should return correct unified schema mock data', async () => {
 		const scraper = new LnbScraper();
-		const boxscore = await scraper.getUnifiedBoxScore('L2097_22adca87_67a9_11f0_86e1_4dfdc3c87d29');
+		const boxscore = await scraper.getUnifiedBoxScore('L2097_2020_09_26_limoges');
 
-		assert.equal(boxscore.gameId, 'L2097_22adca87_67a9_11f0_86e1_4dfdc3c87d29');
+		assert.equal(boxscore.gameId, 'L2097_2020_09_26_limoges');
 		assert.equal(boxscore.competitionId, 'lnb');
 		assert.equal(boxscore.seasonId, '2097');
 
@@ -62,7 +62,7 @@ test.describe('LNB French Basketball Scraper & Pipeline Integration', () => {
 
 	test('EuropeScraper should route gameId prefixed with L to LnbScraper', () => {
 		const scraper = new EuropeScraper({ competitions: 'lnb' });
-		const engine = scraper.getEngineForGame('L2097_22adca87_67a9_11f0_86e1_4dfdc3c87d29');
+		const engine = scraper.getEngineForGame('L2097_2020_09_26_limoges');
 		assert.ok(engine instanceof LnbScraper);
 	});
 
@@ -72,7 +72,7 @@ test.describe('LNB French Basketball Scraper & Pipeline Integration', () => {
 		// 1. STAGE 1: Extract
 		const gameIds = await extractStage(scraper, league, year);
 		assert.ok(gameIds.length > 0);
-		assert.ok(gameIds.includes('L2097_22adca87_67a9_11f0_86e1_4dfdc3c87d29'));
+		assert.ok(gameIds.includes('L2097_2020_09_26_limoges'));
 
 		// 2. STAGE 2: Transform
 		const transformed = await transformStage(league, year);
@@ -102,7 +102,7 @@ test.describe('LNB French Basketball Scraper & Pipeline Integration', () => {
 
 			const games = db.prepare('SELECT * FROM games WHERE competition_id = ? AND season_id = ?').all('lnb', year);
 			assert.ok(games.length > 0);
-			assert.ok(games.some(g => g.id === 'L2097_22adca87_67a9_11f0_86e1_4dfdc3c87d29'));
+			assert.ok(games.some(g => g.id === 'L2097_2020_09_26_limoges'));
 		} finally {
 			db.destroy();
 		}

@@ -1,77 +1,81 @@
+import { HTTPClient } from '#utils';
+
 /**
- * @description Harvester for LNB (French basketball) schedules using Playwright.
+ * @description Harvester for LNB (French Pro A) schedules from Basketball Reference.
  */
-export class LnbHarvester {
+export class LnbHarvester extends HTTPClient {
 	/**
 	 * @constructor
 	 * @param {Object} scraperInstance - The parent scraper instance
 	 */
 	constructor(scraperInstance) {
+		super('https://www.basketball-reference.com');
 		this.scraper = scraperInstance;
 	}
 
 	/**
 	 * @description Fetches all game slugs/IDs for LNB for a given season.
-	 * @param {string|number} year - The season start year (e.g. 2025)
+	 * @param {string|number} year - The season start year (e.g. 2021)
 	 * @returns {Promise<string[]>} List of game slugs
 	 */
 	async getSeasonGameSlugs(year) {
-		// If in test mode, return mock slugs directly to avoid launching Playwright
+		// If in test mode, return mock slugs directly to avoid real network calls
 		if (process.env.NODE_ENV === 'test') {
 			return [
-				`asvel-vs-monaco-L${year}_22adca87_67a9_11f0_86e1_4dfdc3c87d29`,
-				`paris-vs-bourg-L${year}_55bdca87_67a9_11f0_86e1_4dfdc3c87d29`
+				`nanterre-vs-limoges-L${year}_2020_09_26_limoges`,
+				`cholet-vs-orleans-L${year}_2020_09_26_orleans`
 			];
 		}
 
-		const calendarUrl = `https://lnb.fr/fr/calendar?season=${year}`;
-		console.log(`📡 [LnbHarvester] Launching browser to fetch calendar from ${calendarUrl}...`);
+		const calendarUrl = `/international/france-lnb-pro-a/${year}-schedule.html`;
+		console.log(`📡 [LnbHarvester] Fetching schedule from ${this.baseUrl}${calendarUrl}...`);
 
-		let browser;
 		try {
-			const { chromium } = await import('playwright');
-			browser = await chromium.launch({ headless: true });
-			const context = await browser.newContext({
-				userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-			});
-			const page = await context.newPage();
-
-			const response = await page.goto(calendarUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-			const status = response ? response.status() : 200;
-
-			if (status === 403) {
-				console.warn(`⚠️ [LnbHarvester] Access to ${calendarUrl} was blocked with HTTP 403 Forbidden. This is likely due to AWS ALB/WAF blocking datacenter IPs.`);
+			const htmlText = await this.requestText(calendarUrl);
+			if (!htmlText) {
+				console.warn(`⚠️ [LnbHarvester] Empty response received for LNB calendar.`);
 				return [];
 			}
 
-			const gameUUIDs = await page.evaluate(() => {
-				const anchors = Array.from(document.querySelectorAll('a[href*="/match-center/"]'));
-				return anchors
-					.map(a => a.href)
-					.map(url => {
-						const match = url.match(/\/match-center\/([a-f0-9-]+)/i);
-						return match ? match[1] : null;
-					})
-					.filter(Boolean);
-			});
+			// Extract all match URLs like: /international/boxscores/2020-09-26-limoges.html
+			const regex = /\/international\/boxscores\/([a-z0-9-]+)\.html/g;
+			let match;
+			const gameIds = [];
 
-			const uniqueUUIDs = [...new Set(gameUUIDs)];
-
-			if (uniqueUUIDs.length === 0) {
-				console.warn(`⚠️ [LnbHarvester] Discovered 0 matches. The page may have failed to load or the calendar layout changed.`);
-			} else {
-				console.log(`✅ [LnbHarvester] Found ${uniqueUUIDs.length} unique match UUIDs.`);
+			while ((match = regex.exec(htmlText)) !== null) {
+				gameIds.push(match[1]); // e.g. "2020-09-26-limoges"
 			}
 
-			// Format slugs as matchup-Lyear_uuid (using underscores instead of hyphens in UUID for compatibility)
-			return uniqueUUIDs.map(uuid => `matchup-L${year}_${uuid.replace(/-/g, '_')}`);
+			const uniqueGameIds = [...new Set(gameIds)];
+			console.log(`✅ [LnbHarvester] Discovered ${uniqueGameIds.length} unique games for season ${year}.`);
+
+			// Format into canonical slugs: matchup-Lyear_uuid_with_underscores
+			return uniqueGameIds.map(id => {
+				const matchup = id.split('-').slice(3).join('-') || 'matchup';
+				return `${matchup}-L${year}_${id.replace(/-/g, '_')}`;
+			});
 		} catch (error) {
 			console.error(`❌ [LnbHarvester] Failed to harvest LNB calendar:`, error.message || error);
 			return [];
-		} finally {
-			if (browser) {
-				await browser.close();
+		}
+	}
+
+	/**
+	 * @description Helper to request HTML text instead of parsing JSON.
+	 * @param {string} endpoint
+	 * @returns {Promise<string>}
+	 */
+	async requestText(endpoint) {
+		const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
+		try {
+			const response = await fetch(url, { headers: this.defaultHeaders });
+			if (!response.ok) {
+				throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
 			}
+			return await response.text();
+		} catch (error) {
+			console.error(`❌ [LnbHarvester] Fetch failed for ${url}:`, error.message || error);
+			return '';
 		}
 	}
 }

@@ -2,17 +2,16 @@ import fs from 'fs/promises';
 import path from 'path';
 import { HTTPClient } from '#utils';
 import { LnbHarvester } from './harvesters/LnbHarvester.mjs';
-import { parseLnbDom } from './parsers/LnbParser.mjs';
 
 /**
- * @description Engine for fetching, parsing, and normalizing French LNB (domestic) data.
+ * @description Engine for fetching, parsing, and normalizing French LNB (domestic) data from Basketball Reference.
  */
 export class LnbScraper extends HTTPClient {
 	/**
 	 * @constructor
 	 */
 	constructor() {
-		super('https://lnb.fr');
+		super('https://www.basketball-reference.com');
 		this.harvester = new LnbHarvester(this);
 		this.gameSlugs = [];
 	}
@@ -30,18 +29,17 @@ export class LnbScraper extends HTTPClient {
 
 	/**
 	 * @description Parses the competition, season, and gamecode/UUID from an LNB gameId.
-	 * LNB game ID is formatted as L{season}_{uuid_with_underscores}, e.g. L2025_22adca87_67a9_11f0_86e1_4dfdc3c87d29.
+	 * LNB game ID is formatted as L{season}_{date_team_slug_with_underscores}, e.g. L2021_2020_09_26_limoges.
 	 * @param {string} gameId
 	 * @returns {{ competitionId: string, seasonCode: string, gameCode: string, yearPrefix: string, gameUuid: string }}
 	 */
 	parseGameId(gameId) {
 		const clean = String(gameId || '').trim();
 		const parts = clean.split('_');
-		const keyPart = parts[0] || 'L2025';
+		const keyPart = parts[0] || 'L2021';
 
-		// Reconstruct the UUID by joining the remaining parts back with hyphens
-		const uuidParts = parts.slice(1);
-		const gameCode = uuidParts.join('-'); // e.g. "22adca87-67a9-11f0-86e1-4dfdc3c87d29"
+		// Reconstruct the original Basketball Reference match segment (replacing underscores back to hyphens)
+		const matchSegment = parts.slice(1).join('-'); // e.g. "2020-09-26-limoges"
 
 		const seasonCode = keyPart.substring(1); // Strip 'L'
 		const yearPrefix = seasonCode;
@@ -49,9 +47,9 @@ export class LnbScraper extends HTTPClient {
 		return {
 			competitionId: 'lnb',
 			seasonCode,
-			gameCode, // UUID format
+			gameCode: matchSegment,
 			yearPrefix,
-			gameUuid: gameCode
+			gameUuid: matchSegment
 		};
 	}
 
@@ -62,7 +60,7 @@ export class LnbScraper extends HTTPClient {
 	 */
 	getGameEndpoint(gameId) {
 		const { gameUuid } = this.parseGameId(gameId);
-		return `https://lnb.fr/fr/match-center/${gameUuid}`;
+		return `https://www.basketball-reference.com/international/boxscores/${gameUuid}.html`;
 	}
 
 	/**
@@ -75,8 +73,8 @@ export class LnbScraper extends HTTPClient {
 	}
 
 	/**
-	 * @description Formats unified box score by loading match center page via Playwright and extracting tables.
-	 * @param {string} gameId - Combined game identifier, e.g. 'L2025_22adca87_67a9_11f0_86e1_4dfdc3c87d29'
+	 * @description Formats unified box score by loading match center page via direct fetch and extracting tables.
+	 * @param {string} gameId - Combined game identifier, e.g. 'L2021_2020_09_26_limoges'
 	 * @returns {Promise<Object>} Unified Europe BoxScore response
 	 */
 	async getUnifiedBoxScore(gameId) {
@@ -87,8 +85,8 @@ export class LnbScraper extends HTTPClient {
 			return this.getMockUnifiedBoxScore(gameId);
 		}
 
-		const matchCenterUrl = this.getGameEndpoint(gameId);
-		console.log(`📡 [LnbScraper] Loading Match Center from ${matchCenterUrl}...`);
+		const matchUrl = this.getGameEndpoint(gameId);
+		console.log(`📡 [LnbScraper] Loading Match Boxscore from ${matchUrl}...`);
 
 		// Set up directories for side-cache HTML saving
 		const htmlCacheDir = path.resolve('data/raw/europe/lnb', String(yearPrefix));
@@ -107,102 +105,140 @@ export class LnbScraper extends HTTPClient {
 			// Cache miss, proceed to fetch
 		}
 
-		let browser;
-		try {
-			const { chromium } = await import('playwright');
-			browser = await chromium.launch({ headless: true });
-			const context = await browser.newContext({
-				userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-			});
-			const page = await context.newPage();
-
-			if (htmlContent) {
-				// Load the cached HTML instead of hitting the live network
-				await page.setContent(htmlContent);
-			} else {
-				// Load live page and save HTML
-				await page.goto(matchCenterUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-				htmlContent = await page.content();
+		if (!htmlContent) {
+			try {
+				const response = await fetch(matchUrl, { headers: this.defaultHeaders });
+				if (!response.ok) {
+					throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+				}
+				htmlContent = await response.text();
 				await fs.writeFile(htmlCachePath, htmlContent, 'utf8');
-				console.log(`💾 [LnbScraper] Saved raw Match Center HTML to ${htmlCachePath}`);
+				console.log(`💾 [LnbScraper] Saved raw Match Boxscore HTML to ${htmlCachePath}`);
+			} catch (error) {
+				console.error(`❌ [LnbScraper] Error fetching game ${gameId}:`, error.message || error);
+				return this.getUnplayedSkeleton(gameId, competitionId, yearPrefix);
+			}
+		}
+
+		try {
+			// Parse the team names
+			const visitorTeamNameMatch = htmlContent.match(/class="section_heading assoc_box-score-visitor"[^>]*>[\s\S]*?<span[^>]*data-label="([^"]+)"/i) ||
+				htmlContent.match(/id="box-score-visitor_sh"[^>]*>[\s\S]*?<h2>([^<]+)<\/h2>/i);
+			const homeTeamNameMatch = htmlContent.match(/class="section_heading assoc_box-score-home"[^>]*>[\s\S]*?<span[^>]*data-label="([^"]+)"/i) ||
+				htmlContent.match(/id="box-score-home_sh"[^>]*>[\s\S]*?<h2>([^<]+)<\/h2>/i);
+
+			const visitorTeamName = visitorTeamNameMatch ? visitorTeamNameMatch[1].trim() : 'Away Team';
+			const homeTeamName = homeTeamNameMatch ? homeTeamNameMatch[1].trim() : 'Home Team';
+
+			// Parse visitor and home table blocks
+			const visitorTableMatch = htmlContent.match(/<table[^>]*id="box-score-visitor"[^>]*>([\s\S]*?)<\/table>/i);
+			const homeTableMatch = htmlContent.match(/<table[^>]*id="box-score-home"[^>]*>([\s\S]*?)<\/table>/i);
+
+			if (!visitorTableMatch || !homeTableMatch) {
+				throw new Error('Could not locate box-score-visitor or box-score-home tables in HTML.');
 			}
 
-			// Parse DOM via our parser helper
-			const parsedData = await parseLnbDom(page, gameUuid);
+			const visitorTableHtml = visitorTableMatch[1];
+			const homeTableHtml = homeTableMatch[1];
 
-			return this.mapToUnifiedSchema(gameId, parsedData);
+			const visitorPlayers = this.parseTableHtml(visitorTableHtml);
+			const homePlayers = this.parseTableHtml(homeTableHtml);
+
+			const visitorScore = this.extractTeamScore(visitorTableHtml);
+			const homeScore = this.extractTeamScore(homeTableHtml);
+
+			const gameDate = gameUuid.substring(0, 10); // Extract date from ID (e.g. 2020-09-26)
+
+			return {
+				gameId,
+				competitionId,
+				seasonId: yearPrefix,
+				gameDate,
+				homeTeam: {
+					teamId: "HOME",
+					teamName: homeTeamName,
+					score: homeScore,
+					players: homePlayers
+				},
+				awayTeam: {
+					teamId: "AWAY",
+					teamName: visitorTeamName,
+					score: visitorScore,
+					players: visitorPlayers
+				}
+			};
 		} catch (error) {
-			console.error(`❌ [LnbScraper] Error scraping/parsing game ${gameId}:`, error.message || error);
+			console.error(`❌ [LnbScraper] Error parsing game ${gameId}:`, error.message || error);
 			return this.getUnplayedSkeleton(gameId, competitionId, yearPrefix);
-		} finally {
-			if (browser) {
-				await browser.close();
-			}
 		}
 	}
 
 	/**
-	 * @description Maps parsed LNB DOM tables to the unified European schema.
-	 * @param {string} gameId
-	 * @param {Object} parsedData
-	 * @returns {Object} Unified Europe BoxScore
+	 * @description Parses the player stats from an HTML table block.
+	 * @param {string} tableHtml
+	 * @returns {Array<Object>} Mapped players list
 	 */
-	mapToUnifiedSchema(gameId, parsedData) {
-		const { competitionId, yearPrefix } = this.parseGameId(gameId);
+	parseTableHtml(tableHtml) {
+		const playerRows = [];
+		const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+		let rowMatch;
 
-		// Calculate team aggregates from player stats
-		const calculateTeamStats = (players) => {
-			const stats = {
-				fgm: 0, fga: 0, fg3m: 0, fg3a: 0, ftm: 0, fta: 0,
-				oreb: 0, dreb: 0, reb: 0, ast: 0, stl: 0, blk: 0, tov: 0, pf: 0
-			};
-			let totalScore = 0;
+		while ((rowMatch = rowRegex.exec(tableHtml)) !== null) {
+			const rowContent = rowMatch[1];
+			if (rowContent.includes('Team Totals')) continue; // Skip totals row inside tbody if any
 
-			for (const p of players) {
-				const s = p.statistics || {};
-				totalScore += Number(s.pts || 0);
-				stats.fgm += Number(s.fgm || 0);
-				stats.fga += Number(s.fga || 0);
-				stats.fg3m += Number(s.fg3m || 0);
-				stats.fg3a += Number(s.fg3a || 0);
-				stats.ftm += Number(s.ftm || 0);
-				stats.fta += Number(s.fta || 0);
-				stats.oreb += Number(s.oreb || 0);
-				stats.dreb += Number(s.dreb || 0);
-				stats.reb += Number(s.reb || (s.oreb + s.dreb) || 0);
-				stats.ast += Number(s.ast || 0);
-				stats.stl += Number(s.stl || 0);
-				stats.blk += Number(s.blk || 0);
-				stats.tov += Number(s.tov || 0);
-				stats.pf += Number(s.pf || 0);
+			const nameMatch = rowContent.match(/data-stat="player"[^>]*>(?:<a[^>]*>)?([^<]+)(?:<\/a>)?<\/th>/i);
+			if (!nameMatch) continue;
+
+			const playerName = nameMatch[1].trim();
+
+			// Extract statistics
+			const statistics = {};
+			const tdRegex = /data-stat="([^"]+)"[^>]*>([^<]*)<\/td>/gi;
+			let tdMatch;
+			while ((tdMatch = tdRegex.exec(rowContent)) !== null) {
+				const statName = tdMatch[1];
+				const statVal = tdMatch[2].trim();
+				statistics[statName] = statVal;
 			}
 
-			return { stats, score: totalScore };
-		};
-
-		const homeCalc = calculateTeamStats(parsedData.homePlayers || []);
-		const awayCalc = calculateTeamStats(parsedData.awayPlayers || []);
-
-		return {
-			gameId,
-			competitionId,
-			seasonId: yearPrefix,
-			gameDate: new Date().toISOString().split('T')[0], // Default date to today since calendar doesn't parse it easily
-			homeTeam: {
-				teamId: "HOME",
-				teamName: parsedData.homeTeamName || "Home Team",
-				score: homeCalc.score,
-				statistics: homeCalc.stats,
-				players: parsedData.homePlayers || []
-			},
-			awayTeam: {
-				teamId: "AWAY",
-				teamName: parsedData.awayTeamName || "Away Team",
-				score: awayCalc.score,
-				statistics: awayCalc.stats,
-				players: parsedData.awayPlayers || []
+			// Only add if there are some minutes played
+			if (statistics.mp && statistics.mp !== '0:00' && statistics.mp !== '0') {
+				playerRows.push({
+					playerId: playerName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
+					playerName: playerName,
+					statistics: {
+						min: statistics.mp || '0:00',
+						pts: parseInt(statistics.pts || '0', 10),
+						fgm: parseInt(statistics.fg || '0', 10),
+						fga: parseInt(statistics.fga || '0', 10),
+						fg3m: parseInt(statistics.fg3 || '0', 10),
+						fg3a: parseInt(statistics.fg3a || '0', 10),
+						ftm: parseInt(statistics.ft || '0', 10),
+						fta: parseInt(statistics.fta || '0', 10),
+						oreb: parseInt(statistics.orb || '0', 10),
+						dreb: parseInt(statistics.drb || '0', 10),
+						reb: parseInt(statistics.trb || '0', 10),
+						ast: parseInt(statistics.ast || '0', 10),
+						stl: parseInt(statistics.stl || '0', 10),
+						blk: parseInt(statistics.blk || '0', 10),
+						tov: parseInt(statistics.tov || '0', 10),
+						pf: parseInt(statistics.pf || '0', 10)
+					}
+				});
 			}
-		};
+		}
+		return playerRows;
+	}
+
+	/**
+	 * @description Extracts the final team score from the team totals section of the HTML table.
+	 * @param {string} tableHtml
+	 * @returns {number} Team Score
+	 */
+	extractTeamScore(tableHtml) {
+		const totalMatch = tableHtml.match(/Team Totals[\s\S]*?data-stat="pts"[^>]*>(\d+)<\/td>/i);
+		return totalMatch ? parseInt(totalMatch[1], 10) : 0;
 	}
 
 	/**
@@ -244,7 +280,7 @@ export class LnbScraper extends HTTPClient {
 			gameId,
 			competitionId,
 			seasonId: yearPrefix,
-			gameDate: `${yearPrefix}-10-18`,
+			gameDate: `${yearPrefix}-09-26`,
 			homeTeam: {
 				teamId: "ASV",
 				teamName: "LDLC ASVEL",
