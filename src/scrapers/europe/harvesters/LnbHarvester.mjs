@@ -24,7 +24,7 @@ export class LnbHarvester {
 			];
 		}
 
-		const calendarUrl = `https://lnb.fr/fr/calendrier?season=${year}`;
+		const calendarUrl = `https://lnb.fr/fr/calendar?season=${year}`;
 		console.log(`📡 [LnbHarvester] Launching browser to fetch calendar from ${calendarUrl}...`);
 
 		let browser;
@@ -35,7 +35,14 @@ export class LnbHarvester {
 				userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 			});
 			const page = await context.newPage();
-			await page.goto(calendarUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+			const response = await page.goto(calendarUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+			const status = response ? response.status() : 200;
+
+			if (status === 403) {
+				console.warn(`⚠️ [LnbHarvester] Access to ${calendarUrl} was blocked with HTTP 403 Forbidden. This is likely due to AWS ALB/WAF blocking datacenter IPs.`);
+				return [];
+			}
 
 			const gameUUIDs = await page.evaluate(() => {
 				const anchors = Array.from(document.querySelectorAll('a[href*="/match-center/"]'));
@@ -49,7 +56,12 @@ export class LnbHarvester {
 			});
 
 			const uniqueUUIDs = [...new Set(gameUUIDs)];
-			console.log(`✅ [LnbHarvester] Found ${uniqueUUIDs.length} unique match UUIDs.`);
+
+			if (uniqueUUIDs.length === 0) {
+				console.warn(`⚠️ [LnbHarvester] Discovered 0 matches. The page may have failed to load or the calendar layout changed.`);
+			} else {
+				console.log(`✅ [LnbHarvester] Found ${uniqueUUIDs.length} unique match UUIDs.`);
+			}
 
 			// Format slugs as matchup-Lyear_uuid (using underscores instead of hyphens in UUID for compatibility)
 			return uniqueUUIDs.map(uuid => `matchup-L${year}_${uuid.replace(/-/g, '_')}`);
