@@ -2,6 +2,7 @@ import { HTTPClient } from '#utils';
 import { EuroleagueEngine } from './engines/EuroleagueEngine.mjs';
 import { AcbEngine } from './engines/AcbEngine.mjs';
 import { LnbScraper } from './LnbScraper.mjs';
+import { LbaScraper } from './LbaScraper.mjs';
 
 /**
  * @description EuropeScraper is the master orchestrator for European basketball competitions.
@@ -17,10 +18,10 @@ export class EuropeScraper extends HTTPClient {
 	constructor(options = {}) {
 		super('https://live.euroleague.net/api');
 
-		// Parse competitions list (can be 'all', or comma-separated list like 'euroleague,eurocup,bcl,acb,lnb')
+		// Parse competitions list (can be 'all', or comma-separated list like 'euroleague,eurocup,bcl,acb,lnb,lba')
 		const rawComps = options.competitions || 'euroleague';
 		if (rawComps === 'all') {
-			this.competitions = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb'];
+			this.competitions = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba'];
 		} else if (Array.isArray(rawComps)) {
 			this.competitions = rawComps;
 		} else {
@@ -36,7 +37,8 @@ export class EuropeScraper extends HTTPClient {
 			eurocup: new EuroleagueEngine(), // Shared engine for Euroleague API
 			bcl: new EuroleagueEngine(),      // Shared engine for BCL API
 			acb: new AcbEngine(),
-			lnb: new LnbScraper()
+			lnb: new LnbScraper(),
+			lba: new LbaScraper()
 		};
 
 		// Dynamically register any other requested competitions/domestic leagues to share the EuroleagueEngine
@@ -46,6 +48,8 @@ export class EuropeScraper extends HTTPClient {
 					this.engines[comp] = new AcbEngine();
 				} else if (comp === 'lnb') {
 					this.engines[comp] = new LnbScraper();
+				} else if (comp === 'lba') {
+					this.engines[comp] = new LbaScraper();
 				} else {
 					this.engines[comp] = new EuroleagueEngine();
 				}
@@ -103,6 +107,9 @@ export class EuropeScraper extends HTTPClient {
 		}
 		if (firstChar === 'L') {
 			return this.engines.lnb || (this.engines.lnb = new LnbScraper());
+		}
+		if (firstChar === 'I') {
+			return this.engines.lba || (this.engines.lba = new LbaScraper());
 		}
 
 		// Fallback to competitionId-based lookup or euroleague
