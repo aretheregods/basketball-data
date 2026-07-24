@@ -107,6 +107,12 @@ export class LnbScraper extends HTTPClient {
 
 		if (!htmlContent) {
 			try {
+				// Inject 5 seconds rate limit delay between successive fetches
+				if (process.env.NODE_ENV !== 'test') {
+					console.log(`⏳ [LnbScraper] Rate limit protection: sleeping 5000ms...`);
+					await new Promise(resolve => setTimeout(resolve, 5000));
+				}
+
 				const response = await fetch(matchUrl, { headers: this.defaultHeaders });
 				if (!response.ok) {
 					throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
