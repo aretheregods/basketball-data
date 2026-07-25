@@ -25,8 +25,8 @@ test.before(async () => {
 	console.warn = () => {};
 	console.error = () => {};
 
-	// Clean any previous SQL files for testing
-	await fs.rm(path.resolve('data/SQL'), { recursive: true, force: true });
+	// Clean any previous WNBA SQL files for testing
+	await fs.rm(path.resolve('data/SQL/WNBA.sqlite'), { force: true });
 });
 
 test.after(async () => {
@@ -34,8 +34,8 @@ test.after(async () => {
 	console.warn = originalWarn;
 	console.error = originalError;
 
-	// Clean up SQL databases after tests complete
-	await fs.rm(path.resolve('data/SQL'), { recursive: true, force: true });
+	// Clean up WNBA SQL database after tests complete
+	await fs.rm(path.resolve('data/SQL/WNBA.sqlite'), { force: true });
 });
 
 /**

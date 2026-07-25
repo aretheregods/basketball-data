@@ -11,6 +11,7 @@ export class AcbEngine extends HTTPClient {
 	constructor() {
 		super('https://live.acb.com');
 		this.harvester = new AcbHarvester();
+		this.bypassNetwork = process.env.NODE_ENV === 'test';
 	}
 
 	/**
@@ -54,7 +55,7 @@ export class AcbEngine extends HTTPClient {
 		const { competitionId, yearPrefix, gameCode } = this.parseGameId(gameId);
 
 		// If in test mode, bypass real network calls and return mock data
-		if (process.env.NODE_ENV === 'test') {
+		if (this.bypassNetwork) {
 			return this.getMockUnifiedBoxScore(gameId);
 		}
 

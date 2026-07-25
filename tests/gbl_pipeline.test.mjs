@@ -15,7 +15,7 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '../');
 
 test.describe('GBL Greek Basketball Scraper & Pipeline Integration', () => {
-	const league = 'europe';
+	const league = 'europe_gbl_test';
 	const year = '2097'; // Unique test year to isolate test runs
 
 	test.before(async () => {
@@ -147,7 +147,7 @@ test.describe('GBL Greek Basketball Scraper & Pipeline Integration', () => {
 
 		try {
 			// Temporarily disable test mode bypass to force GblScraper to use its HTML parser
-			process.env.NODE_ENV = 'production';
+			scraper.bypassNetwork = false;
 
 			const boxscore = await scraper.getUnifiedBoxScore(gameId);
 
@@ -168,7 +168,7 @@ test.describe('GBL Greek Basketball Scraper & Pipeline Integration', () => {
 			assert.equal(osman.statistics.min, '00:36:34');
 		} finally {
 			// Restore test mode
-			process.env.NODE_ENV = 'test';
+			scraper.bypassNetwork = true;
 			await fs.rm(htmlCacheDir, { recursive: true, force: true });
 		}
 	});

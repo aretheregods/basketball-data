@@ -15,8 +15,8 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '../');
 
 test.describe('LNB French Basketball Scraper & Pipeline Integration', () => {
-	const league = 'europe';
-	const year = '2097'; // Unique test year to isolate test runs
+	const league = 'europe_lnb_test';
+	const year = '2093'; // Unique test year to isolate test runs
 
 	test.before(async () => {
 		process.env.NODE_ENV = 'test';
@@ -31,21 +31,21 @@ test.describe('LNB French Basketball Scraper & Pipeline Integration', () => {
 
 	test('LnbHarvester should return mock slugs in test mode', async () => {
 		const harvester = new LnbHarvester();
-		const slugs = await harvester.getSeasonGameSlugs('2097');
+		const slugs = await harvester.getSeasonGameSlugs('2093');
 
 		assert.ok(slugs.length > 0, 'Should return some slugs');
-		assert.ok(slugs[0].includes('-L2097_'), 'Slugs must be formatted with L season prefix segment');
+		assert.ok(slugs[0].includes('-L2093_'), 'Slugs must be formatted with L season prefix segment');
 		const sampleGameId = slugs[0].split('-').pop();
-		assert.match(sampleGameId, /^L2097_[a-z0-9_]+$/, 'gameId Segment must match LNB pattern');
+		assert.match(sampleGameId, /^L2093_[a-z0-9_]+$/, 'gameId Segment must match LNB pattern');
 	});
 
 	test('LnbScraper should return correct unified schema mock data', async () => {
 		const scraper = new LnbScraper();
-		const boxscore = await scraper.getUnifiedBoxScore('L2097_2020_09_26_limoges');
+		const boxscore = await scraper.getUnifiedBoxScore('L2093_2020_09_26_limoges');
 
-		assert.equal(boxscore.gameId, 'L2097_2020_09_26_limoges');
+		assert.equal(boxscore.gameId, 'L2093_2020_09_26_limoges');
 		assert.equal(boxscore.competitionId, 'lnb');
-		assert.equal(boxscore.seasonId, '2097');
+		assert.equal(boxscore.seasonId, '2093');
 
 		// Home team check
 		assert.equal(boxscore.homeTeam.teamName, 'LDLC ASVEL');
@@ -62,7 +62,7 @@ test.describe('LNB French Basketball Scraper & Pipeline Integration', () => {
 
 	test('EuropeScraper should route gameId prefixed with L to LnbScraper', () => {
 		const scraper = new EuropeScraper({ competitions: 'lnb' });
-		const engine = scraper.getEngineForGame('L2097_2020_09_26_limoges');
+		const engine = scraper.getEngineForGame('L2093_2020_09_26_limoges');
 		assert.ok(engine instanceof LnbScraper);
 	});
 
@@ -72,7 +72,7 @@ test.describe('LNB French Basketball Scraper & Pipeline Integration', () => {
 		// 1. STAGE 1: Extract
 		const gameIds = await extractStage(scraper, league, year);
 		assert.ok(gameIds.length > 0);
-		assert.ok(gameIds.includes('L2097_2020_09_26_limoges'));
+		assert.ok(gameIds.includes('L2093_2020_09_26_limoges'));
 
 		// 2. STAGE 2: Transform
 		const transformed = await transformStage(league, year);
@@ -102,7 +102,7 @@ test.describe('LNB French Basketball Scraper & Pipeline Integration', () => {
 
 			const games = db.prepare('SELECT * FROM games WHERE competition_id = ? AND season_id = ?').all('lnb', year);
 			assert.ok(games.length > 0);
-			assert.ok(games.some(g => g.id === 'L2097_2020_09_26_limoges'));
+			assert.ok(games.some(g => g.id === 'L2093_2020_09_26_limoges'));
 		} finally {
 			db.destroy();
 		}
