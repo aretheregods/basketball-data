@@ -5,14 +5,14 @@ import { BblHarvester } from './harvesters/BblHarvester.mjs';
 
 /**
  * @description Scraper for German Basketball Bundesliga (BBL) domestic competition.
- * Fetches, caches, parses, and normalizes BBL game box score pages using Playwright.
+ * Fetches, caches, parses, and normalizes BBL game box score stats from the BBL REST API.
  */
 export class BblScraper extends HTTPClient {
 	/**
 	 * @constructor
 	 */
 	constructor() {
-		super('https://www.easycredit-bbl.de');
+		super('https://api.basketball-bundesliga.de');
 		this.harvester = new BblHarvester(this);
 		this.gameSlugs = [];
 		this.bypassNetwork = process.env.NODE_ENV === 'test';
@@ -61,7 +61,7 @@ export class BblScraper extends HTTPClient {
 	 */
 	getGameEndpoint(gameId) {
 		const { gameCode } = this.parseGameId(gameId);
-		return `https://www.easycredit-bbl.de/spiele/${gameCode}`;
+		return `https://api.basketball-bundesliga.de/games/${gameCode}/stats`;
 	}
 
 	/**
@@ -74,7 +74,7 @@ export class BblScraper extends HTTPClient {
 	}
 
 	/**
-	 * @description Formats unified box score by loading match center page via Playwright and parsing tables.
+	 * @description Formats unified box score by loading match center page via direct API fetch and parsing JSON.
 	 * @param {string} gameId - Combined game identifier, e.g. 'matchup-D2026_48210'
 	 * @returns {Promise<Object>} Unified Europe BoxScore response
 	 */
@@ -87,196 +87,142 @@ export class BblScraper extends HTTPClient {
 		}
 
 		const matchUrl = this.getGameEndpoint(gameId);
-		console.log(`📡 [BblScraper] Loading BBL Boxscore from ${matchUrl} using Playwright...`);
+		console.log(`📡 [BblScraper] Loading BBL Boxscore from BBL API ${matchUrl}...`);
 
-		// Set up directories for side-cache HTML saving
-		const htmlCacheDir = path.resolve('data/raw/europe/bbl', String(yearPrefix));
-		await fs.mkdir(htmlCacheDir, { recursive: true });
-		const htmlCachePath = path.join(htmlCacheDir, `${gameCode}.html`);
+		// Set up directories for side-cache JSON saving
+		const jsonCacheDir = path.resolve('data/raw/europe/bbl', String(yearPrefix));
+		await fs.mkdir(jsonCacheDir, { recursive: true });
+		const jsonCachePath = path.join(jsonCacheDir, `${gameCode}.json`);
 
-		let htmlContent = '';
+		let jsonContent = '';
 		try {
-			// Check if we already have the raw HTML cached locally
-			const stats = await fs.stat(htmlCachePath);
+			// Check if we already have the raw JSON cached locally
+			const stats = await fs.stat(jsonCachePath);
 			if (stats.size > 0) {
-				console.log(`⏭️ [BblScraper] HTML cache found for game ${gameCode}. Reading from disk...`);
-				htmlContent = await fs.readFile(htmlCachePath, 'utf8');
+				console.log(`⏭️ [BblScraper] JSON cache found for game ${gameCode}. Reading from disk...`);
+				jsonContent = await fs.readFile(jsonCachePath, 'utf8');
 			}
 		} catch (e) {
 			// Cache miss, proceed to fetch
 		}
 
-		if (!htmlContent) {
-			let browser = null;
+		let rawData = null;
+		if (jsonContent) {
 			try {
-				const playwright = await import('playwright');
-				browser = await playwright.chromium.launch({ headless: true });
-				const context = await browser.newContext();
-				const page = await context.newPage();
+				rawData = JSON.parse(jsonContent);
+			} catch (e) {
+				rawData = null;
+			}
+		}
 
-				await page.goto(matchUrl, { waitUntil: 'domcontentloaded' });
-
-				// Wait up to 5s for the statistics tables or widgets to render
-				try {
-					await page.waitForSelector('table, .stats-table, .boxscore-table', { timeout: 5000 });
-				} catch (e) {
-					console.warn('⚠️ [BblScraper] Timeout waiting for table elements. Saving loaded HTML anyway...');
+		if (!rawData) {
+			try {
+				// Inject rate limit delay between successive fetches
+				if (process.env.NODE_ENV !== 'test') {
+					console.log(`⏳ [BblScraper] Rate limit protection: sleeping 500ms...`);
+					await new Promise(resolve => setTimeout(resolve, 500));
 				}
 
-				htmlContent = await page.content();
-				await fs.writeFile(htmlCachePath, htmlContent, 'utf8');
-				console.log(`💾 [BblScraper] Saved raw BBL Boxscore HTML to ${htmlCachePath}`);
+				const headers = await this.harvester.getApiHeaders();
+				const response = await fetch(matchUrl, { headers });
+				if (!response.ok) {
+					throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+				}
+				rawData = await response.json();
+				await fs.writeFile(jsonCachePath, JSON.stringify(rawData, null, 2), 'utf8');
+				console.log(`💾 [BblScraper] Saved raw BBL Boxscore JSON to ${jsonCachePath}`);
 			} catch (error) {
-				console.error(`❌ [BblScraper] Error fetching game ${gameId} via Playwright:`, error.message || error);
+				console.error(`❌ [BblScraper] Error fetching game ${gameId}:`, error.message || error);
 				return this.getUnplayedSkeleton(gameId, competitionId, yearPrefix);
-			} finally {
-				if (browser) {
-					await browser.close();
-				}
 			}
 		}
 
 		try {
-			// Parse the rendered HTML content using regex or string splits
-			const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
-			let rMatch;
-			const rows = [];
-			while ((rMatch = rowRegex.exec(htmlContent)) !== null) {
-				rows.push(rMatch[1]);
-			}
+			const homeRaw = rawData.homeTeam || {};
+			const awayRaw = rawData.guestTeam || rawData.awayTeam || {};
 
-			const getCells = (rowHtml) => {
-				const tdRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
-				let m;
-				const cells = [];
-				while ((m = tdRegex.exec(rowHtml)) !== null) {
-					cells.push(m[1].replace(/<[^>]+>/g, '').trim());
-				}
-				return cells;
+			const homeTeamName = homeRaw.gameStat?.seasonTeam?.name || 'Home Team';
+			const awayTeamName = awayRaw.gameStat?.seasonTeam?.name || 'Away Team';
+
+			const homeScore = Number(homeRaw.gameStat?.points ?? 0);
+			const awayScore = Number(awayRaw.gameStat?.points ?? 0);
+
+			const gameDate = rawData.scheduledTime ? rawData.scheduledTime.split('T')[0] : '';
+
+			const mapPlayers = (playersList) => {
+				return (playersList || []).map(p => {
+					const playerInfo = p.seasonPlayer || {};
+					const fullName = `${playerInfo.firstName || ''} ${playerInfo.lastName || ''}`.trim() || 'Unknown Player';
+
+					// Convert secondsPlayed to min string MM:SS
+					const totalSec = Number(p.secondsPlayed ?? 0);
+					const mins = Math.floor(totalSec / 60);
+					const secs = totalSec % 60;
+					const minStr = `${mins}:${String(secs).padStart(2, '0')}`;
+
+					return {
+						playerId: String(playerInfo.id || playerInfo.playerId || '').trim(),
+						playerName: fullName,
+						statistics: {
+							min: minStr,
+							pts: Number(p.points ?? 0),
+							fgm: Number(p.fieldGoalsMade ?? 0),
+							fga: Number(p.fieldGoalsAttempted ?? 0),
+							fg3m: Number(p.threePointersMade ?? p.threePointShotsMade ?? 0),
+							fg3a: Number(p.threePointersAttempted ?? p.threePointShotsAttempted ?? 0),
+							ftm: Number(p.freeThrowsMade ?? 0),
+							fta: Number(p.freeThrowsAttempted ?? 0),
+							oreb: Number(p.offensiveRebounds ?? 0),
+							dreb: Number(p.defensiveRebounds ?? 0),
+							reb: Number(p.totalRebounds ?? 0),
+							ast: Number(p.assists ?? 0),
+							stl: Number(p.steals ?? 0),
+							blk: Number(p.blocks ?? 0),
+							tov: Number(p.turnovers ?? 0),
+							pf: Number(p.foulsCommitted ?? p.fouls ?? 0),
+							plus_minus: Number(p.plusMinus ?? 0)
+						}
+					};
+				});
 			};
 
-			// Attempt to extract team names
-			const spanMatches = [...htmlContent.matchAll(/<span[^>]*class="[^"]*team-name[^"]*"[^>]*>([\s\S]*?)<\/span>/gi)];
-			let homeTeamName = 'Home Team';
-			let awayTeamName = 'Away Team';
-			if (spanMatches.length >= 2) {
-				homeTeamName = spanMatches[0][1].replace(/<[^>]+>/g, '').trim();
-				awayTeamName = spanMatches[1][1].trim();
-			} else {
-				const h1Matches = [...htmlContent.matchAll(/<h1[^>]*>([\s\S]*?)<\/h1>/gi)];
-				if (h1Matches.length > 0) {
-					const parts = h1Matches[0][1].replace(/<[^>]+>/g, '').split(/vs|-/i);
-					if (parts.length >= 2) {
-						homeTeamName = parts[0].trim();
-						awayTeamName = parts[1].trim();
-					}
-				}
-			}
-
-			// Extract scores
-			let homeScore = 0;
-			let awayScore = 0;
-			const scoreDivMatch = htmlContent.match(/class="[^"]*match-score[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
-			const rawScoreStr = scoreDivMatch ? scoreDivMatch[1] : htmlContent.replace(/<[^>]+>/g, ' ');
-			const scoreMatch = rawScoreStr.match(/(\d+)\s*(?:vs|-)\s*(\d+)/i);
-			if (scoreMatch) {
-				homeScore = parseInt(scoreMatch[1], 10);
-				awayScore = parseInt(scoreMatch[2], 10);
-			}
-
-			const parsedPlayers = [];
-			for (const rHtml of rows) {
-				const cells = getCells(rHtml);
-				// Standard column matching logic
-				// Let's identify the player row by checking if we have a valid time (MM:SS or M:SS) and some stats
-				const minIndex = cells.findIndex(c => /^\d{1,2}:\d{2}$/.test(c));
-				if (minIndex !== -1 && cells.length >= 8) {
-					const playerName = cells[minIndex - 1] || cells[0];
-					if (playerName && !['TOTAL', 'TEAM', 'GESAMT', 'TOTALS'].includes(playerName.toUpperCase())) {
-						// Extract statistical components
-						const pts = parseInt(cells[minIndex + 1] || '0', 10);
-
-						// Try parsing FGM-FGA (shooting percentage columns) if available
-						let fgm = 0, fga = 0;
-						const fgMatch = (cells[minIndex + 2] || '').match(/(\d+)\s*[\/-]\s*(\d+)/);
-						if (fgMatch) {
-							fgm = parseInt(fgMatch[1], 10);
-							fga = parseInt(fgMatch[2], 10);
-						}
-
-						let fg3m = 0, fg3a = 0;
-						const fg3Match = (cells[minIndex + 3] || '').match(/(\d+)\s*[\/-]\s*(\d+)/);
-						if (fg3Match) {
-							fg3m = parseInt(fg3Match[1], 10);
-							fg3a = parseInt(fg3Match[2], 10);
-						}
-
-						let ftm = 0, fta = 0;
-						const ftMatch = (cells[minIndex + 4] || '').match(/(\d+)\s*[\/-]\s*(\d+)/);
-						if (ftMatch) {
-							ftm = parseInt(ftMatch[1], 10);
-							fta = parseInt(ftMatch[2], 10);
-						}
-
-						const reb = parseInt(cells[minIndex + 5] || '0', 10);
-						const ast = parseInt(cells[minIndex + 6] || '0', 10);
-						const stl = parseInt(cells[minIndex + 7] || '0', 10);
-						const blk = parseInt(cells[minIndex + 8] || '0', 10);
-						const tov = parseInt(cells[minIndex + 9] || '0', 10);
-						const pf = parseInt(cells[minIndex + 10] || '0', 10);
-
-						parsedPlayers.push({
-							playerId: playerName.toLowerCase().replace(/[^a-z0-9]/g, '-'),
-							playerName,
-							statistics: {
-								min: cells[minIndex],
-								pts,
-								fgm,
-								fga,
-								fg3m,
-								fg3a,
-								ftm,
-								fta,
-								oreb: 0,
-								dreb: 0,
-								reb,
-								ast,
-								stl,
-								blk,
-								tov,
-								pf,
-								plus_minus: 0
-							}
-						});
-					}
-				}
-			}
-
-			if (parsedPlayers.length === 0) {
-				throw new Error(`Could not parse player tables from BBL HTML content.`);
-			}
-
-			// Distribute parsed players evenly between home and away
-			const half = Math.ceil(parsedPlayers.length / 2);
-			const homePlayers = parsedPlayers.slice(0, half);
-			const awayPlayers = parsedPlayers.slice(half);
+			const mapTeamStats = (t) => {
+				return {
+					fgm: Number(t.fieldGoalsMade ?? 0),
+					fga: Number(t.fieldGoalsAttempted ?? 0),
+					fg3m: Number(t.threePointersMade ?? t.threePointShotsMade ?? 0),
+					fg3a: Number(t.threePointersAttempted ?? t.threePointShotsAttempted ?? 0),
+					ftm: Number(t.freeThrowsMade ?? 0),
+					fta: Number(t.freeThrowsAttempted ?? 0),
+					oreb: Number(t.offensiveRebounds ?? 0),
+					dreb: Number(t.defensiveRebounds ?? 0),
+					reb: Number(t.totalRebounds ?? 0),
+					ast: Number(t.assists ?? 0),
+					stl: Number(t.steals ?? 0),
+					blk: Number(t.blocks ?? 0),
+					tov: Number(t.turnovers ?? 0),
+					pf: Number(t.foulsCommitted ?? 0)
+				};
+			};
 
 			return {
 				gameId,
 				competitionId,
 				seasonId: yearPrefix,
-				gameDate: `${yearPrefix}-11-15`,
+				gameDate,
 				homeTeam: {
-					teamId: homeTeamName.toUpperCase().substring(0, 3),
+					teamId: String(homeRaw.gameStat?.seasonTeam?.tlc || 'HOME').toUpperCase(),
 					teamName: homeTeamName,
 					score: homeScore,
-					players: homePlayers
+					statistics: mapTeamStats(homeRaw.gameStat || {}),
+					players: mapPlayers(homeRaw.playerStats)
 				},
 				awayTeam: {
-					teamId: awayTeamName.toUpperCase().substring(0, 3),
+					teamId: String(awayRaw.gameStat?.seasonTeam?.tlc || 'AWAY').toUpperCase(),
 					teamName: awayTeamName,
 					score: awayScore,
-					players: awayPlayers
+					statistics: mapTeamStats(awayRaw.gameStat || {}),
+					players: mapPlayers(awayRaw.playerStats)
 				}
 			};
 		} catch (error) {
