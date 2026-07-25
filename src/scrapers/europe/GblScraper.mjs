@@ -109,8 +109,8 @@ export class GblScraper extends HTTPClient {
 			try {
 				// Inject 5 seconds rate limit delay between successive fetches
 				if (process.env.NODE_ENV !== 'test') {
-					console.log(`⏳ [GblScraper] Rate limit protection: sleeping 5000ms...`);
-					await new Promise(resolve => setTimeout(resolve, 5000));
+					console.log(`⏳ [GblScraper] Rate limit protection: sleeping 500ms...`);
+					await new Promise(resolve => setTimeout(resolve, 500));
 				}
 
 				const response = await fetch(matchUrl, { headers: this.defaultHeaders });
