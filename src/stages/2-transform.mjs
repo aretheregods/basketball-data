@@ -39,7 +39,7 @@ export async function transformStage(league, year) {
 
 	const rawDir = path.resolve('data/raw', league, String(year));
 
-	if (league.toLowerCase() === 'europe') {
+	if (league.toLowerCase().startsWith('europe')) {
 		const result = await transformEurope(rawDir, year);
 
 		// Cache the transformed data to disk

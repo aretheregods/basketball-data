@@ -15,6 +15,7 @@ export class GblScraper extends HTTPClient {
 		super('https://www.esake.gr');
 		this.harvester = new GblHarvester(this);
 		this.gameSlugs = [];
+		this.bypassNetwork = process.env.NODE_ENV === 'test';
 	}
 
 	/**
@@ -81,7 +82,7 @@ export class GblScraper extends HTTPClient {
 		const { competitionId, yearPrefix, gameCode } = this.parseGameId(gameId);
 
 		// If in test mode, bypass real network calls and return mock data
-		if (process.env.NODE_ENV === 'test') {
+		if (this.bypassNetwork) {
 			return this.getMockUnifiedBoxScore(gameId);
 		}
 

@@ -14,6 +14,7 @@ export class LnbScraper extends HTTPClient {
 		super('https://www.basketball-reference.com');
 		this.harvester = new LnbHarvester(this);
 		this.gameSlugs = [];
+		this.bypassNetwork = process.env.NODE_ENV === 'test';
 	}
 
 	/**
@@ -81,7 +82,7 @@ export class LnbScraper extends HTTPClient {
 		const { competitionId, yearPrefix, gameUuid } = this.parseGameId(gameId);
 
 		// If in test mode, bypass real network calls and return mock data
-		if (process.env.NODE_ENV === 'test') {
+		if (this.bypassNetwork) {
 			return this.getMockUnifiedBoxScore(gameId);
 		}
 

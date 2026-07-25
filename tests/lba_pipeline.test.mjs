@@ -15,8 +15,8 @@ const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '../');
 
 test.describe('LBA Italian Basketball Scraper & Pipeline Integration', () => {
-	const league = 'europe';
-	const year = '2098'; // Unique test year to isolate test runs
+	const league = 'europe_lba_test';
+	const year = '2092'; // Unique test year to isolate test runs
 
 	test.before(async () => {
 		process.env.NODE_ENV = 'test';
@@ -31,21 +31,21 @@ test.describe('LBA Italian Basketball Scraper & Pipeline Integration', () => {
 
 	test('LbaHarvester should return mock slugs in test mode', async () => {
 		const harvester = new LbaHarvester();
-		const slugs = await harvester.getSeasonGameSlugs('2098');
+		const slugs = await harvester.getSeasonGameSlugs('2092');
 
 		assert.ok(slugs.length > 0, 'Should return some slugs');
-		assert.ok(slugs[0].includes('-I2098_'), 'Slugs must be formatted with I season prefix segment');
+		assert.ok(slugs[0].includes('-I2092_'), 'Slugs must be formatted with I season prefix segment');
 		const sampleGameId = slugs[0].split('-').pop();
-		assert.match(sampleGameId, /^I2098_[a-z0-9_]+$/, 'gameId Segment must match LBA pattern');
+		assert.match(sampleGameId, /^I2092_[a-z0-9_]+$/, 'gameId Segment must match LBA pattern');
 	});
 
 	test('LbaScraper should return correct unified schema mock data', async () => {
 		const scraper = new LbaScraper();
-		const boxscore = await scraper.getUnifiedBoxScore('unahotels-reggio-emilia-vs-dolomiti-energia-trentino-I2098_24662');
+		const boxscore = await scraper.getUnifiedBoxScore('unahotels-reggio-emilia-vs-dolomiti-energia-trentino-I2092_24662');
 
-		assert.equal(boxscore.gameId, 'unahotels-reggio-emilia-vs-dolomiti-energia-trentino-I2098_24662');
+		assert.equal(boxscore.gameId, 'unahotels-reggio-emilia-vs-dolomiti-energia-trentino-I2092_24662');
 		assert.equal(boxscore.competitionId, 'lba');
-		assert.equal(boxscore.seasonId, '2098');
+		assert.equal(boxscore.seasonId, '2092');
 
 		// Home team check
 		assert.equal(boxscore.homeTeam.teamName, 'UNAHOTELS Reggio Emilia');
@@ -62,7 +62,7 @@ test.describe('LBA Italian Basketball Scraper & Pipeline Integration', () => {
 
 	test('EuropeScraper should route gameId prefixed with I to LbaScraper', () => {
 		const scraper = new EuropeScraper({ competitions: 'lba' });
-		const engine = scraper.getEngineForGame('unahotels-reggio-emilia-vs-dolomiti-energia-trentino-I2098_24662');
+		const engine = scraper.getEngineForGame('unahotels-reggio-emilia-vs-dolomiti-energia-trentino-I2092_24662');
 		assert.ok(engine instanceof LbaScraper);
 	});
 
@@ -73,7 +73,7 @@ test.describe('LBA Italian Basketball Scraper & Pipeline Integration', () => {
 			// 1. STAGE 1: Extract
 			const gameIds = await extractStage(scraper, league, year);
 			assert.ok(gameIds.length > 0);
-			assert.ok(gameIds.includes('I2098_24662'));
+			assert.ok(gameIds.includes('I2092_24662'));
 
 			// 2. STAGE 2: Transform
 			const transformed = await transformStage(league, year);
@@ -103,7 +103,7 @@ test.describe('LBA Italian Basketball Scraper & Pipeline Integration', () => {
 
 				const games = db.prepare('SELECT * FROM games WHERE competition_id = ? AND season_id = ?').all('lba', year);
 				assert.ok(games.length > 0);
-				assert.ok(games.some(g => g.id === 'I2098_24662'));
+			assert.ok(games.some(g => g.id === 'I2092_24662'));
 			} finally {
 				db.destroy();
 			}

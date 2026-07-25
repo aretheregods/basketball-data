@@ -61,7 +61,8 @@ export async function extractStage(scraper, league, year) {
 			const rawData = await scraper.request(url, {}, 3, 5000);
 
 			// Validate response against schema
-			validateSchema(`${league}/boxscore.json`, rawData);
+			const schemaFolder = league.toLowerCase().startsWith('europe') ? 'europe' : league;
+			validateSchema(`${schemaFolder}/boxscore.json`, rawData);
 
 			await fs.writeFile(filePath, JSON.stringify(rawData, null, 2), 'utf8');
 			console.log(`💾 Saved raw data to ${filePath}`);
@@ -73,7 +74,7 @@ export async function extractStage(scraper, league, year) {
 			}
 		} catch (error) {
 			console.error(`❌ Failed to extract/save box score for Game ID ${gameId}:`, error.message || error);
-			if (league.toLowerCase() === 'europe') {
+			if (league.toLowerCase().startsWith('europe')) {
 				console.warn(`⚠️ Warning: Bypassing extraction failure for European game ${gameId} to prevent pipeline crash. Writing fallback unplayed skeleton...`);
 				const fallback = {
 					gameId,
@@ -83,7 +84,8 @@ export async function extractStage(scraper, league, year) {
 					homeTeam: { teamId: "", teamName: "Unplayed", score: 0, players: [] },
 					awayTeam: { teamId: "", teamName: "Unplayed", score: 0, players: [] }
 				};
-				validateSchema(`${league}/boxscore.json`, fallback);
+				const schemaFolder = league.toLowerCase().startsWith('europe') ? 'europe' : league;
+				validateSchema(`${schemaFolder}/boxscore.json`, fallback);
 				await fs.writeFile(filePath, JSON.stringify(fallback, null, 2), 'utf8');
 			} else {
 				throw error;

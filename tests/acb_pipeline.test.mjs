@@ -37,7 +37,7 @@ test.beforeEach(() => {
 });
 
 test.describe('ACB (Liga Endesa) Scraper & Pipeline Integration', () => {
-	const league = 'europe';
+	const league = 'europe_acb_test';
 	const year = '2098'; // Unique test year to isolate test runs
 
 	test('AcbHarvester should fetch calendar and extract slugs correctly', async () => {
@@ -76,8 +76,8 @@ test.describe('ACB (Liga Endesa) Scraper & Pipeline Integration', () => {
 			};
 		};
 
-		// Set NODE_ENV to production temporarily so getUnifiedBoxScore doesn't trigger mock data
-		process.env.NODE_ENV = 'production';
+		// Set bypassNetwork to false temporarily so getUnifiedBoxScore doesn't trigger mock data
+		engine.bypassNetwork = false;
 		try {
 			const boxscore = await engine.getUnifiedBoxScore('A2098_105373');
 
@@ -109,7 +109,7 @@ test.describe('ACB (Liga Endesa) Scraper & Pipeline Integration', () => {
 			assert.equal(boxscore.homeTeam.statistics.fgm, 27);
 			assert.equal(boxscore.homeTeam.statistics.fg3m, 14);
 		} finally {
-			process.env.NODE_ENV = 'test';
+			engine.bypassNetwork = true;
 		}
 	});
 
