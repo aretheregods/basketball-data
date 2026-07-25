@@ -2,7 +2,7 @@ import { HTTPClient } from '#utils';
 
 /**
  * @description Harvester for Greek Basketball (GBL) schedules from esake.gr.
- * Discovers and collects match IDs from the GBL results / calendar page.
+ * Discovers and collects match IDs across all rounds and play-off series of a GBL season.
  */
 export class GblHarvester extends HTTPClient {
 	/**
@@ -15,8 +15,30 @@ export class GblHarvester extends HTTPClient {
 	}
 
 	/**
+	 * @description Maps the season year to esake's championship database identifier.
+	 * @param {string|number} year - The season year
+	 * @returns {string} Championship ID
+	 */
+	getChampionshipId(year) {
+		const yearStr = String(year);
+		const mappings = {
+			'2026': '44B80BEB',
+			'2025': '4820C134',
+			'2024': 'C1AF5EF5',
+			'2023': 'DC917125',
+			'2022': '8C367D67',
+			'2021': '03FFA3AC',
+			'2020': '49EEB365',
+			'2019': 'A12E05CD',
+			'2018': '42C43378',
+			'2017': '44323D2A'
+		};
+		return mappings[yearStr] || '44B80BEB'; // Default to current season
+	}
+
+	/**
 	 * @description Fetches all game slugs/IDs for GBL for a given season.
-	 * @param {string|number} year - The season start year (e.g. 2026)
+	 * @param {string|number} year - The season start year (e.g. 2024)
 	 * @returns {Promise<string[]>} List of game slugs
 	 */
 	async getSeasonGameSlugs(year) {
@@ -28,34 +50,79 @@ export class GblHarvester extends HTTPClient {
 			];
 		}
 
-		const resultsUrl = `/en/action/EsakeResults?mode=2`;
-		console.log(`📡 [GblHarvester] Fetching results calendar from ${this.baseUrl}${resultsUrl}...`);
+		const championshipId = this.getChampionshipId(year);
+		console.log(`📡 [GblHarvester] Harvesting GBL season ${year} (Championship ID: ${championshipId})...`);
 
-		try {
-			const htmlText = await this.requestText(resultsUrl);
-			if (!htmlText) {
-				console.warn(`⚠️ [GblHarvester] Empty response received for GBL calendar.`);
-				return [];
+		const gameIds = [];
+
+		// 1. Phase A: Regular Season - typically 22 rounds
+		console.log(`📡 [GblHarvester] Scraping Regular Season Phase A (Rounds 01-22)...`);
+		for (let r = 1; r <= 22; r++) {
+			const roundCode = String(r).padStart(2, '0');
+			const url = `/en/action/EsakeResults?idchampionship=${championshipId}&idseason=00000001&series=${roundCode}`;
+
+			try {
+				const htmlText = await this.requestText(url);
+				if (htmlText) {
+					const regex = /idgame=([A-F0-9a-f]+)/g;
+					let match;
+					while ((match = regex.exec(htmlText)) !== null) {
+						gameIds.push(match[1].toUpperCase());
+					}
+				}
+				// Tiny delay to respect the server
+				await new Promise(resolve => setTimeout(resolve, 50));
+			} catch (err) {
+				console.warn(`⚠️ [GblHarvester] Failed to fetch Regular Season Round ${roundCode}:`, err.message);
 			}
-
-			// Extract match IDs using EsakegameView?idgame=... pattern
-			const regex = /idgame=([A-F0-9a-f]+)/g;
-			let match;
-			const gameIds = [];
-
-			while ((match = regex.exec(htmlText)) !== null) {
-				gameIds.push(match[1].toUpperCase());
-			}
-
-			const uniqueGameIds = [...new Set(gameIds)];
-			console.log(`✅ [GblHarvester] Discovered ${uniqueGameIds.length} unique GBL games.`);
-
-			// Format into canonical slugs: matchup-Gyear_gameCode
-			return uniqueGameIds.map(id => `matchup-G${year}_${id}`);
-		} catch (error) {
-			console.error(`❌ [GblHarvester] Failed to harvest GBL calendar:`, error.message || error);
-			return [];
 		}
+
+		// 2. Phase B: Second Phase - typically 5 rounds
+		console.log(`📡 [GblHarvester] Scraping Second Phase Phase B (Rounds 1-5)...`);
+		for (let r = 1; r <= 5; r++) {
+			const url = `/en/action/EsakeResults?idchampionship=${championshipId}&idseason=00000002&series=${r}`;
+
+			try {
+				const htmlText = await this.requestText(url);
+				if (htmlText) {
+					const regex = /idgame=([A-F0-9a-f]+)/g;
+					let match;
+					while ((match = regex.exec(htmlText)) !== null) {
+						gameIds.push(match[1].toUpperCase());
+					}
+				}
+				await new Promise(resolve => setTimeout(resolve, 50));
+			} catch (err) {
+				console.warn(`⚠️ [GblHarvester] Failed to fetch Phase B Round ${r}:`, err.message);
+			}
+		}
+
+		// 3. Play Off series
+		console.log(`📡 [GblHarvester] Scraping Play Offs series...`);
+		const playOffSeries = ['201', '202', '203', '301', '302', '304', '401', '402', '403', '404', '405'];
+		for (const s of playOffSeries) {
+			const url = `/en/action/EsakeResults?idchampionship=${championshipId}&idseason=&series=${s}`;
+
+			try {
+				const htmlText = await this.requestText(url);
+				if (htmlText) {
+					const regex = /idgame=([A-F0-9a-f]+)/g;
+					let match;
+					while ((match = regex.exec(htmlText)) !== null) {
+						gameIds.push(match[1].toUpperCase());
+					}
+				}
+				await new Promise(resolve => setTimeout(resolve, 50));
+			} catch (err) {
+				console.warn(`⚠️ [GblHarvester] Failed to fetch Play Off series ${s}:`, err.message);
+			}
+		}
+
+		const uniqueGameIds = [...new Set(gameIds)];
+		console.log(`✅ [GblHarvester] Successfully harvested ${uniqueGameIds.length} unique GBL games for GBL year ${year}.`);
+
+		// Format into canonical slugs: matchup-Gyear_gameCode
+		return uniqueGameIds.map(id => `matchup-G${year}_${id}`);
 	}
 
 	/**
