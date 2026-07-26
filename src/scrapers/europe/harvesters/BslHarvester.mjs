@@ -34,15 +34,43 @@ export class BslHarvester extends HTTPClient {
 
 		// Import Playwright dynamically to prevent worker serialization errors
 		const { chromium } = await import('playwright');
-		const browser = await chromium.launch({ headless: true });
-		const page = await browser.newPage();
+		const browser = await chromium.launch({
+			headless: true,
+			args: [
+				'--disable-blink-features=AutomationControlled',
+				'--disable-features=IsolateOrigins,site-per-process',
+				'--no-sandbox',
+				'--disable-setuid-sandbox'
+			]
+		});
+
+		const context = await browser.newContext({
+			userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+			viewport: { width: 1920, height: 1080 },
+			locale: 'en-US'
+		});
+
+		await context.addInitScript(() => {
+			Object.defineProperty(navigator, 'webdriver', { get: () => false });
+			Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+			Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+		});
+
+		const page = await context.newPage();
 
 		try {
 			await page.goto(scheduleUrl, { waitUntil: 'domcontentloaded' });
 
-			// Collect all match page links from the schedule table (specifically column 5 / results links)
+			// Wait up to 15 seconds for Cloudflare challenge completion and link rendering
+			for (let i = 0; i < 15; i++) {
+				await page.waitForTimeout(1000);
+				const count = await page.evaluate(() => document.querySelectorAll('a[href*="/basketball/game/"]').length);
+				if (count > 0) break;
+			}
+
+			// Collect all match page links from the schedule table
 			const gamePaths = await page.evaluate(() => {
-				const anchors = Array.from(document.querySelectorAll('td:nth-child(5) a[href*="/basketball/game/"]'));
+				const anchors = Array.from(document.querySelectorAll('a[href*="/basketball/game/"]'));
 				return anchors.map(a => a.getAttribute('href')).filter(Boolean);
 			});
 
@@ -52,7 +80,6 @@ export class BslHarvester extends HTTPClient {
 			const slugs = uniquePaths.map(path => {
 				// Path format: /basketball/game/{game_id}/{matchup}
 				const parts = path.split('/').filter(Boolean);
-				// parts: ['basketball', 'game', '{game_id}', '{matchup}']
 				const gameCode = parts[2] || '';
 				const matchupRaw = parts[3] || 'matchup';
 				const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
@@ -66,9 +93,13 @@ export class BslHarvester extends HTTPClient {
 				uniquePaths.forEach(path => {
 					const parts = path.split('/').filter(Boolean);
 					const gameCode = parts[2] || '';
-					const key = `S${year}_${gameCode}`;
+					const matchupRaw = parts[3] || 'matchup';
+					const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
+
 					const fullUrl = path.startsWith('http') ? path : `https://www.proballers.com${path}`;
-					this.scraper.setGameUrl(key, fullUrl);
+					this.scraper.setGameUrl(`S${year}_${gameCode}`, fullUrl);
+					this.scraper.setGameUrl(gameCode, fullUrl);
+					this.scraper.setGameUrl(`${matchup}-S${year}_${gameCode}`, fullUrl);
 				});
 			}
 
@@ -83,3 +114,4 @@ export class BslHarvester extends HTTPClient {
 }
 
 export default BslHarvester;
+
