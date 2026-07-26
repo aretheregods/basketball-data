@@ -66,7 +66,8 @@ export async function transformEurope(rawDir, year) {
 				lba: 'Lega Basket Serie A',
 				aba: 'ABA League',
 				vtb: 'VTB United League',
-				gbl: 'Greek Basketball League'
+				gbl: 'Greek Basketball League',
+				israel: 'Israeli Basketball Super League'
 			};
 			const compName = compNames[competitionId] || competitionId.toUpperCase();
 			const compType = ['euroleague', 'eurocup', 'bcl'].includes(competitionId) ? 'continental' : 'domestic';
