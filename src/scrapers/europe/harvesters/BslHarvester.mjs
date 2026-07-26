@@ -28,8 +28,8 @@ export class BslHarvester extends HTTPClient {
 			];
 		}
 
-		// Proballers Turkish BSL league ID is 23
-		const scheduleUrl = `https://www.proballers.com/basketball/league/23/turkey-bsl/schedule/${year}`;
+		// Proballers Turkish BSL league ID is 168
+		const scheduleUrl = `https://www.proballers.com/basketball/league/168/turkey-bsl/schedule/${year}`;
 		console.log(`📡 [BslHarvester] Harvesting BSL season ${year} from ${scheduleUrl}...`);
 
 		// Import Playwright dynamically to prevent worker serialization errors
