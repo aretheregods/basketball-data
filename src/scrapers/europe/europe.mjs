@@ -5,6 +5,7 @@ import { LnbScraper } from './LnbScraper.mjs';
 import { LbaScraper } from './LbaScraper.mjs';
 import { GblScraper } from './GblScraper.mjs';
 import { BblScraper } from './BblScraper.mjs';
+import { LklScraper } from './LklScraper.mjs';
 
 /**
  * @description EuropeScraper is the master orchestrator for European basketball competitions.
@@ -23,7 +24,7 @@ export class EuropeScraper extends HTTPClient {
 		// Parse competitions list (can be 'all', or comma-separated list like 'euroleague,eurocup,bcl,acb,lnb,lba,gbl')
 		const rawComps = options.competitions || 'euroleague';
 		if (rawComps === 'all') {
-			this.competitions = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba', 'gbl', 'bbl'];
+			this.competitions = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba', 'gbl', 'bbl', 'lkl'];
 		} else if (Array.isArray(rawComps)) {
 			this.competitions = rawComps;
 		} else {
@@ -42,7 +43,8 @@ export class EuropeScraper extends HTTPClient {
 			lnb: new LnbScraper(),
 			lba: new LbaScraper(),
 			gbl: new GblScraper(),
-			bbl: new BblScraper()
+			bbl: new BblScraper(),
+			lkl: new LklScraper()
 		};
 
 		// Dynamically register any other requested competitions/domestic leagues to share the EuroleagueEngine
@@ -58,6 +60,8 @@ export class EuropeScraper extends HTTPClient {
 					this.engines[comp] = new GblScraper();
 				} else if (comp === 'bbl') {
 					this.engines[comp] = new BblScraper();
+				} else if (comp === 'lkl') {
+					this.engines[comp] = new LklScraper();
 				} else {
 					this.engines[comp] = new EuroleagueEngine();
 				}
@@ -124,6 +128,9 @@ export class EuropeScraper extends HTTPClient {
 		}
 		if (firstChar === 'D') {
 			return this.engines.bbl || (this.engines.bbl = new BblScraper());
+		}
+		if (firstChar === 'K') {
+			return this.engines.lkl || (this.engines.lkl = new LklScraper());
 		}
 
 		// Fallback to competitionId-based lookup or euroleague
