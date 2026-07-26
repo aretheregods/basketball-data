@@ -40,9 +40,9 @@ export class BslHarvester extends HTTPClient {
 		try {
 			await page.goto(scheduleUrl, { waitUntil: 'domcontentloaded' });
 
-			// Collect all match page links from the schedule table
+			// Collect all match page links from the schedule table (specifically column 5 / results links)
 			const gamePaths = await page.evaluate(() => {
-				const anchors = Array.from(document.querySelectorAll('a[href*="/basketball/game/"]'));
+				const anchors = Array.from(document.querySelectorAll('td:nth-child(5) a[href*="/basketball/game/"]'));
 				return anchors.map(a => a.getAttribute('href')).filter(Boolean);
 			});
 
