@@ -69,10 +69,15 @@ export class BslScraper extends HTTPClient {
 	 * @param {string} gameId
 	 * @returns {string} Game page URL
 	 */
+	/**
+	 * @description Returns the complete Game page URL for the given game ID.
+	 * @param {string} gameId
+	 * @returns {string} Game page URL
+	 */
 	getGameEndpoint(gameId) {
 		const { gameCode, seasonCode } = this.parseGameId(gameId);
 		const key = `S${seasonCode}_${gameCode}`;
-		return this.gameUrlMap.get(key) || this.gameUrlMap.get(gameId) || `https://www.proballers.com/basketball/game/${gameCode}/matchup`;
+		return this.gameUrlMap.get(key) || this.gameUrlMap.get(gameId) || this.gameUrlMap.get(gameCode) || `https://www.proballers.com/basketball/game/${gameCode}/matchup`;
 	}
 
 	/**
@@ -128,13 +133,38 @@ export class BslScraper extends HTTPClient {
 			await new Promise(resolve => setTimeout(resolve, 500));
 
 			const { chromium } = await import('playwright');
-			const browser = await chromium.launch({ headless: true });
-			const page = await browser.newPage();
+			const browser = await chromium.launch({
+				headless: true,
+				args: [
+					'--disable-blink-features=AutomationControlled',
+					'--disable-features=IsolateOrigins,site-per-process',
+					'--no-sandbox',
+					'--disable-setuid-sandbox'
+				]
+			});
+
+			const context = await browser.newContext({
+				userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+				viewport: { width: 1920, height: 1080 },
+				locale: 'en-US'
+			});
+
+			await context.addInitScript(() => {
+				Object.defineProperty(navigator, 'webdriver', { get: () => false });
+				Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+				Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+			});
+
+			const page = await context.newPage();
 
 			try {
 				await page.goto(matchUrl, { waitUntil: 'domcontentloaded' });
-				// Allow some time for table data to render
-				await new Promise(resolve => setTimeout(resolve, 1000));
+				// Allow time for Cloudflare challenge / table data to render
+				for (let i = 0; i < 15; i++) {
+					await page.waitForTimeout(1000);
+					const count = await page.evaluate(() => document.querySelectorAll('table').length);
+					if (count > 0) break;
+				}
 				htmlContent = await page.content();
 				await fs.writeFile(htmlCachePath, htmlContent, 'utf8');
 				console.log(`💾 [BslScraper] Saved raw BSL Boxscore HTML to ${htmlCachePath}`);
@@ -179,11 +209,14 @@ export class BslScraper extends HTTPClient {
 			if (idx === -1) return '';
 
 			const searchBlock = fullHtml.substring(0, idx);
-			const headingRegex = /<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi;
+			const headingRegex = /<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/gi;
 			let hMatch;
 			let lastHeading = '';
 			while ((hMatch = headingRegex.exec(searchBlock)) !== null) {
-				lastHeading = hMatch[1].replace(/<[^>]+>/g, '').trim();
+				const clean = hMatch[1].replace(/<[^>]+>/g, '').trim();
+				if (clean && !clean.toLowerCase().includes('glossary') && !clean.toLowerCase().includes('stats') && !clean.toLowerCase().includes('factor') && !clean.toLowerCase().includes('quarter') && !clean.toLowerCase().includes('impact')) {
+					lastHeading = clean;
+				}
 			}
 			if (lastHeading && lastHeading.length > 2 && lastHeading.length < 50) {
 				return lastHeading;
@@ -193,7 +226,10 @@ export class BslScraper extends HTTPClient {
 			let tMatch;
 			let lastTitle = '';
 			while ((tMatch = titleRegex.exec(searchBlock)) !== null) {
-				lastTitle = tMatch[1].replace(/<[^>]+>/g, '').trim();
+				const clean = tMatch[1].replace(/<[^>]+>/g, '').trim();
+				if (clean && !clean.toLowerCase().includes('glossary') && !clean.toLowerCase().includes('stats')) {
+					lastTitle = clean;
+				}
 			}
 			if (lastTitle && lastTitle.length > 2 && lastTitle.length < 50) {
 				return lastTitle;
@@ -230,7 +266,7 @@ export class BslScraper extends HTTPClient {
 			let headerRowIndex = -1;
 			for (let i = 0; i < rowsHtml.length; i++) {
 				const cells = getCells(rowsHtml[i]);
-				if (cells.some(c => c.toUpperCase().includes('MIN') || c.toUpperCase().includes('PTS'))) {
+				if (cells.some(c => c.toUpperCase().includes('MIN') || c.toUpperCase().includes('PTS') || c.toUpperCase().includes('2M-2A'))) {
 					headerCells = cells.map(c => c.toUpperCase().trim());
 					headerRowIndex = i;
 					break;
@@ -239,32 +275,38 @@ export class BslScraper extends HTTPClient {
 
 			if (headerRowIndex === -1) continue;
 
-			// Create column index map
-			const findCol = (labelKeywords) => {
-				return headerCells.findIndex(h => labelKeywords.some(keyword => h === keyword || h.includes(keyword)));
-			};
-
 			const colMap = {
-				min: findCol(['MIN', 'M']),
-				pts: findCol(['PTS', 'PTS', 'POINTS']),
-				reb: findCol(['REB', 'TOT', 'TR']),
-				oreb: findCol(['OFF', 'OR', 'OREB']),
-				dreb: findCol(['DEF', 'DR', 'DREB']),
-				ast: findCol(['AST', 'AS', 'A']),
-				stl: findCol(['STL', 'ST', 'S']),
-				blk: findCol(['BLK', 'BS', 'B']),
-				tov: findCol(['TO', 'TOV', 'T']),
-				pf: findCol(['PF', 'F']),
-				fgm: findCol(['FGM', 'FG']),
-				fga: findCol(['FGA']),
-				fg3m: findCol(['3PM', '3FG', '3M', '3P']),
-				fg3a: findCol(['3PA', '3A']),
-				ftm: findCol(['FTM', 'FT']),
-				fta: findCol(['FTA'])
+				player: headerCells.findIndex(h => h === 'PLAYER' || h.includes('PLAYER')),
+				min: headerCells.findIndex(h => h === 'MIN' || h === 'M'),
+				fg2Combined: headerCells.findIndex(h => h.includes('2M-2A') || h.includes('2M/2A')),
+				fg3Combined: headerCells.findIndex(h => h.includes('3M-3A') || h.includes('3M/3A')),
+				ftCombined: headerCells.findIndex(h => h.includes('1M-1A') || h.includes('1M/1A') || h.includes('FTM-FTA')),
+				fgm: headerCells.findIndex(h => h === 'FGM'),
+				fga: headerCells.findIndex(h => h === 'FGA'),
+				fg3m: headerCells.findIndex(h => h === '3PM' || h === '3FG'),
+				fg3a: headerCells.findIndex(h => h === '3PA'),
+				ftm: headerCells.findIndex(h => h === 'FTM'),
+				fta: headerCells.findIndex(h => h === 'FTA'),
+				oreb: headerCells.findIndex(h => h === 'OR' || h === 'OFF' || h === 'OREB'),
+				dreb: headerCells.findIndex(h => h === 'DR' || h === 'DEF' || h === 'DREB'),
+				reb: headerCells.findLastIndex(h => h === 'REB' || h === 'TOT' || h === 'TR'),
+				ast: headerCells.findLastIndex(h => h === 'AST' || h === 'AS'),
+				tov: headerCells.findLastIndex(h => h === 'TO' || h === 'TOV'),
+				stl: headerCells.findLastIndex(h => h === 'STL' || h === 'ST'),
+				blk: headerCells.findLastIndex(h => h === 'BLK' || h === 'BS'),
+				pf: headerCells.findLastIndex(h => h === 'FO' || h === 'PF' || h === 'F'),
+				pts: headerCells.findLastIndex(h => h === 'PTS' || h === 'POINTS'),
+				plusMinus: headerCells.findIndex(h => h === '+/-' || h.includes('+/-') || h === 'PM')
 			};
 
-			// If both PTS and MIN are not mapped, this is not a player stats table
-			if (colMap.min === -1 && colMap.pts === -1) continue;
+			// If neither player column nor (min/pts/2M-2A) is mapped, skip
+			if (colMap.player === -1 || (colMap.min === -1 && colMap.pts === -1 && colMap.fg2Combined === -1)) continue;
+
+			const parseCombined = (val) => {
+				if (!val || typeof val !== 'string' || !val.includes('-')) return [0, 0];
+				const parts = val.split('-').map(v => parseInt(v.trim(), 10) || 0);
+				return [parts[0] || 0, parts[1] || 0];
+			};
 
 			const parsedRows = [];
 			let totalsRow = null;
@@ -272,10 +314,10 @@ export class BslScraper extends HTTPClient {
 			// Parse player rows (everything after the header row)
 			for (let i = headerRowIndex + 1; i < rowsHtml.length; i++) {
 				const cells = getCells(rowsHtml[i]);
-				if (cells.length < 5) continue;
+				if (cells.length < 4) continue;
 
-				const rawName = cells[0];
-				if (!rawName || rawName === 'Player' || rawName.includes('Player Name')) continue;
+				const rawName = cells[colMap.player !== -1 ? colMap.player : 0];
+				if (!rawName || rawName.toUpperCase() === 'PLAYER' || rawName.includes('Player Name')) continue;
 
 				const isTotals = rawName.toUpperCase().includes('TOTAL') || rawName.toUpperCase().includes('TEAM') || rawName.toUpperCase().includes('TOTALS');
 
@@ -289,14 +331,17 @@ export class BslScraper extends HTTPClient {
 					continue;
 				}
 
-				// Get statistics
-				const pts = valOf(colMap.pts);
-				const fgm = valOf(colMap.fgm);
-				const fga = valOf(colMap.fga);
-				const fg3m = valOf(colMap.fg3m);
-				const fg3a = valOf(colMap.fg3a);
-				const ftm = valOf(colMap.ftm);
-				const fta = valOf(colMap.fta);
+				let [fg2m, fg2a] = colMap.fg2Combined !== -1 ? parseCombined(cells[colMap.fg2Combined]) : [0, 0];
+				let [fg3m, fg3a] = colMap.fg3Combined !== -1 ? parseCombined(cells[colMap.fg3Combined]) : [0, 0];
+				let [ftm, fta] = colMap.ftCombined !== -1 ? parseCombined(cells[colMap.ftCombined]) : [0, 0];
+
+				let fgm = colMap.fgm !== -1 ? valOf(colMap.fgm) : (fg2m + fg3m);
+				let fga = colMap.fga !== -1 ? valOf(colMap.fga) : (fg2a + fg3a);
+				if (colMap.fg3m !== -1) fg3m = valOf(colMap.fg3m);
+				if (colMap.fg3a !== -1) fg3a = valOf(colMap.fg3a);
+				if (colMap.ftm !== -1) ftm = valOf(colMap.ftm);
+				if (colMap.fta !== -1) fta = valOf(colMap.fta);
+
 				const oreb = valOf(colMap.oreb);
 				const dreb = valOf(colMap.dreb);
 				const reb = colMap.reb !== -1 ? valOf(colMap.reb) : (oreb + dreb);
@@ -305,6 +350,8 @@ export class BslScraper extends HTTPClient {
 				const blk = valOf(colMap.blk);
 				const tov = valOf(colMap.tov);
 				const pf = valOf(colMap.pf);
+				const pts = colMap.pts !== -1 ? valOf(colMap.pts) : (fg2m * 2 + fg3m * 3 + ftm);
+				const plus_minus = colMap.plusMinus !== -1 ? (parseInt(cells[colMap.plusMinus], 10) || 0) : 0;
 
 				const rowData = {
 					rawName,
@@ -324,7 +371,7 @@ export class BslScraper extends HTTPClient {
 					blk,
 					tov,
 					pf,
-					plus_minus: 0
+					plus_minus
 				};
 
 				if (isTotals) {
@@ -369,15 +416,15 @@ export class BslScraper extends HTTPClient {
 		});
 
 		if (!homeTable || !awayTable) {
-			homeTable = statsTables[1] || statsTables[0];
-			awayTable = statsTables[0];
+			homeTable = statsTables[0] || null;
+			awayTable = statsTables[1] || statsTables[0] || null;
 		}
 
-		const homeTeamName = homeTable.candidateTeamName || 'Home Team';
-		const awayTeamName = awayTable.candidateTeamName || 'Away Team';
+		const homeTeamName = homeTable ? homeTable.candidateTeamName || 'Home Team' : 'Home Team';
+		const awayTeamName = awayTable ? awayTable.candidateTeamName || 'Away Team' : 'Away Team';
 
-		const homeScore = homeTable.totals ? homeTable.totals.pts : (homeTable.players.reduce((sum, p) => sum + p.pts, 0) || 0);
-		const awayScore = awayTable.totals ? awayTable.totals.pts : (awayTable.players.reduce((sum, p) => sum + p.pts, 0) || 0);
+		const homeScore = homeTable ? (homeTable.totals ? homeTable.totals.pts : homeTable.players.reduce((sum, p) => sum + p.pts, 0)) : 0;
+		const awayScore = awayTable ? (awayTable.totals ? awayTable.totals.pts : awayTable.players.reduce((sum, p) => sum + p.pts, 0)) : 0;
 
 		// Extract date from HTML content (Month DD, YYYY)
 		const monthNames = {
@@ -454,17 +501,18 @@ export class BslScraper extends HTTPClient {
 				teamName: homeTeamName,
 				score: homeScore,
 				statistics: mapTeamStats(homeTable.totals),
-				players: mapPlayersList(homeTable.players)
+				players: homeTable ? mapPlayersList(homeTable.players) : []
 			},
 			awayTeam: {
 				teamId: awayTeamName.toUpperCase().substring(0, 4),
 				teamName: awayTeamName,
 				score: awayScore,
 				statistics: mapTeamStats(awayTable.totals),
-				players: mapPlayersList(awayTable.players)
+				players: awayTable ? mapPlayersList(awayTable.players) : []
 			}
 		};
 	}
+
 
 	/**
 	 * @description Returns standard unplayed skeleton boxscore.
