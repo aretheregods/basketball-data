@@ -74,37 +74,51 @@ export class LklHarvester extends HTTPClient {
 		await page.selectOption('#season-lkl', seasonId);
 		await new Promise(resolve => setTimeout(resolve, 2000)); // Allow some time for AJAX/DOM updates
 
-		const gameSlugs = await page.evaluate((seasonCode) => {
-			const anchors = Array.from(document.querySelectorAll('a[href*="/rungtynes/"]'));
-			return anchors.map(a => {
-				const href = a.href;
-				const match = href.match(/\/rungtynes\/(\d+)/);
-				if (!match) return null;
-				const gameCode = match[1];
+		// Dynamically extract all available months to filter by for the chosen season
+		const months = await page.evaluate(() => {
+			const options = Array.from(document.querySelectorAll('#month-lkl option'));
+			return options.map(o => o.value).filter(v => v && v !== '-');
+		});
 
-				// Extract team names from parent elements or use default
-				// Typically parent containers have team logos or names
-				const parent = a.closest('.results-table-row, tr, div');
-				let homeTeam = 'home';
-				let awayTeam = 'away';
-				if (parent) {
-					// LKL results rows often list team names or text
-					const text = parent.innerText || '';
-					const matches = text.split('\n').filter(t => t.trim().length > 0);
-					if (matches.length >= 2) {
-						homeTeam = matches[0].toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-						awayTeam = matches[matches.length - 1].toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+		const allGameSlugs = [];
+
+		// Loop through each month to extract all matches of the season (bypassing the 20-game limit of 'All')
+		for (const month of months) {
+			console.log(`📡 [LklHarvester] Selecting month ${month} for season ${year}...`);
+			await page.selectOption('#month-lkl', month);
+			await new Promise(resolve => setTimeout(resolve, 1000)); // Wait for AJAX reload
+
+			const monthSlugs = await page.evaluate((seasonCode) => {
+				const anchors = Array.from(document.querySelectorAll('a[href*="/rungtynes/"]'));
+				return anchors.map(a => {
+					const href = a.href;
+					const match = href.match(/\/rungtynes\/(\d+)/);
+					if (!match) return null;
+					const gameCode = match[1];
+
+					const parent = a.closest('.results-table-row, tr, div');
+					let homeTeam = 'home';
+					let awayTeam = 'away';
+					if (parent) {
+						const text = parent.innerText || '';
+						const matches = text.split('\n').filter(t => t.trim().length > 0);
+						if (matches.length >= 2) {
+							homeTeam = matches[0].toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+							awayTeam = matches[matches.length - 1].toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+						}
 					}
-				}
 
-				return `${homeTeam}-vs-${awayTeam}-K${seasonCode}_${gameCode}`;
-			}).filter(Boolean);
-		}, year);
+					return `${homeTeam}-vs-${awayTeam}-K${seasonCode}_${gameCode}`;
+				}).filter(Boolean);
+			}, year);
+
+			allGameSlugs.push(...monthSlugs);
+		}
 
 		await browser.close();
 
-		const uniqueSlugs = [...new Set(gameSlugs)];
-		console.log(`✅ [LklHarvester] Successfully harvested ${uniqueSlugs.length} unique LKL games for season ${year}.`);
+		const uniqueSlugs = [...new Set(allGameSlugs)];
+		console.log(`✅ [LklHarvester] Successfully harvested ${uniqueSlugs.length} unique LKL games across all months for season ${year}.`);
 		return uniqueSlugs;
 	}
 }
