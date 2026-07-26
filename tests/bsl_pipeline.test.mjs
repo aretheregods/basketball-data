@@ -60,19 +60,21 @@ test.describe('BSL Turkish Basketball Scraper & Pipeline Integration', () => {
 		assert.equal(player.statistics.min, '28:36');
 	});
 
-	test('BslScraper HTML Parser should correctly parse BSL team names, scores, and player statistics from cache', async () => {
-		const makeRow = (name, pos, min, fg, fg3, ft, oreb, dreb, reb, ast, stl, blk, tov, pf, pts) => {
+	test('BslScraper HTML Parser should correctly parse BSL team names, scores, and player statistics from Proballers cache', async () => {
+		const makeRow = (name, min, fgm, fga, fg3m, fg3a, ftm, fta, oreb, dreb, ast, stl, blk, tov, pf, pts) => {
 			return `
 				<tr>
 					<td><a href="/player/foo">${name}</a></td>
-					<td>${pos}</td>
 					<td>${min}</td>
-					<td>${fg}</td>
-					<td>${fg3}</td>
-					<td>${ft}</td>
+					<td>${fgm}</td>
+					<td>${fga}</td>
+					<td>${fg3m}</td>
+					<td>${fg3a}</td>
+					<td>${ftm}</td>
+					<td>${fta}</td>
 					<td>${oreb}</td>
 					<td>${dreb}</td>
-					<td>${reb}</td>
+					<td>0</td> <!-- total reb will be calculated -->
 					<td>${ast}</td>
 					<td>${stl}</td>
 					<td>${blk}</td>
@@ -83,18 +85,20 @@ test.describe('BSL Turkish Basketball Scraper & Pipeline Integration', () => {
 			`;
 		};
 
-		const makeTotalsRow = (pts, fg, fg3, ft, oreb, dreb, reb, ast, stl, blk, tov, pf) => {
+		const makeTotalsRow = (fgm, fga, fg3m, fg3a, ftm, fta, oreb, dreb, ast, stl, blk, tov, pf, pts) => {
 			return `
 				<tr>
 					<td>Totals</td>
-					<td>-</td>
 					<td>200</td>
-					<td>${fg}</td>
-					<td>${fg3}</td>
-					<td>${ft}</td>
+					<td>${fgm}</td>
+					<td>${fga}</td>
+					<td>${fg3m}</td>
+					<td>${fg3a}</td>
+					<td>${ftm}</td>
+					<td>${fta}</td>
 					<td>${oreb}</td>
 					<td>${dreb}</td>
-					<td>${reb}</td>
+					<td>0</td>
 					<td>${ast}</td>
 					<td>${stl}</td>
 					<td>${blk}</td>
@@ -108,60 +112,64 @@ test.describe('BSL Turkish Basketball Scraper & Pipeline Integration', () => {
 		const testHtml = `
 			<html>
 				<head>
-					<title>Besiktas vs. Galatasaray Box Score - May 10, 2095 - RealGM</title>
+					<title>Besiktas vs Galatasaray Box Score - May 10, 2095 - Proballers</title>
 				</head>
 				<body>
-					<div class="box-header">Besiktas</div>
-					<table class="stat_table">
+					<div class="identity-title">Besiktas</div>
+					<table>
 						<thead>
 							<tr>
 								<th>Player</th>
-								<th>Pos</th>
-								<th>Min</th>
-								<th>FGM-A</th>
-								<th>3PM-A</th>
-								<th>FTM-A</th>
-								<th>Off</th>
-								<th>Def</th>
-								<th>Reb</th>
-								<th>Ast</th>
-								<th>Stl</th>
-								<th>Blk</th>
+								<th>MIN</th>
+								<th>FGM</th>
+								<th>FGA</th>
+								<th>3PM</th>
+								<th>3PA</th>
+								<th>FTM</th>
+								<th>FTA</th>
+								<th>OFF</th>
+								<th>DEF</th>
+								<th>REB</th>
+								<th>AST</th>
+								<th>STL</th>
+								<th>BLK</th>
 								<th>TO</th>
 								<th>PF</th>
-								<th>Pts</th>
+								<th>PTS</th>
 							</tr>
 						</thead>
 						<tbody>
-							${makeRow('Jonah Mathews', 'G', '25:12', '4-8', '1-3', '3-4', '2', '3', '5', '2', '1', '0', '1', '2', '12')}
-							${makeTotalsRow('82', '28-58', '9-22', '17-20', '7', '20', '27', '15', '6', '2', '14', '22')}
+							${makeRow('Jonah Mathews', '25:12', '4', '8', '1', '3', '3', '4', '2', '3', '2', '1', '0', '1', '2', '12')}
+							${makeTotalsRow('28', '58', '9', '22', '17', '20', '7', '20', '15', '6', '2', '14', '22', '82')}
 						</tbody>
 					</table>
 
-					<div class="box-header">Galatasaray</div>
-					<table class="stat_table">
+					<div class="identity-title">Galatasaray</div>
+					<table>
 						<thead>
 							<tr>
 								<th>Player</th>
-								<th>Pos</th>
-								<th>Min</th>
-								<th>FGM-A</th>
-								<th>3PM-A</th>
-								<th>FTM-A</th>
-								<th>Off</th>
-								<th>Def</th>
-								<th>Reb</th>
-								<th>Ast</th>
-								<th>Stl</th>
-								<th>Blk</th>
+								<th>MIN</th>
+								<th>FGM</th>
+								<th>FGA</th>
+								<th>3PM</th>
+								<th>3PA</th>
+								<th>FTM</th>
+								<th>FTA</th>
+								<th>OFF</th>
+								<th>DEF</th>
+								<th>REB</th>
+								<th>AST</th>
+								<th>STL</th>
+								<th>BLK</th>
 								<th>TO</th>
 								<th>PF</th>
-								<th>Pts</th>
+								<th>PTS</th>
 							</tr>
 						</thead>
 						<tbody>
-							${makeRow('Sadik Emir Kabaca', 'F', '28:36', '5-10', '2-5', '2-2', '1', '4', '5', '6', '2', '1', '2', '3', '14')}
-							${makeTotalsRow('85', '30-60', '10-25', '15-18', '8', '22', '30', '18', '8', '3', '12', '20')}
+							${makeRow('Sadik Emir Kabaca', '28:36', '5', '10', '2', '5', '2', '2', '1', '4', '6', '2', '1', '2', '3', '14')}
+							${makeTotalsRow('30', '60', '10', '25', '15', '18', '8', '22', '18', '8', '3', '12', '20', '85')}
 						</tbody>
 					</table>
 				</body>

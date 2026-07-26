@@ -1,7 +1,7 @@
 import { HTTPClient } from '#utils';
 
 /**
- * @description Harvester for Turkish Basketbol Süper Ligi (BSL) schedules from RealGM.
+ * @description Harvester for Turkish Basketbol Süper Ligi (BSL) schedules from Proballers.
  * Discovers and collects match IDs across BSL seasons using Playwright.
  */
 export class BslHarvester extends HTTPClient {
@@ -10,7 +10,7 @@ export class BslHarvester extends HTTPClient {
 	 * @param {Object} [scraperInstance] - Parent scraper instance
 	 */
 	constructor(scraperInstance) {
-		super('https://basketball.realgm.com');
+		super('https://www.proballers.com');
 		this.scraper = scraperInstance;
 	}
 
@@ -28,7 +28,8 @@ export class BslHarvester extends HTTPClient {
 			];
 		}
 
-		const scheduleUrl = `https://basketball.realgm.com/international/league/7/Turkish-BSL/schedule/${year}`;
+		// Proballers Turkish BSL league ID is 23
+		const scheduleUrl = `https://www.proballers.com/basketball/league/23/turkey-bsl/schedule/${year}`;
 		console.log(`📡 [BslHarvester] Harvesting BSL season ${year} from ${scheduleUrl}...`);
 
 		// Import Playwright dynamically to prevent worker serialization errors
@@ -39,20 +40,21 @@ export class BslHarvester extends HTTPClient {
 		try {
 			await page.goto(scheduleUrl, { waitUntil: 'domcontentloaded' });
 
-			// Extract relative box score paths (e.g., /international/boxscore/2026-05-10/Besiktas-vs-Galatasaray/412345)
-			const boxscorePaths = await page.evaluate(() => {
-				const anchors = Array.from(document.querySelectorAll('a[href*="/international/boxscore/"]'));
+			// Collect all match page links from the schedule table
+			const gamePaths = await page.evaluate(() => {
+				const anchors = Array.from(document.querySelectorAll('a[href*="/basketball/game/"]'));
 				return anchors.map(a => a.getAttribute('href')).filter(Boolean);
 			});
 
 			await browser.close();
 
-			const uniquePaths = [...new Set(boxscorePaths)];
+			const uniquePaths = [...new Set(gamePaths)];
 			const slugs = uniquePaths.map(path => {
-				// Path format: /international/boxscore/YYYY-MM-DD/Matchup-Team-Names/gameId
+				// Path format: /basketball/game/{game_id}/{matchup}
 				const parts = path.split('/').filter(Boolean);
-				const gameCode = parts[parts.length - 1] || '';
-				const matchupRaw = parts[parts.length - 2] || 'matchup';
+				// parts: ['basketball', 'game', '{game_id}', '{matchup}']
+				const gameCode = parts[2] || '';
+				const matchupRaw = parts[3] || 'matchup';
 				const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
 
 				// Map to standard layout: matchup-Syear_gameId
@@ -63,9 +65,9 @@ export class BslHarvester extends HTTPClient {
 			if (this.scraper && typeof this.scraper.setGameUrl === 'function') {
 				uniquePaths.forEach(path => {
 					const parts = path.split('/').filter(Boolean);
-					const gameCode = parts[parts.length - 1] || '';
+					const gameCode = parts[2] || '';
 					const key = `S${year}_${gameCode}`;
-					const fullUrl = `https://basketball.realgm.com${path}`;
+					const fullUrl = path.startsWith('http') ? path : `https://www.proballers.com${path}`;
 					this.scraper.setGameUrl(key, fullUrl);
 				});
 			}

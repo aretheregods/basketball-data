@@ -5,14 +5,14 @@ import { BslHarvester } from './harvesters/BslHarvester.mjs';
 
 /**
  * @description Scraper for Turkish Basketbol Süper Ligi (BSL) domestic competition.
- * Fetches, caches, parses, and normalizes BSL game box score statistics from RealGM.
+ * Fetches, caches, parses, and normalizes BSL game box score statistics from Proballers.
  */
 export class BslScraper extends HTTPClient {
 	/**
 	 * @constructor
 	 */
 	constructor() {
-		super('https://basketball.realgm.com');
+		super('https://www.proballers.com');
 		this.harvester = new BslHarvester(this);
 		this.gameSlugs = [];
 		this.gameUrlMap = new Map();
@@ -20,7 +20,7 @@ export class BslScraper extends HTTPClient {
 	}
 
 	/**
-	 * @description Associates a game ID with its full RealGM URL during schedule harvesting.
+	 * @description Associates a game ID with its full Proballers URL during schedule harvesting.
 	 * @param {string} gameId
 	 * @param {string} url
 	 */
@@ -72,7 +72,7 @@ export class BslScraper extends HTTPClient {
 	getGameEndpoint(gameId) {
 		const { gameCode, seasonCode } = this.parseGameId(gameId);
 		const key = `S${seasonCode}_${gameCode}`;
-		return this.gameUrlMap.get(key) || this.gameUrlMap.get(gameId) || `https://basketball.realgm.com/international/boxscore/2026-05-10/Matchup/${gameCode}`;
+		return this.gameUrlMap.get(key) || this.gameUrlMap.get(gameId) || `https://www.proballers.com/basketball/game/${gameCode}/matchup`;
 	}
 
 	/**
@@ -189,7 +189,7 @@ export class BslScraper extends HTTPClient {
 				return lastHeading;
 			}
 
-			const titleRegex = /<(?:div|span|h4|h5|h6)[^>]*class="[^"]*(?:team-name|title_match|title|name|box-header)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|span|h4|h5|h6)>/gi;
+			const titleRegex = /<(?:div|span|h4|h5|h6)[^>]*class="[^"]*(?:team-name|title_match|title|name|box-header|identity-title)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|span|h4|h5|h6)>/gi;
 			let tMatch;
 			let lastTitle = '';
 			while ((tMatch = titleRegex.exec(searchBlock)) !== null) {
@@ -215,61 +215,115 @@ export class BslScraper extends HTTPClient {
 		const statsTables = [];
 
 		for (const tHtml of tablesHtml) {
-			// A RealGM boxscore table should have headers/columns indicating stats like FGM-A, 3PM-A, etc.
-			const lowerHtml = tHtml.toLowerCase();
-			if (!lowerHtml.includes('fgm-a') && !lowerHtml.includes('3pm-a') && !lowerHtml.includes('ftm-a')) {
-				continue;
-			}
-
+			// Find header row in this table to build column map
 			const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
 			let rMatch;
+			const rowsHtml = [];
+			while ((rMatch = rowRegex.exec(tHtml)) !== null) {
+				rowsHtml.push(rMatch[1]);
+			}
+
+			if (rowsHtml.length < 2) continue;
+
+			// Find header row
+			let headerCells = [];
+			let headerRowIndex = -1;
+			for (let i = 0; i < rowsHtml.length; i++) {
+				const cells = getCells(rowsHtml[i]);
+				if (cells.some(c => c.toUpperCase().includes('MIN') || c.toUpperCase().includes('PTS'))) {
+					headerCells = cells.map(c => c.toUpperCase().trim());
+					headerRowIndex = i;
+					break;
+				}
+			}
+
+			if (headerRowIndex === -1) continue;
+
+			// Create column index map
+			const findCol = (labelKeywords) => {
+				return headerCells.findIndex(h => labelKeywords.some(keyword => h === keyword || h.includes(keyword)));
+			};
+
+			const colMap = {
+				min: findCol(['MIN', 'M']),
+				pts: findCol(['PTS', 'PTS', 'POINTS']),
+				reb: findCol(['REB', 'TOT', 'TR']),
+				oreb: findCol(['OFF', 'OR', 'OREB']),
+				dreb: findCol(['DEF', 'DR', 'DREB']),
+				ast: findCol(['AST', 'AS', 'A']),
+				stl: findCol(['STL', 'ST', 'S']),
+				blk: findCol(['BLK', 'BS', 'B']),
+				tov: findCol(['TO', 'TOV', 'T']),
+				pf: findCol(['PF', 'F']),
+				fgm: findCol(['FGM', 'FG']),
+				fga: findCol(['FGA']),
+				fg3m: findCol(['3PM', '3FG', '3M', '3P']),
+				fg3a: findCol(['3PA', '3A']),
+				ftm: findCol(['FTM', 'FT']),
+				fta: findCol(['FTA'])
+			};
+
+			// If both PTS and MIN are not mapped, this is not a player stats table
+			if (colMap.min === -1 && colMap.pts === -1) continue;
+
 			const parsedRows = [];
 			let totalsRow = null;
 
-			while ((rMatch = rowRegex.exec(tHtml)) !== null) {
-				const cells = getCells(rMatch[1]);
-				if (cells.length < 14) continue;
+			// Parse player rows (everything after the header row)
+			for (let i = headerRowIndex + 1; i < rowsHtml.length; i++) {
+				const cells = getCells(rowsHtml[i]);
+				if (cells.length < 5) continue;
 
 				const rawName = cells[0];
 				if (!rawName || rawName === 'Player' || rawName.includes('Player Name')) continue;
 
 				const isTotals = rawName.toUpperCase().includes('TOTAL') || rawName.toUpperCase().includes('TEAM') || rawName.toUpperCase().includes('TOTALS');
 
-				const parseFrac = (str) => {
-					const parts = (str || '0-0').split('-').map(s => parseInt(s.trim(), 10) || 0);
-					return {
-						made: parts[0] || 0,
-						att: parts[1] || 0
-					};
+				const valOf = (colIdx) => {
+					if (colIdx === -1 || colIdx >= cells.length) return 0;
+					return parseInt(cells[colIdx], 10) || 0;
 				};
 
-				const rawMin = cells[2];
-				if (!isTotals && (!rawMin || rawMin === '0' || rawMin === '0:00' || rawMin === '00:00')) {
+				const rawMin = colMap.min !== -1 ? cells[colMap.min] : '0:00';
+				if (!isTotals && (!rawMin || rawMin === '0' || rawMin === '0:00' || rawMin === '00:00' || rawMin === '-')) {
 					continue;
 				}
 
-				const fg = parseFrac(cells[3]);
-				const fg3 = parseFrac(cells[4]);
-				const ft = parseFrac(cells[5]);
+				// Get statistics
+				const pts = valOf(colMap.pts);
+				const fgm = valOf(colMap.fgm);
+				const fga = valOf(colMap.fga);
+				const fg3m = valOf(colMap.fg3m);
+				const fg3a = valOf(colMap.fg3a);
+				const ftm = valOf(colMap.ftm);
+				const fta = valOf(colMap.fta);
+				const oreb = valOf(colMap.oreb);
+				const dreb = valOf(colMap.dreb);
+				const reb = colMap.reb !== -1 ? valOf(colMap.reb) : (oreb + dreb);
+				const ast = valOf(colMap.ast);
+				const stl = valOf(colMap.stl);
+				const blk = valOf(colMap.blk);
+				const tov = valOf(colMap.tov);
+				const pf = valOf(colMap.pf);
 
 				const rowData = {
 					rawName,
 					rawMin,
-					pts: parseInt(cells[14] || '0', 10),
-					fgm: fg.made,
-					fga: fg.att,
-					fg3m: fg3.made,
-					fg3a: fg3.att,
-					ftm: ft.made,
-					fta: ft.att,
-					oreb: parseInt(cells[6] || '0', 10),
-					dreb: parseInt(cells[7] || '0', 10),
-					reb: parseInt(cells[8] || '0', 10),
-					ast: parseInt(cells[9] || '0', 10),
-					stl: parseInt(cells[10] || '0', 10),
-					blk: parseInt(cells[11] || '0', 10),
-					tov: parseInt(cells[12] || '0', 10),
-					pf: parseInt(cells[13] || '0', 10),
+					pts,
+					fgm,
+					fga,
+					fg3m,
+					fg3a,
+					ftm,
+					fta,
+					oreb,
+					dreb,
+					reb,
+					ast,
+					stl,
+					blk,
+					tov,
+					pf,
 					plus_minus: 0
 				};
 
