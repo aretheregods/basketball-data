@@ -28,8 +28,8 @@ export class LnbpHarvester extends HTTPClient {
 			];
 		}
 
-		// Proballers Mexican LNBP league ID is 166
-		const scheduleUrl = `https://www.proballers.com/basketball/league/166/mexico-lnbp/schedule/${year}`;
+		// Proballers Mexican LNBP league ID is 100035
+		const scheduleUrl = `https://www.proballers.com/basketball/league/100035/mexico-liga-sisnova-lnbp/schedule/${year}`;
 		console.log(`📡 [LnbpHarvester] Harvesting LNBP season ${year} from ${scheduleUrl}...`);
 
 		// Import Playwright dynamically to prevent worker serialization errors
