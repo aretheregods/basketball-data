@@ -21,6 +21,10 @@ import { validateSchema } from '#utils';
 export async function extractStage(scraper, league, year) {
 	console.log(`📥 Starting Stage 1 [EXTRACT] for ${league.toUpperCase()} - ${year}`);
 
+	// Ensure output directory exists
+	const outputDir = path.resolve('data/raw', league, String(year));
+	await fs.mkdir(outputDir, { recursive: true });
+
 	// 1. Fetch game slugs/keys for the given season
 	await scraper.getSeasonGameSlugs(year);
 
@@ -33,10 +37,6 @@ export async function extractStage(scraper, league, year) {
 	// Slugs are formatted as cleanMatchup-gameId, so we split by '-' and get the last piece
 	const gameIds = [...new Set(scraper.gameSlugs.map(slug => slug.split('-').pop()))];
 	console.log(`🔍 Found ${gameIds.length} unique game IDs to scrape.`);
-
-	// Ensure output directory exists
-	const outputDir = path.resolve('data/raw', league, String(year));
-	await fs.mkdir(outputDir, { recursive: true });
 
 	// 3. Download and save raw payload for each game
 	for (const gameId of gameIds) {
