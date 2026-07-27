@@ -1,12 +1,13 @@
+import fs from 'fs/promises';
+import path from 'path';
 import { HTTPClient } from '#utils';
 import { BsnHarvester } from './harvesters/BsnHarvester.mjs';
-import { parseBsnFibaJson } from './parsers/BsnParser.mjs';
+import { parseBsnHtml } from './parsers/BsnParser.mjs';
 
 /**
  * @class BsnScraper
  * @description Scraper for Puerto Rico Baloncesto Superior Nacional (BSN) competition.
- * Fetches, caches, and parses BSN game box score statistics directly from FIBA LiveStats REST JSON API.
- * @extends {HTTPClient}
+ * Fetches, caches, parses, and normalizes BSN game box score statistics from Proballers.
  */
 export class BsnScraper extends HTTPClient {
 	/**
@@ -14,16 +15,15 @@ export class BsnScraper extends HTTPClient {
 	 * @param {Object} [options={}] - Scraper options
 	 */
 	constructor(options = {}) {
-		super('https://fibalivestats.dcd.shared.geniussports.com');
+		super('https://www.proballers.com');
 		this.harvester = new BsnHarvester(this);
 		this.gameSlugs = [];
 		this.gameUrlMap = new Map();
 		this.bypassNetwork = process.env.NODE_ENV === 'test';
-		this.activeYear = '2025';
 	}
 
 	/**
-	 * @description Associates a game ID with its full BSN URL during schedule harvesting.
+	 * @description Associates a game ID with its full Proballers URL during schedule harvesting.
 	 * @param {string} gameId
 	 * @param {string} url
 	 */
@@ -37,7 +37,6 @@ export class BsnScraper extends HTTPClient {
 	 * @returns {Promise<string[]>} List of game slugs
 	 */
 	async getSeasonGameSlugs(year) {
-		this.activeYear = String(year);
 		const slugs = await this.harvester.getSeasonGameSlugs(year);
 		this.gameSlugs = slugs;
 		return slugs;
@@ -45,35 +44,26 @@ export class BsnScraper extends HTTPClient {
 
 	/**
 	 * @description Parses the competition, season, and gamecode from a BSN gameId.
+	 * BSN game ID is formatted as matchup-B{season}_{gameCode}, e.g. vaqueros-vs-capitanes-B2026_123456.
 	 * @param {string} gameId
 	 * @returns {{ competitionId: string, seasonCode: string, gameCode: string, yearPrefix: string }}
 	 */
 	parseGameId(gameId) {
 		const clean = String(gameId || '').trim();
-		// If it's a full URL containing the ID
-		const urlMatch = clean.match(/\/data\/([a-zA-Z0-9-]+)\/data\.json/i) || clean.match(/\/([0-9]+)\/?$/);
-		if (urlMatch) {
-			return {
-				competitionId: 'puertorico',
-				seasonCode: this.activeYear || '2025',
-				gameCode: urlMatch[1],
-				yearPrefix: this.activeYear || '2025'
-			};
-		}
-		const match = clean.match(/bsn-(\d{4})-([a-zA-Z0-9-]+)/i);
-		if (match) {
-			return {
-				competitionId: 'puertorico',
-				seasonCode: match[1],
-				gameCode: match[2],
-				yearPrefix: match[1]
-			};
-		}
+		const parts = clean.split('_');
+		const gameCode = parts[1] || '1';
+		const keyPart = parts[0] || 'B2025';
+
+		// Extract season code segment from keyPart, e.g. "B2025" -> "2025" or "matchup-B2025" -> "2025"
+		const segmentMatch = keyPart.match(/(?:-)?B(\d{4})$/i);
+		const seasonCode = segmentMatch ? segmentMatch[1] : '2025';
+		const yearPrefix = seasonCode;
+
 		return {
-			competitionId: 'puertorico',
-			seasonCode: this.activeYear || '2025',
-			gameCode: clean,
-			yearPrefix: this.activeYear || '2025'
+			competitionId: 'bsn',
+			seasonCode,
+			gameCode,
+			yearPrefix
 		};
 	}
 
@@ -83,8 +73,9 @@ export class BsnScraper extends HTTPClient {
 	 * @returns {string} Game page URL
 	 */
 	getGameEndpoint(gameId) {
-		const { gameCode } = this.parseGameId(gameId);
-		return this.gameUrlMap.get(gameId) || this.gameUrlMap.get(gameCode) || `https://fibalivestats.dcd.shared.geniussports.com/data/${gameCode}/data.json`;
+		const { gameCode, seasonCode } = this.parseGameId(gameId);
+		const key = `B${seasonCode}_${gameCode}`;
+		return this.gameUrlMap.get(key) || this.gameUrlMap.get(gameId) || this.gameUrlMap.get(gameCode) || `https://www.proballers.com/basketball/game/${gameCode}/matchup`;
 	}
 
 	/**
@@ -97,7 +88,7 @@ export class BsnScraper extends HTTPClient {
 	}
 
 	/**
-	 * @description Formats unified box score by loading BSN match pages with REST requests or using mock data.
+	 * @description Formats unified box score by loading BSN match pages with Playwright or using cached files.
 	 * @param {string} url - Game ID
 	 * @param {Object} [options]
 	 * @param {number} [retries]
@@ -106,27 +97,92 @@ export class BsnScraper extends HTTPClient {
 	 */
 	async request(url, options = {}, retries = 3, delay = 1000) {
 		const gameId = url;
-		const { yearPrefix } = this.parseGameId(gameId);
+		const { yearPrefix, gameCode } = this.parseGameId(gameId);
 
 		// If in test mode, bypass real network calls and return mock data
 		if (this.bypassNetwork) {
 			return this.getMockUnifiedBoxScore(gameId);
 		}
 
-		const matchUrl = this.getGameEndpoint(gameId);
-		console.log(`📡 [BsnScraper] Loading BSN Boxscore from ${matchUrl}...`);
+		// Parse matchup team names from the gameId slug for mapping
+		const slugParts = gameId.split('-B')[0].split('-vs-');
+		const homeSlugExpected = slugParts[0] || '';
+		const awaySlugExpected = slugParts[1] || '';
+
+		// Set up directories for side-cache HTML saving
+		const htmlCacheDir = path.resolve('data/raw/puertorico', String(yearPrefix));
+		await fs.mkdir(htmlCacheDir, { recursive: true });
+		const htmlCachePath = path.join(htmlCacheDir, `${gameCode}.html`);
+
+		let htmlContent = '';
+		try {
+			// Check if we already have the raw HTML cached locally
+			const stats = await fs.stat(htmlCachePath);
+			if (stats.size > 0) {
+				console.log(`箱 [BsnScraper] HTML cache found for game ${gameCode}. Reading from disk...`);
+				htmlContent = await fs.readFile(htmlCachePath, 'utf8');
+			}
+		} catch (e) {
+			// Cache miss, proceed to fetch
+		}
+
+		if (!htmlContent) {
+			const matchUrl = this.getGameEndpoint(gameId);
+			console.log(`📡 [BsnScraper] Loading BSN Boxscore from ${matchUrl}...`);
+
+			// Inject 500ms delay to prevent rate limiting
+			console.log(`⏳ [BsnScraper] Rate limit protection: sleeping 500ms...`);
+			await new Promise(resolve => setTimeout(resolve, 500));
+
+			const { chromium } = await import('playwright');
+			const browser = await chromium.launch({
+				headless: true,
+				args: [
+					'--disable-blink-features=AutomationControlled',
+					'--disable-features=IsolateOrigins,site-per-process',
+					'--no-sandbox',
+					'--disable-setuid-sandbox'
+				]
+			});
+
+			const context = await browser.newContext({
+				userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+				viewport: { width: 1920, height: 1080 },
+				locale: 'en-US'
+			});
+
+			await context.addInitScript(() => {
+				Object.defineProperty(navigator, 'webdriver', { get: () => false });
+				Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+				Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+			});
+
+			const page = await context.newPage();
+
+			try {
+				await page.goto(matchUrl, { waitUntil: 'domcontentloaded' });
+				// Allow time for Cloudflare challenge / table data to render
+				for (let i = 0; i < 15; i++) {
+					await page.waitForTimeout(1000);
+					const count = await page.evaluate(() => document.querySelectorAll('table').length);
+					if (count > 0) break;
+				}
+				htmlContent = await page.content();
+				await fs.writeFile(htmlCachePath, htmlContent, 'utf8');
+				console.log(`💾 [BsnScraper] Saved raw BSN Boxscore HTML to ${htmlCachePath}`);
+			} catch (error) {
+				console.error(`❌ [BsnScraper] Error fetching game ${gameId}:`, error.message || error);
+				await browser.close();
+				return this.getUnplayedSkeleton(gameId, yearPrefix);
+			} finally {
+				await browser.close();
+			}
+		}
 
 		try {
-			// Fetch the raw FIBA LiveStats JSON directly
-			const jsonData = await super.request(matchUrl, options, retries, delay);
-
-			if (!jsonData || !jsonData.tm) {
-				throw new Error(`[BsnScraper] Invalid or missing JSON for game ${gameId}`);
-			}
-
-			return parseBsnFibaJson(jsonData, gameId, yearPrefix);
+			return parseBsnHtml(htmlContent, homeSlugExpected, awaySlugExpected, gameId, yearPrefix);
 		} catch (error) {
-			console.error(`❌ [BsnScraper] Error fetching game ${gameId}:`, error.message || error);
+			console.error(`❌ [BsnScraper] Error parsing game HTML ${gameId}:`, error.message || error);
 			return this.getUnplayedSkeleton(gameId, yearPrefix);
 		}
 	}
@@ -141,15 +197,15 @@ export class BsnScraper extends HTTPClient {
 		return {
 			gameId,
 			season: yearPrefix,
-			gameDate: `${yearPrefix}-07-15`,
+			gameDate: '',
 			homeTeam: {
-				teamId: 'HOME',
+				teamId: '',
 				teamName: 'Unplayed',
 				score: 0,
 				players: []
 			},
 			awayTeam: {
-				teamId: 'AWAY',
+				teamId: '',
 				teamName: 'Unplayed',
 				score: 0,
 				players: []

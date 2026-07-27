@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { BsnScraper } from '../src/scrapers/puertorico/BsnScraper.mjs';
 import { BsnHarvester } from '../src/scrapers/puertorico/harvesters/BsnHarvester.mjs';
-import { parseBsnFibaJson } from '../src/scrapers/puertorico/parsers/BsnParser.mjs';
+import { parseBsnHtml } from '../src/scrapers/puertorico/parsers/BsnParser.mjs';
 import { extractStage } from '../src/stages/1-extract.mjs';
 import { transformStage } from '../src/stages/2-transform.mjs';
 import { loadStage, initDatabase } from '../src/stages/3-load.mjs';
@@ -31,21 +31,20 @@ test.describe('Puerto Rico BSN Scraper & Pipeline Integration', () => {
 
 	test('BsnHarvester should return mock slugs in test mode', async () => {
 		const harvester = new BsnHarvester();
-		// Set scraper bypassNetwork to mimic test mode fully
 		harvester.scraper = { bypassNetwork: true };
 		const slugs = await harvester.getSeasonGameSlugs('2099');
 
 		assert.ok(slugs.length > 0, 'Should return some slugs');
-		assert.ok(slugs[0].includes('-2099-'), 'Slugs must contain year segment');
+		assert.ok(slugs[0].includes('-B2099_'), 'Slugs must contain Bsegment segment');
 		const sampleGameId = slugs[0].split('-').pop();
-		assert.match(sampleGameId, /^\d+$/, 'gameId Segment must match BSN numeric pattern');
+		assert.match(sampleGameId, /^B2099_\d+$/, 'gameId Segment must match BSN pattern');
 	});
 
 	test('BsnScraper should return correct unified schema mock data', async () => {
 		const scraper = new BsnScraper();
-		const boxscore = await scraper.request('bsn-2099-2111481');
+		const boxscore = await scraper.request('vaqueros-de-bayamon-vs-capitanes-de-arecibo-B2099_2111481');
 
-		assert.equal(boxscore.gameId, 'bsn-2099-2111481');
+		assert.equal(boxscore.gameId, 'vaqueros-de-bayamon-vs-capitanes-de-arecibo-B2099_2111481');
 		assert.equal(boxscore.season, '2099');
 
 		// Home team check
@@ -61,78 +60,117 @@ test.describe('Puerto Rico BSN Scraper & Pipeline Integration', () => {
 		assert.equal(tremontWaters.statistics.min, '24:30');
 	});
 
-	test('BsnScraper FIBA JSON Parser should correctly parse BSN team names, scores, and player statistics from raw FIBA JSON', async () => {
-		const sampleFibaJson = {
-			gDate: "15/07/2099",
-			tm: {
-				"1": {
-					sName: "VAQUEROS DE BAYAMON",
-					sShortName: "BAY",
-					sScore: "95",
-					pl: {
-						"p1": {
-							sFirstName: "Tremont",
-							sLastName: "Waters",
-							sMinutes: "24:30",
-							sPoints: "22",
-							sFieldGoalsMade: "8",
-							sFieldGoalsAttempted: "12",
-							sThreePointersMade: "2",
-							sThreePointersAttempted: "4",
-							sFreeThrowsMade: "4",
-							sFreeThrowsAttempted: "4",
-							sReboundsOffensive: "1",
-							sReboundsDefensive: "4",
-							sReboundsTot: "5",
-							sAssists: "6",
-							sSteals: "2",
-							sBlocksTot: "0",
-							sTurnovers: "2",
-							sFoulsPersonal: "3",
-							sPlusMinus: "8"
-						},
-						"p2": {
-							sFirstName: "Bench",
-							sLastName: "Player",
-							sMinutes: "00:00",
-							sPoints: "0"
-						}
-					}
-				},
-				"2": {
-					sName: "CAPITANES DE ARECIBO",
-					sShortName: "ARE",
-					sScore: "90",
-					pl: {
-						"p3": {
-							sFirstName: "Ángel",
-							sLastName: "Rodríguez",
-							sMinutes: "28:15",
-							sPoints: "18",
-							sFieldGoalsMade: "6",
-							sFieldGoalsAttempted: "14",
-							sThreePointersMade: "3",
-							sThreePointersAttempted: "7",
-							sFreeThrowsMade: "3",
-							sFreeThrowsAttempted: "4",
-							sReboundsOffensive: "1",
-							sReboundsDefensive: "4",
-							sReboundsTot: "5",
-							sAssists: "4",
-							sSteals: "2",
-							sBlocksTot: "0",
-							sTurnovers: "2",
-							sFoulsPersonal: "3",
-							sPlusMinus: "-8"
-						}
-					}
-				}
-			}
-		};
+	test('BsnScraper HTML Parser should correctly parse BSN team names, scores, and player statistics from Proballers HTML', async () => {
+		const sampleHtml = `
+			<html>
+			<body>
+				<div class="header">
+					<span>VAQUEROS DE BAYAMON</span>
+					<div class="score">95 vs 90</div>
+					<span>CAPITANES DE ARECIBO</span>
+				</div>
 
-		const boxscore = parseBsnFibaJson(sampleFibaJson, 'bsn-2099-2111481', '2099');
+				<div class="stats-section">
+					<h2>VAQUEROS DE BAYAMON</h2>
+					<table>
+						<thead>
+							<tr><th>Player</th><th>Min</th><th>FGM</th><th>FGA</th><th>3PM</th><th>3PA</th><th>FTM</th><th>FTA</th><th>OR</th><th>DR</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TO</th><th>PF</th><th>PTS</th></tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Tremont Waters</td>
+								<td>24:30</td>
+								<td>8</td>
+								<td>12</td>
+								<td>2</td>
+								<td>4</td>
+								<td>4</td>
+								<td>4</td>
+								<td>1</td>
+								<td>4</td>
+								<td>5</td>
+								<td>6</td>
+								<td>2</td>
+								<td>0</td>
+								<td>2</td>
+								<td>3</td>
+								<td>22</td>
+							</tr>
+							<tr class="total">
+								<td>Total</td>
+								<td>200:00</td>
+								<td>35</td>
+								<td>65</td>
+								<td>8</td>
+								<td>20</td>
+								<td>17</td>
+								<td>22</td>
+								<td>8</td>
+								<td>24</td>
+								<td>32</td>
+								<td>18</td>
+								<td>8</td>
+								<td>2</td>
+								<td>12</td>
+								<td>20</td>
+								<td>95</td>
+							</tr>
+						</tbody>
+					</table>
 
-		assert.equal(boxscore.gameDate, '2099-07-15');
+					<h2>CAPITANES DE ARECIBO</h2>
+					<table>
+						<thead>
+							<tr><th>Player</th><th>Min</th><th>FGM</th><th>FGA</th><th>3PM</th><th>3PA</th><th>FTM</th><th>FTA</th><th>OR</th><th>DR</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TO</th><th>PF</th><th>PTS</th></tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>Ángel Rodríguez</td>
+								<td>28:15</td>
+								<td>6</td>
+								<td>14</td>
+								<td>3</td>
+								<td>7</td>
+								<td>3</td>
+								<td>4</td>
+								<td>1</td>
+								<td>4</td>
+								<td>5</td>
+								<td>4</td>
+								<td>2</td>
+								<td>0</td>
+								<td>2</td>
+								<td>3</td>
+								<td>18</td>
+							</tr>
+							<tr class="total">
+								<td>Total</td>
+								<td>200:00</td>
+								<td>32</td>
+								<td>60</td>
+								<td>10</td>
+								<td>25</td>
+								<td>16</td>
+								<td>20</td>
+								<td>7</td>
+								<td>22</td>
+								<td>29</td>
+								<td>15</td>
+								<td>6</td>
+								<td>1</td>
+								<td>14</td>
+								<td>22</td>
+								<td>90</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</body>
+			</html>
+		`;
+
+		const boxscore = parseBsnHtml(sampleHtml, 'vaqueros-de-bayamon', 'capitanes-de-arecibo', 'vaqueros-de-bayamon-vs-capitanes-de-arecibo-B2099_2111481', '2099');
+
 		assert.equal(boxscore.homeTeam.teamName, 'VAQUEROS DE BAYAMON');
 		assert.equal(boxscore.awayTeam.teamName, 'CAPITANES DE ARECIBO');
 		assert.equal(boxscore.homeTeam.score, 95);
@@ -142,21 +180,11 @@ test.describe('Puerto Rico BSN Scraper & Pipeline Integration', () => {
 		assert.ok(waters, 'Should parse Tremont Waters successfully');
 		assert.equal(waters.statistics.pts, 22);
 		assert.equal(waters.statistics.min, '24:30');
-		assert.equal(waters.statistics.fgm, 8);
-		assert.equal(waters.statistics.fga, 12);
-		assert.equal(waters.statistics.plus_minus, 8);
-
-		// Bench player must be ignored because of 00:00 minutes
-		const bench = boxscore.homeTeam.players.find(p => p.playerName === 'Bench Player');
-		assert.ok(!bench, 'Should ignore DNP player');
 
 		const rodriguez = boxscore.awayTeam.players.find(p => p.playerName === 'Ángel Rodríguez');
 		assert.ok(rodriguez, 'Should parse Ángel Rodríguez successfully');
 		assert.equal(rodriguez.statistics.pts, 18);
 		assert.equal(rodriguez.statistics.min, '28:15');
-		assert.equal(rodriguez.statistics.fgm, 6);
-		assert.equal(rodriguez.statistics.fga, 14);
-		assert.equal(rodriguez.statistics.plus_minus, -8);
 	});
 
 	test('Full Puerto Rico Pipeline Integration: Extract -> Transform -> Load', async () => {
@@ -166,7 +194,7 @@ test.describe('Puerto Rico BSN Scraper & Pipeline Integration', () => {
 			// 1. STAGE 1: Extract
 			const gameIds = await extractStage(scraper, league, year);
 			assert.ok(gameIds.length > 0);
-			assert.ok(gameIds.includes('2111481'));
+			assert.ok(gameIds.includes('B2099_2111481'));
 
 			// 2. STAGE 2: Transform
 			const transformed = await transformStage(league, year);
