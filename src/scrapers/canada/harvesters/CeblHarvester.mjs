@@ -28,7 +28,7 @@ function extractFibaId(game) {
 /**
  * @class CeblHarvester
  * @description Harvester for the Canadian Elite Basketball League (CEBL) schedule from api.data.cebl.ca.
- * Queries raw JSON schedule REST API endpoints and extracts the actual FIBA LiveStats ID.
+ * Queries raw JSON schedule REST API endpoints and extracts the actual FIBA LiveStats ID for completed games.
  * @extends {HTTPClient}
  */
 export class CeblHarvester extends HTTPClient {
@@ -70,6 +70,10 @@ export class CeblHarvester extends HTTPClient {
 			const gameList = Array.isArray(response) ? response : (response.games || []);
 
 			const gameIds = gameList
+				.filter(game => {
+					// Only extract games that are COMPLETE to avoid fetching unplayed future games
+					return game && String(game.status).toUpperCase() === 'COMPLETE';
+				})
 				.map(game => extractFibaId(game))
 				.filter(Boolean);
 
@@ -85,7 +89,7 @@ export class CeblHarvester extends HTTPClient {
 				});
 			}
 
-			console.log(`✅ [CeblHarvester] Successfully harvested ${slugs.length} CEBL game slugs for season ${year}.`);
+			console.log(`✅ [CeblHarvester] Successfully harvested ${slugs.length} completed CEBL game slugs for season ${year}.`);
 			return slugs;
 		} catch (error) {
 			console.error(`❌ [CeblHarvester] Failed to harvest CEBL schedule:`, error.message || error);
