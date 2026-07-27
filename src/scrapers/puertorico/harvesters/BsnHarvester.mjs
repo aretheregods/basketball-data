@@ -28,8 +28,8 @@ export class BsnHarvester extends HTTPClient {
 			];
 		}
 
-		// Proballers BSN league ID is 181
-		const scheduleUrl = `https://www.proballers.com/basketball/league/181/puerto-rico-bsn/schedule/${year}`;
+		// Proballers BSN league ID is 270
+		const scheduleUrl = `https://www.proballers.com/basketball/league/270/puerto-rico-bsn/schedule/${year}`;
 		console.log(`📡 [BsnHarvester] Harvesting BSN season ${year} from ${scheduleUrl}...`);
 
 		// Import Playwright dynamically to prevent worker serialization errors
