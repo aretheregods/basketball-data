@@ -52,7 +52,7 @@ export class HTTPClient {
 				if (retries > 0) {
 					console.warn(`[HTTP ${ response.status }] Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
 					await new Promise( resolve => setTimeout(resolve, delay) );
-					return this.request(endpoint, options, retries - 1, delay * 2);
+					return HTTPClient.prototype.request.call(this, endpoint, options, retries - 1, delay * 2);
 				}
 			}
 
@@ -65,7 +65,7 @@ export class HTTPClient {
 			if (retries > 0) {
 				console.warn(`[HTTP Error] ${ error.message || error }. Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
 				await new Promise( resolve => setTimeout(resolve, delay) );
-				return this.request(endpoint, options, retries - 1, delay * 2);
+				return HTTPClient.prototype.request.call(this, endpoint, options, retries - 1, delay * 2);
 			}
 			throw error;
 		}

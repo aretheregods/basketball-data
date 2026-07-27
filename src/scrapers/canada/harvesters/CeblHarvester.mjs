@@ -1,9 +1,34 @@
 import { HTTPClient } from '#utils';
 
 /**
+ * @description Helper to extract the 7-digit FIBA LiveStats/Genius Sports game ID from a game record.
+ * @param {Object} game - Game record from the CEBL API
+ * @returns {string|null} - Extracted FIBA game ID or null
+ */
+function extractFibaId(game) {
+	if (game.stats_url_en) {
+		const match = String(game.stats_url_en).match(/\/([0-9]+)\/?(?:index\.html)?$/i);
+		if (match) return match[1];
+	}
+	if (game.stats_url_fr) {
+		const match = String(game.stats_url_fr).match(/\/([0-9]+)\/?(?:index.*)?$/i);
+		if (match) return match[1];
+	}
+	if (game.cebl_stats_url_en) {
+		const match = String(game.cebl_stats_url_en).match(/[?&]id=([0-9]+)/i);
+		if (match) return match[1];
+	}
+	if (game.cebl_stats_url_fr) {
+		const match = String(game.cebl_stats_url_fr).match(/[?&]id=([0-9]+)/i);
+		if (match) return match[1];
+	}
+	return null;
+}
+
+/**
  * @class CeblHarvester
  * @description Harvester for the Canadian Elite Basketball League (CEBL) schedule from api.data.cebl.ca.
- * Queries raw JSON schedule REST API endpoints without requiring a browser.
+ * Queries raw JSON schedule REST API endpoints and extracts the actual FIBA LiveStats ID.
  * @extends {HTTPClient}
  */
 export class CeblHarvester extends HTTPClient {
@@ -45,7 +70,7 @@ export class CeblHarvester extends HTTPClient {
 			const gameList = Array.isArray(response) ? response : (response.games || []);
 
 			const gameIds = gameList
-				.map(game => game.id || game.game_id)
+				.map(game => extractFibaId(game))
 				.filter(Boolean);
 
 			const uniqueIds = [...new Set(gameIds)];

@@ -50,6 +50,16 @@ export class CeblScraper extends HTTPClient {
 	 */
 	parseGameId(gameId) {
 		const clean = String(gameId || '').trim();
+		// If it's a full URL containing the ID
+		const urlMatch = clean.match(/\/data\/([a-zA-Z0-9-]+)\/data\.json/i) || clean.match(/\/([0-9]+)\/?$/);
+		if (urlMatch) {
+			return {
+				competitionId: 'cebl',
+				seasonCode: this.activeYear || '2026',
+				gameCode: urlMatch[1],
+				yearPrefix: this.activeYear || '2026'
+			};
+		}
 		const match = clean.match(/cebl-(\d{4})-([a-zA-Z0-9-]+)/i);
 		if (match) {
 			return {
