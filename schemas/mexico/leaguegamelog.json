@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MexicoLeagueGameLog",
+  "description": "Schema for Mexico league game log / schedule data",
+  "type": "object",
+  "properties": {
+    "gameSlugs": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  },
+  "required": ["gameSlugs"]
+}

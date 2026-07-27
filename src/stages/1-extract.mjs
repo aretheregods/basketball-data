@@ -61,7 +61,12 @@ export async function extractStage(scraper, league, year) {
 			const rawData = await scraper.request(url, {}, 3, 5000);
 
 			// Validate response against schema
-			const schemaFolder = league.toLowerCase().startsWith('europe') ? 'europe' : league;
+			let schemaFolder = league;
+			if (league.toLowerCase().startsWith('europe')) {
+				schemaFolder = 'europe';
+			} else if (league.toLowerCase().startsWith('mexico')) {
+				schemaFolder = 'mexico';
+			}
 			validateSchema(`${schemaFolder}/boxscore.json`, rawData);
 
 			await fs.writeFile(filePath, JSON.stringify(rawData, null, 2), 'utf8');
