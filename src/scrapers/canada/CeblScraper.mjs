@@ -1,13 +1,11 @@
-import fs from 'fs/promises';
-import path from 'path';
 import { HTTPClient } from '#utils';
 import { CeblHarvester } from './harvesters/CeblHarvester.mjs';
-import { parseCeblHtml } from './parsers/CeblParser.mjs';
+import { parseCeblFibaJson } from './parsers/CeblParser.mjs';
 
 /**
  * @class CeblScraper
  * @description Scraper for Canadian Elite Basketball League (CEBL) competition.
- * Fetches, caches, parses, and normalizes CEBL game box score statistics from cebl.ca.
+ * Fetches, caches, and parses CEBL game box score statistics directly from FIBA LiveStats REST JSON API.
  * @extends {HTTPClient}
  */
 export class CeblScraper extends HTTPClient {
@@ -16,7 +14,7 @@ export class CeblScraper extends HTTPClient {
 	 * @param {Object} [options={}] - Scraper options
 	 */
 	constructor(options = {}) {
-		super('https://www.cebl.ca');
+		super('https://fibalivestats.dcd.shared.geniussports.com');
 		this.harvester = new CeblHarvester(this);
 		this.gameSlugs = [];
 		this.gameUrlMap = new Map();
@@ -76,7 +74,7 @@ export class CeblScraper extends HTTPClient {
 	 */
 	getGameEndpoint(gameId) {
 		const { gameCode } = this.parseGameId(gameId);
-		return this.gameUrlMap.get(gameId) || this.gameUrlMap.get(gameCode) || `https://www.cebl.ca/game/${gameCode}`;
+		return this.gameUrlMap.get(gameId) || this.gameUrlMap.get(gameCode) || `https://fibalivestats.dcd.shared.geniussports.com/data/${gameCode}/data.json`;
 	}
 
 	/**
@@ -89,7 +87,7 @@ export class CeblScraper extends HTTPClient {
 	}
 
 	/**
-	 * @description Formats unified box score by loading CEBL match pages with Playwright or using cached files.
+	 * @description Formats unified box score by loading CEBL match pages with REST requests or using mock data.
 	 * @param {string} url - Game ID
 	 * @param {Object} [options]
 	 * @param {number} [retries]
@@ -105,74 +103,20 @@ export class CeblScraper extends HTTPClient {
 			return this.getMockUnifiedBoxScore(gameId);
 		}
 
-		// Set up directories for side-cache HTML saving
-		const htmlCacheDir = path.resolve('data/raw/canada', String(yearPrefix));
-		await fs.mkdir(htmlCacheDir, { recursive: true });
-		const htmlCachePath = path.join(htmlCacheDir, `${gameCode}.html`);
-
-		let htmlContent = '';
-		try {
-			// Check if we already have the raw HTML cached locally
-			const stats = await fs.stat(htmlCachePath);
-			if (stats.size > 0) {
-				console.log(`⏭️ [CeblScraper] HTML cache found for game ${gameCode}. Reading from disk...`);
-				htmlContent = await fs.readFile(htmlCachePath, 'utf8');
-			}
-		} catch (e) {
-			// Cache miss, proceed to fetch
-		}
-
-		if (!htmlContent) {
-			const matchUrl = this.getGameEndpoint(gameId);
-			console.log(`📡 [CeblScraper] Loading CEBL Boxscore from ${matchUrl}...`);
-
-			// Inject 500ms delay to prevent rate limiting
-			console.log(`⏳ [CeblScraper] Rate limit protection: sleeping 500ms...`);
-			await new Promise(resolve => setTimeout(resolve, 500));
-
-			const { chromium } = await import('playwright');
-			const browser = await chromium.launch({
-				headless: true,
-				args: [
-					'--disable-blink-features=AutomationControlled',
-					'--disable-features=IsolateOrigins,site-per-process',
-					'--no-sandbox',
-					'--disable-setuid-sandbox'
-				]
-			});
-
-			const context = await browser.newContext({
-				userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-				viewport: { width: 1920, height: 1080 },
-				locale: 'en-US'
-			});
-
-			const page = await context.newPage();
-
-			try {
-				await page.goto(matchUrl, { waitUntil: 'domcontentloaded' });
-				// Allow time for table data to render
-				for (let i = 0; i < 15; i++) {
-					await page.waitForTimeout(1000);
-					const count = await page.evaluate(() => document.querySelectorAll('table').length);
-					if (count > 0) break;
-				}
-				htmlContent = await page.content();
-				await fs.writeFile(htmlCachePath, htmlContent, 'utf8');
-				console.log(`💾 [CeblScraper] Saved raw CEBL Boxscore HTML to ${htmlCachePath}`);
-			} catch (error) {
-				console.error(`❌ [CeblScraper] Error fetching game ${gameId}:`, error.message || error);
-				await browser.close();
-				return this.getUnplayedSkeleton(gameId, yearPrefix);
-			} finally {
-				await browser.close();
-			}
-		}
+		const matchUrl = this.getGameEndpoint(gameId);
+		console.log(`📡 [CeblScraper] Loading CEBL Boxscore from ${matchUrl}...`);
 
 		try {
-			return parseCeblHtml(htmlContent, gameId, yearPrefix);
+			// Fetch the raw FIBA LiveStats JSON directly
+			const jsonData = await super.request(matchUrl, options, retries, delay);
+
+			if (!jsonData || !jsonData.tm) {
+				throw new Error(`[CeblScraper] Invalid or missing JSON for game ${gameId}`);
+			}
+
+			return parseCeblFibaJson(jsonData, gameId, yearPrefix);
 		} catch (error) {
-			console.error(`❌ [CeblScraper] Error parsing game HTML ${gameId}:`, error.message || error);
+			console.error(`❌ [CeblScraper] Error fetching game ${gameId}:`, error.message || error);
 			return this.getUnplayedSkeleton(gameId, yearPrefix);
 		}
 	}

@@ -177,7 +177,7 @@ export async function transformStage(league, year) {
 						tov,
 						pf,
 						pts,
-						plus_minus: isHome ? (pts - otherScore) : (pts - otherScore),
+						plus_minus: pts - otherScore,
 						ts_pct: BaseNormalizer.calculateTSPct(pts, fga, fta),
 						efg_pct: BaseNormalizer.calculateEFGPct(fgm, fg3m, fga),
 						season: String(year),

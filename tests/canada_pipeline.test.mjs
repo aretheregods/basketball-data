@@ -5,7 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { CeblScraper } from '../src/scrapers/canada/CeblScraper.mjs';
 import { CeblHarvester } from '../src/scrapers/canada/harvesters/CeblHarvester.mjs';
-import { parseCeblHtml } from '../src/scrapers/canada/parsers/CeblParser.mjs';
+import { parseCeblFibaJson } from '../src/scrapers/canada/parsers/CeblParser.mjs';
 import { extractStage } from '../src/stages/1-extract.mjs';
 import { transformStage } from '../src/stages/2-transform.mjs';
 import { loadStage, initDatabase } from '../src/stages/3-load.mjs';
@@ -58,149 +58,78 @@ test.describe('Canada CEBL Scraper & Pipeline Integration', () => {
 		assert.equal(nickWard.statistics.min, '24:30');
 	});
 
-	test('CeblScraper HTML Parser should correctly parse CEBL team names, scores, and player statistics from raw HTML', async () => {
-		const sampleHtml = `
-			<html>
-			<body>
-				<div>
-					<h1>VANCOUVER BANDITS</h1>
-					<table class="stats-table">
-						<thead>
-							<tr>
-								<th>Player</th>
-								<th>Min</th>
-								<th>Pts</th>
-								<th>FGM</th>
-								<th>FGA</th>
-								<th>3PM</th>
-								<th>3PA</th>
-								<th>FTM</th>
-								<th>FTA</th>
-								<th>OR</th>
-								<th>DR</th>
-								<th>REB</th>
-								<th>AST</th>
-								<th>STL</th>
-								<th>BLK</th>
-								<th>TO</th>
-								<th>PF</th>
-							</tr>
-						</thead>
-						<tbody>
-							<tr>
-								<td class="player-name">12 Nick Ward</td>
-								<td class="col-min">24:30</td>
-								<td class="col-pts">22</td>
-								<td class="col-fgm">8</td>
-								<td class="col-fga">12</td>
-								<td class="col-fg3m">0</td>
-								<td class="col-fg3a">0</td>
-								<td class="col-ftm">6</td>
-								<td class="col-fta">8</td>
-								<td class="col-oreb">3</td>
-								<td class="col-dreb">5</td>
-								<td class="col-reb">8</td>
-								<td class="col-ast">2</td>
-								<td class="col-stl">1</td>
-								<td class="col-blk">2</td>
-								<td class="col-to">3</td>
-								<td class="col-pf">4</td>
-							</tr>
-							<tr class="totals">
-								<td class="player-name">Total</td>
-								<td class="col-min">200:00</td>
-								<td class="col-pts">95</td>
-								<td class="col-fgm">35</td>
-								<td class="col-fga">70</td>
-								<td class="col-fg3m">5</td>
-								<td class="col-fg3a">15</td>
-								<td class="col-ftm">20</td>
-								<td class="col-fta">25</td>
-								<td class="col-oreb">10</td>
-								<td class="col-dreb">25</td>
-								<td class="col-reb">35</td>
-								<td class="col-ast">15</td>
-								<td class="col-stl">8</td>
-								<td class="col-blk">5</td>
-								<td class="col-to">12</td>
-								<td class="col-pf">18</td>
-							</tr>
-						</tbody>
-					</table>
-				</div>
+	test('CeblScraper FIBA JSON Parser should correctly parse CEBL team names, scores, and player statistics from raw FIBA JSON', async () => {
+		const sampleFibaJson = {
+			gDate: "15/07/2099",
+			tm: {
+				"1": {
+					sName: "VANCOUVER BANDITS",
+					sShortName: "VAN",
+					sScore: "95",
+					pl: {
+						"p1": {
+							sFirstName: "Nick",
+							sLastName: "Ward",
+							sMinutes: "24:30",
+							sPoints: "22",
+							sFieldGoalsMade: "8",
+							sFieldGoalsAttempted: "12",
+							sThreePointersMade: "0",
+							sThreePointersAttempted: "0",
+							sFreeThrowsMade: "6",
+							sFreeThrowsAttempted: "8",
+							sReboundsOffensive: "3",
+							sReboundsDefensive: "5",
+							sReboundsTot: "8",
+							sAssists: "2",
+							sSteals: "1",
+							sBlocksTot: "2",
+							sTurnovers: "3",
+							sFoulsPersonal: "4",
+							sPlusMinus: "5"
+						},
+						"p2": {
+							sFirstName: "Bench",
+							sLastName: "Player",
+							sMinutes: "00:00",
+							sPoints: "0"
+						}
+					}
+				},
+				"2": {
+					sName: "NIAGARA RIVER LIONS",
+					sShortName: "NIA",
+					sScore: "90",
+					pl: {
+						"p3": {
+							sFirstName: "Jahvon",
+							sLastName: "Blair",
+							sMinutes: "28:15",
+							sPoints: "18",
+							sFieldGoalsMade: "6",
+							sFieldGoalsAttempted: "14",
+							sThreePointersMade: "3",
+							sThreePointersAttempted: "7",
+							sFreeThrowsMade: "3",
+							sFreeThrowsAttempted: "4",
+							sReboundsOffensive: "1",
+							sReboundsDefensive: "4",
+							sReboundsTot: "5",
+							sAssists: "4",
+							sSteals: "2",
+							sBlocksTot: "0",
+							sTurnovers: "2",
+							sFoulsPersonal: "3",
+							sPlusMinus: "-5"
+						}
+					}
+				}
+			}
+		};
 
-				<div>
-					<h1>NIAGARA RIVER LIONS</h1>
-					<table class="boxscore-table">
-						<thead>
-							<tr>
-								<th>Player</th>
-								<th>Min</th>
-								<th>Pts</th>
-								<th>FGM</th>
-								<th>FGA</th>
-								<th>3PM</th>
-								<th>3PA</th>
-								<th>FTM</th>
-								<th>FTA</th>
-								<th>OR</th>
-								<th>DR</th>
-								<th>REB</th>
-								<th>AST</th>
-								<th>STL</th>
-								<th>BLK</th>
-								<th>TO</th>
-								<th>PF</th>
-							</tr>
-						</thead>
-						<tbody>
-							<tr>
-								<td class="player-name">Jahvon Blair</td>
-								<td class="col-min">28:15</td>
-								<td class="col-pts">18</td>
-								<td class="col-fgm">6</td>
-								<td class="col-fga">14</td>
-								<td class="col-fg3m">3</td>
-								<td class="col-fg3a">7</td>
-								<td class="col-ftm">3</td>
-								<td class="col-fta">4</td>
-								<td class="col-oreb">1</td>
-								<td class="col-dreb">4</td>
-								<td class="col-reb">5</td>
-								<td class="col-ast">4</td>
-								<td class="col-stl">2</td>
-								<td class="col-blk">0</td>
-								<td class="col-to">2</td>
-								<td class="col-pf">3</td>
-							</tr>
-							<tr class="totals">
-								<td class="player-name">Total</td>
-								<td class="col-min">200:00</td>
-								<td class="col-pts">90</td>
-								<td class="col-fgm">32</td>
-								<td class="col-fga">68</td>
-								<td class="col-fg3m">8</td>
-								<td class="col-fg3a">20</td>
-								<td class="col-ftm">18</td>
-								<td class="col-fta">22</td>
-								<td class="col-oreb">8</td>
-								<td class="col-dreb">22</td>
-								<td class="col-reb">30</td>
-								<td class="col-ast">12</td>
-								<td class="col-stl">6</td>
-								<td class="col-blk">2</td>
-								<td class="col-to">14</td>
-								<td class="col-pf">20</td>
-							</tr>
-						</tbody>
-					</table>
-				</div>
-			</body>
-			</html>
-		`;
+		const boxscore = parseCeblFibaJson(sampleFibaJson, 'cebl-2099-10492', '2099');
 
-		const boxscore = parseCeblHtml(sampleHtml, 'cebl-2099-10492', '2099');
-
+		assert.equal(boxscore.gameDate, '2099-07-15');
 		assert.equal(boxscore.homeTeam.teamName, 'VANCOUVER BANDITS');
 		assert.equal(boxscore.awayTeam.teamName, 'NIAGARA RIVER LIONS');
 		assert.equal(boxscore.homeTeam.score, 95);
@@ -212,6 +141,11 @@ test.describe('Canada CEBL Scraper & Pipeline Integration', () => {
 		assert.equal(ward.statistics.min, '24:30');
 		assert.equal(ward.statistics.fgm, 8);
 		assert.equal(ward.statistics.fga, 12);
+		assert.equal(ward.statistics.plus_minus, 5);
+
+		// Bench player must be ignored because of 00:00 minutes
+		const bench = boxscore.homeTeam.players.find(p => p.playerName === 'Bench Player');
+		assert.ok(!bench, 'Should ignore DNP player');
 
 		const blair = boxscore.awayTeam.players.find(p => p.playerName === 'Jahvon Blair');
 		assert.ok(blair, 'Should parse Jahvon Blair successfully');
@@ -219,6 +153,7 @@ test.describe('Canada CEBL Scraper & Pipeline Integration', () => {
 		assert.equal(blair.statistics.min, '28:15');
 		assert.equal(blair.statistics.fgm, 6);
 		assert.equal(blair.statistics.fga, 14);
+		assert.equal(blair.statistics.plus_minus, -5);
 	});
 
 	test('Full Canada Pipeline Integration: Extract -> Transform -> Load', async () => {
