@@ -34,6 +34,10 @@ export class EuropeScraper extends HTTPClient {
 			this.competitions = rawComps.split(',').map(c => c.trim().toLowerCase());
 		}
 
+		if (this.competitions.includes('mexico') || this.competitions.includes('lnbp')) {
+			throw new Error("Mexico (LNBP) is not a European competition! It must be run under its own solitary league option: --league=mexico");
+		}
+
 		this.boxscoreType = options.boxscoreType || 'traditional';
 		this.gameSlugs = [];
 
