@@ -10,6 +10,7 @@ import { WNBAScraper } from './src/scrapers/wnba/wnba.mjs';
 import { NBAScraper } from './src/scrapers/nba/nba.mjs';
 import { EuropeScraper } from './src/scrapers/europe/europe.mjs';
 import { LnbpScraper } from './src/scrapers/mexico/LnbpScraper.mjs';
+import { CeblScraper } from './src/scrapers/canada/CeblScraper.mjs';
 import { extractStage } from './src/stages/1-extract.mjs';
 import { transformStage } from './src/stages/2-transform.mjs';
 import { loadStage } from './src/stages/3-load.mjs';
@@ -43,6 +44,7 @@ const LEAGUE_SCRAPERS = {
 	nba: (options) => new NBAScraper(options),
 	europe: (options) => new EuropeScraper(options),
 	mexico: (options) => new LnbpScraper(options),
+	canada: (options) => new CeblScraper(options),
 };
 
 /**

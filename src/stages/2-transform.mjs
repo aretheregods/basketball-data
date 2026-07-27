@@ -83,6 +83,21 @@ export async function transformStage(league, year) {
 		}
 	}
 
+	// Load Canada team mappings config once outside the loop
+	let canadaMappings = {};
+	if (league.toLowerCase() === 'canada' || league.toLowerCase().startsWith('canada')) {
+		try {
+			const mappingPath = path.resolve('config/canada_team_mappings.json');
+			const mappingContent = await fs.readFile(mappingPath, 'utf8');
+			const parsed = JSON.parse(mappingContent);
+			for (const [k, v] of Object.entries(parsed)) {
+				canadaMappings[k.toUpperCase().trim()] = v;
+			}
+		} catch (e) {
+			console.warn('⚠️ Could not load Canada team mappings:', e.message);
+		}
+	}
+
 	for (const fileName of jsonFiles) {
 		const filePath = path.join(rawDir, fileName);
 		try {
@@ -233,6 +248,146 @@ export async function transformStage(league, year) {
 
 				processMexicoTeam(rawData.homeTeam, true, awayScore);
 				processMexicoTeam(rawData.awayTeam, false, homeScore);
+			} else if (league.toLowerCase() === 'canada' || league.toLowerCase().startsWith('canada')) {
+				const gameId = String(rawData.gameId || '').trim();
+				if (!gameId) continue;
+
+				const resolveCanadaTeam = (rawName) => {
+					const clean = BaseNormalizer.cleanString(rawName);
+					const upper = clean.toUpperCase();
+					if (canadaMappings[upper]) {
+						return canadaMappings[upper];
+					}
+					return clean.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-');
+				};
+
+				const homeScore = Number(rawData.homeTeam?.score ?? 0);
+				const awayScore = Number(rawData.awayTeam?.score ?? 0);
+
+				const processCanadaTeam = (teamObj, isHome, otherScore) => {
+					if (!teamObj) return;
+					const rawTeamName = teamObj.teamName || '';
+					const canonicalTeamId = resolveCanadaTeam(rawTeamName);
+
+					const players = teamObj.players || [];
+					let fgm = 0, fga = 0, fg3m = 0, fg3a = 0, ftm = 0, fta = 0;
+					let oreb = 0, dreb = 0, reb = 0, ast = 0, stl = 0, blk = 0, tov = 0, pf = 0;
+					const pts = teamObj.score || 0;
+
+					for (const p of players) {
+						const pStats = p.statistics || {};
+						fgm += Number(pStats.fgm ?? 0);
+						fga += Number(pStats.fga ?? 0);
+						fg3m += Number(pStats.fg3m ?? 0);
+						fg3a += Number(pStats.fg3a ?? 0);
+						ftm += Number(pStats.ftm ?? 0);
+						fta += Number(pStats.fta ?? 0);
+						oreb += Number(pStats.oreb ?? 0);
+						dreb += Number(pStats.dreb ?? 0);
+						reb += Number(pStats.reb ?? 0);
+						ast += Number(pStats.ast ?? 0);
+						stl += Number(pStats.stl ?? 0);
+						blk += Number(pStats.blk ?? 0);
+						tov += Number(pStats.tov ?? 0);
+						pf += Number(pStats.pf ?? 0);
+					}
+
+					allTeams.push({
+						game_id: gameId,
+						team_id: canonicalTeamId,
+						team_name: BaseNormalizer.cleanString(rawTeamName),
+						team_abbreviation: teamObj.teamId || canonicalTeamId.substring(0, 4).toUpperCase(),
+						team_city: BaseNormalizer.cleanString(rawTeamName).split(' ')[0] || '',
+						min: '200:00',
+						fgm,
+						fga,
+						fg_pct: fga > 0 ? Number((fgm / fga).toFixed(3)) : 0.0,
+						fg3m,
+						fg3a,
+						fg3_pct: fg3a > 0 ? Number((fg3m / fg3a).toFixed(3)) : 0.0,
+						ftm,
+						fta,
+						ft_pct: fta > 0 ? Number((ftm / fta).toFixed(3)) : 0.0,
+						oreb,
+						dreb,
+						reb,
+						ast,
+						stl,
+						blk,
+						tov,
+						pf,
+						pts,
+						plus_minus: isHome ? (pts - otherScore) : (pts - otherScore),
+						ts_pct: BaseNormalizer.calculateTSPct(pts, fga, fta),
+						efg_pct: BaseNormalizer.calculateEFGPct(fgm, fg3m, fga),
+						season: String(year),
+						league: 'canada',
+						synced: 0
+					});
+
+					for (const p of players) {
+						const pStats = p.statistics || {};
+						const rawPlayerName = p.playerName || '';
+						const pPts = Number(pStats.pts ?? 0);
+						const pFgm = Number(pStats.fgm ?? 0);
+						const pFga = Number(pStats.fga ?? 0);
+						const pFg3m = Number(pStats.fg3m ?? 0);
+						const pFg3a = Number(pStats.fg3a ?? 0);
+						const pFtm = Number(pStats.ftm ?? 0);
+						const pFta = Number(pStats.fta ?? 0);
+						const pOreb = Number(pStats.oreb ?? 0);
+						const pDreb = Number(pStats.dreb ?? 0);
+						const pReb = Number(pStats.reb ?? 0);
+						const pAst = Number(pStats.ast ?? 0);
+						const pStl = Number(pStats.stl ?? 0);
+						const pBlk = Number(pStats.blk ?? 0);
+						const pTov = Number(pStats.tov ?? 0);
+						const pPf = Number(pStats.pf ?? 0);
+
+						allPlayers.push({
+							game_id: gameId,
+							player_id: p.playerId || BaseNormalizer.normalizeName(rawPlayerName).toLowerCase().replace(/\s+/g, '-'),
+							player_name: BaseNormalizer.cleanString(rawPlayerName),
+							normalized_name: BaseNormalizer.normalizeName(rawPlayerName),
+							team_id: canonicalTeamId,
+							team_abbreviation: teamObj.teamId || canonicalTeamId.substring(0, 4).toUpperCase(),
+							team_city: BaseNormalizer.cleanString(rawTeamName).split(' ')[0] || '',
+							start_position: '',
+							comment: '',
+							min: pStats.min ? String(BaseNormalizer.parseMinutesToFloat(pStats.min)) : null,
+							fgm: pFgm,
+							fga: pFga,
+							fg_pct: pFga > 0 ? Number((pFgm / pFga).toFixed(3)) : 0.0,
+							fg3m: pFg3m,
+							fg3a: pFg3a,
+							fg3_pct: pFg3a > 0 ? Number((pFg3m / pFg3a).toFixed(3)) : 0.0,
+							ftm: pFtm,
+							fta: pFta,
+							ft_pct: pFta > 0 ? Number((pFtm / pFta).toFixed(3)) : 0.0,
+							oreb: pOreb,
+							dreb: pDreb,
+							reb: pReb,
+							ast: pAst,
+							stl: pStl,
+							blk: pBlk,
+							tov: pTov,
+							pf: pPf,
+							pts: pPts,
+							plus_minus: Number(pStats.plus_minus ?? 0.0),
+							ts_pct: BaseNormalizer.calculateTSPct(pPts, pFga, pFta),
+							efg_pct: BaseNormalizer.calculateEFGPct(pFgm, pFg3m, pFga),
+							game_score: BaseNormalizer.calculateGameScore(
+								pPts, pFgm, pFga, pFta, pFtm, pOreb, pDreb, pStl, pAst, pBlk, pPf, pTov
+							),
+							season: String(year),
+							league: 'canada',
+							synced: 0
+						});
+					}
+				};
+
+				processCanadaTeam(rawData.homeTeam, true, awayScore);
+				processCanadaTeam(rawData.awayTeam, false, homeScore);
 			} else if (league.toLowerCase() === 'nba') {
 				// Direct flat Next.js structure parsing for NBA
 				const gameId = String(rawData.gameId || '').trim();
