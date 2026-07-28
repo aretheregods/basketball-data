@@ -182,6 +182,24 @@ async function main() {
 
 		const scraper = LEAGUE_SCRAPERS[lowerLeague]({ boxscoreType, competitions });
 
+		// Support targeting specific game IDs: --game=xxx or --games=xxx
+		if (flags.game || flags.games) {
+			const filterVal = flags.game || flags.games;
+			console.log(`🎯 Filtering pipeline execution to games containing: "${filterVal}"`);
+			const originalGetSlugs = scraper.getSeasonGameSlugs;
+			scraper.getSeasonGameSlugs = async function(year) {
+				await originalGetSlugs.call(this, year);
+				if (this.gameSlugs) {
+					const before = this.gameSlugs.length;
+					this.gameSlugs = this.gameSlugs.filter(slug =>
+						slug.includes(filterVal) || slug.split('-').pop() === filterVal
+					);
+					console.log(`🎯 Slugs filtered from ${before} down to ${this.gameSlugs.length}`);
+				}
+				return this;
+			};
+		}
+
 		for (const year of targetYears) {
 			console.log(`\n=== Processing [ ${lowerLeague.toUpperCase()} - ${year} ] ===`);
 

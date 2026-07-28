@@ -2,6 +2,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { spawn } from 'child_process';
 import { AuditEngine } from './AuditEngine.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -13,12 +14,49 @@ const DB_DIR = path.join(PROJECT_ROOT, 'data/SQL');
 const UNMAPPED_PATH = path.join(PROJECT_ROOT, 'data/unmapped_entities.json');
 
 /**
+ * @description Helper to parse JSON request body from an incoming stream.
+ * @param {import('http').IncomingMessage} req - The request object
+ * @returns {Promise<any>} Mapped JSON object
+ */
+function parseJsonBody(req) {
+	return new Promise((resolve, reject) => {
+		let body = '';
+		req.on('data', chunk => {
+			body += chunk;
+		});
+		req.on('end', () => {
+			try {
+				resolve(body ? JSON.parse(body) : {});
+			} catch (err) {
+				reject(err);
+			}
+		});
+	});
+}
+
+/**
  * @description Native Node HTTP server for hosting the local health audit dashboard & JSON API.
  */
 export function startServer(port = PORT) {
-	const server = http.createServer((req, res) => {
+	const server = http.createServer(async (req, res) => {
+		// Security: Restrict CORS to localhost to prevent external malicious websites from hitting local endpoints
+		const origin = req.headers.origin || '';
+		if (origin) {
+			const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+			if (isLocalhost) {
+				res.setHeader('Access-Control-Allow-Origin', origin);
+			}
+		}
+		res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+		res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+		if (req.method === 'OPTIONS') {
+			res.writeHead(204);
+			return res.end();
+		}
+
 		// API: Audit Results
-		if (req.url === '/api/audit') {
+		if (req.url === '/api/audit' && req.method === 'GET') {
 			const results = {
 				databases: {},
 				unmappedEntities: { teams: [], players: [] }
@@ -56,17 +94,135 @@ export function startServer(port = PORT) {
 				}
 			}
 
-			res.writeHead(200, {
-				'Content-Type': 'application/json',
-				'Access-Control-Allow-Origin': '*'
-			});
+			res.writeHead(200, { 'Content-Type': 'application/json' });
 			return res.end(JSON.stringify(results, null, 2));
 		}
 
-		// API: Trigger database pipeline refresh (Optional stub for the dashboard action)
-		if (req.url === '/api/refresh') {
-			res.writeHead(200, { 'Content-Type': 'application/json' });
-			return res.end(JSON.stringify({ message: 'Trigger received. Please execute run.js via CLI to perform full data fetch.' }));
+		// API: Add Team Alias Mapping
+		if (req.url === '/api/config/alias' && req.method === 'POST') {
+			try {
+				const { league, alias, teamId } = await parseJsonBody(req);
+				if (!league || !alias || !teamId) {
+					res.writeHead(400, { 'Content-Type': 'application/json' });
+					return res.end(JSON.stringify({ error: 'Missing league, alias, or teamId in request body.' }));
+				}
+
+				const configPath = path.join(PROJECT_ROOT, 'config', `${league.toLowerCase()}_team_mappings.json`);
+				let mappings = {};
+
+				if (fs.existsSync(configPath)) {
+					const content = fs.readFileSync(configPath, 'utf8');
+					mappings = JSON.parse(content);
+				}
+
+				mappings[alias.trim()] = teamId.trim();
+
+				// Ensure parent directory exists
+				fs.mkdirSync(path.dirname(configPath), { recursive: true });
+				fs.writeFileSync(configPath, JSON.stringify(mappings, null, 2), 'utf8');
+
+				console.log(`📝 Added team alias "${alias}" -> "${teamId}" for league "${league}" in mappings.`);
+
+				res.writeHead(200, { 'Content-Type': 'application/json' });
+				return res.end(JSON.stringify({ success: true, message: `Successfully mapped "${alias}" to "${teamId}".` }));
+			} catch (err) {
+				res.writeHead(500, { 'Content-Type': 'application/json' });
+				return res.end(JSON.stringify({ error: err.message }));
+			}
+		}
+
+		// API: Add Score/Points Override
+		if (req.url === '/api/config/override' && req.method === 'POST') {
+			try {
+				const { league, gameId, teamId, score } = await parseJsonBody(req);
+				if (!league || !gameId || !teamId || score === undefined) {
+					res.writeHead(400, { 'Content-Type': 'application/json' });
+					return res.end(JSON.stringify({ error: 'Missing league, gameId, teamId, or score in request body.' }));
+				}
+
+				const configPath = path.join(PROJECT_ROOT, 'config', `${league.toLowerCase()}_overrides.json`);
+				let overrides = {};
+
+				if (fs.existsSync(configPath)) {
+					const content = fs.readFileSync(configPath, 'utf8');
+					overrides = JSON.parse(content);
+				}
+
+				if (!overrides[gameId]) {
+					overrides[gameId] = {};
+				}
+				overrides[gameId][teamId] = Number(score);
+
+				// Ensure parent directory exists
+				fs.mkdirSync(path.dirname(configPath), { recursive: true });
+				fs.writeFileSync(configPath, JSON.stringify(overrides, null, 2), 'utf8');
+
+				console.log(`📝 Added game override for "${gameId}" (Team "${teamId}" -> ${score} pts) in config overrides.`);
+
+				res.writeHead(200, { 'Content-Type': 'application/json' });
+				return res.end(JSON.stringify({ success: true, message: `Successfully registered override for game "${gameId}".` }));
+			} catch (err) {
+				res.writeHead(500, { 'Content-Type': 'application/json' });
+				return res.end(JSON.stringify({ error: err.message }));
+			}
+		}
+
+		// API: Trigger Targeted Pipeline Rerun
+		if (req.url === '/api/pipeline/rerun' && req.method === 'POST') {
+			try {
+				const { league, season, gameId } = await parseJsonBody(req);
+				if (!league || !season || !gameId) {
+					res.writeHead(400, { 'Content-Type': 'application/json' });
+					return res.end(JSON.stringify({ error: 'Missing league, season, or gameId in request body.' }));
+				}
+
+				// Strict input validation to prevent shell or argument-level injection/malicious input
+				const leagueRegex = /^[a-zA-Z0-9_\-]+$/;
+				const seasonRegex = /^\d{4}$/;
+				const gameIdRegex = /^[a-zA-Z0-9_\-]+$/;
+
+				if (!leagueRegex.test(league) || !seasonRegex.test(String(season)) || !gameIdRegex.test(gameId)) {
+					res.writeHead(400, { 'Content-Type': 'application/json' });
+					return res.end(JSON.stringify({ error: 'Invalid input parameters. Only alphanumeric, hyphen, and underscore characters are allowed.' }));
+				}
+
+				const args = [
+					'run.js',
+					`--league=${league.toLowerCase()}`,
+					`--years=${season}`,
+					'--step=extract,transform,load',
+					`--games=${gameId}`
+				];
+
+				console.log(`🚀 Executing targeted secure rerun: node ${args.join(' ')}`);
+
+				const child = spawn('node', args, { cwd: PROJECT_ROOT });
+
+				let stdout = '';
+				let stderr = '';
+
+				child.stdout.on('data', (data) => {
+					stdout += data.toString();
+				});
+
+				child.stderr.on('data', (data) => {
+					stderr += data.toString();
+				});
+
+				child.on('close', (code) => {
+					if (code !== 0) {
+						console.error(`❌ Targeted rerun failed with exit code ${code}`);
+						res.writeHead(500, { 'Content-Type': 'application/json' });
+						return res.end(JSON.stringify({ success: false, error: `Rerun process exited with code ${code}`, stdout, stderr }));
+					}
+					console.log(`✅ Targeted rerun completed successfully.`);
+					res.writeHead(200, { 'Content-Type': 'application/json' });
+					return res.end(JSON.stringify({ success: true, stdout, stderr }));
+				});
+			} catch (err) {
+				res.writeHead(500, { 'Content-Type': 'application/json' });
+				return res.end(JSON.stringify({ error: err.message }));
+			}
 		}
 
 		// Serve static dashboard HTML
