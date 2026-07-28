@@ -42,6 +42,22 @@ export async function transformStage(league, year) {
 	if (league.toLowerCase().startsWith('europe')) {
 		const result = await transformEurope(rawDir, year);
 
+		// Apply supplemental overrides if present
+		try {
+			const overridesPath = path.resolve('config', `${league}_overrides.json`);
+			const overridesContent = await fs.readFile(overridesPath, 'utf8');
+			const overrides = JSON.parse(overridesContent);
+			console.log(`🔧 Applying game score overrides from ${overridesPath}...`);
+			for (const team of result.teams) {
+				const gameOverride = overrides[team.game_id];
+				if (gameOverride && gameOverride[team.team_id] !== undefined) {
+					team.pts = Number(gameOverride[team.team_id]);
+				}
+			}
+		} catch (e) {
+			// Ignore if not present
+		}
+
 		// Cache the transformed data to disk
 		const cacheDir = path.resolve('data/transformed', league, String(year));
 		await fs.mkdir(cacheDir, { recursive: true });
@@ -207,7 +223,7 @@ export async function transformStage(league, year) {
 						const pFgm = Number(pStats.fgm ?? 0);
 						const pFga = Number(pStats.fga ?? 0);
 						const pFg3m = Number(pStats.fg3m ?? 0);
-						const pFg3a = Number(pStats.fg3a ?? 0);
+						const pFg3a = Number(pStats.threePointersAttempted ?? pStats.fg3a ?? 0);
 						const pFtm = Number(pStats.ftm ?? 0);
 						const pFta = Number(pStats.fta ?? 0);
 						const pOreb = Number(pStats.oreb ?? 0);
@@ -812,6 +828,23 @@ export async function transformStage(league, year) {
 	}
 
 	const result = { players: allPlayers, teams: allTeams };
+
+	// Apply generic system game score overrides if present
+	try {
+		const overridesPath = path.resolve('config', `${league}_overrides.json`);
+		const overridesContent = await fs.readFile(overridesPath, 'utf8');
+		const overrides = JSON.parse(overridesContent);
+		console.log(`🔧 Applying game score overrides from ${overridesPath}...`);
+		for (const team of result.teams) {
+			const gameOverride = overrides[team.game_id];
+			if (gameOverride && gameOverride[team.team_id] !== undefined) {
+				console.log(`🔧 Overriding team ${team.team_id} score in game ${team.game_id} to ${gameOverride[team.team_id]}`);
+				team.pts = Number(gameOverride[team.team_id]);
+			}
+		}
+	} catch (e) {
+		// Ignore if file doesn't exist or is unparseable
+	}
 
 	// Cache the transformed data to disk
 	const cacheDir = path.resolve('data/transformed', league, String(year));
