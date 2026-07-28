@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LikelyHigh ETL Health Dashboard</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f1f5f9;
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+        .custom-card {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            transition: all 0.2s ease-in-out;
+        }
+        .custom-card:hover {
+            border-color: #475569;
+            transform: translateY(-2px);
+        }
+        .modal {
+            background-color: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(4px);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 pb-6 border-b border-slate-700 gap-4">
+            <div>
+                <h1 class="text-3xl font-extrabold text-white tracking-tight flex items-center gap-2">
+                    🏀 <span class="bg-gradient-to-r from-orange-500 to-amber-400 bg-clip-text text-transparent">LikelyHigh ETL Health Dashboard</span>
+                </h1>
+                <p class="text-slate-400 mt-1">Real-time local integrity auditing, coverage tracking, and database consistency engine</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button onclick="fetchAuditData()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg shadow-md transition duration-200 flex items-center gap-2 text-sm">
+                    🔄 Refresh Audit
+                </button>
+            </div>
+        </header>
+
+        <!-- Stats Overview Banner -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div class="custom-card p-5 rounded-xl shadow-lg">
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Audited Databases</p>
+                <p id="stat-dbs" class="text-3xl font-black text-white mt-1">0</p>
+                <div class="text-xs text-slate-400 mt-1">Active SQLite instances</div>
+            </div>
+            <div class="custom-card p-5 rounded-xl shadow-lg">
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Games Loaded</p>
+                <p id="stat-games" class="text-3xl font-black text-emerald-400 mt-1">0</p>
+                <div class="text-xs text-slate-400 mt-1">Across all seasons</div>
+            </div>
+            <div class="custom-card p-5 rounded-xl shadow-lg">
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Integrity / Math Mismatches</p>
+                <p id="stat-mismatches" class="text-3xl font-black text-rose-500 mt-1">0</p>
+                <div class="text-xs text-slate-400 mt-1">Sum of player pts != final score</div>
+            </div>
+            <div class="custom-card p-5 rounded-xl shadow-lg">
+                <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Unmapped Entities</p>
+                <p id="stat-unmapped" class="text-3xl font-black text-amber-500 mt-1">0</p>
+                <div class="text-xs text-slate-400 mt-1">Awaiting alias resolution</div>
+            </div>
+        </div>
+
+        <!-- Main Workspace -->
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Left & Mid Columns: Database cards -->
+            <div class="lg:col-span-2 space-y-6">
+                <h2 class="text-xl font-bold text-white flex items-center gap-2">
+                    🗄️ Database Health Cards
+                </h2>
+                <div id="db-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Loading State -->
+                    <div class="col-span-full py-12 text-center text-slate-400">
+                        <div class="animate-spin inline-block w-8 h-8 border-4 border-current border-t-transparent text-indigo-500 rounded-full mb-2"></div>
+                        <p>Scanning local databases and compiling analytics...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Unmapped entities and audits logs -->
+            <div class="space-y-6">
+                <!-- Unmapped Entities Panel -->
+                <div class="custom-card p-6 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                        ⚠️ Entity Resolution Gaps
+                    </h2>
+                    <p class="text-xs text-slate-400 mb-4">
+                        Teams and players parsed from raw HTML/JSON feeds that could not be resolved to canonical records. Add these to your mapping configurations to fix.
+                    </p>
+
+                    <div class="space-y-4">
+                        <div>
+                            <h3 class="text-sm font-semibold text-amber-400 mb-2 flex items-center justify-between">
+                                <span>Unmapped Teams</span>
+                                <span id="unmapped-teams-count" class="px-2 py-0.5 bg-amber-950 text-amber-300 rounded-full text-xs">0</span>
+                            </h3>
+                            <div id="unmapped-teams-list" class="max-h-40 overflow-y-auto bg-slate-900/50 p-3 rounded-lg border border-slate-700 text-xs font-mono space-y-1">
+                                <span class="text-slate-500 italic">No unmapped teams logged. Perfect!</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 class="text-sm font-semibold text-orange-400 mb-2 flex items-center justify-between">
+                                <span>Unmapped Players</span>
+                                <span id="unmapped-players-count" class="px-2 py-0.5 bg-orange-950 text-orange-300 rounded-full text-xs">0</span>
+                            </h3>
+                            <div id="unmapped-players-list" class="max-h-40 overflow-y-auto bg-slate-900/50 p-3 rounded-lg border border-slate-700 text-xs font-mono space-y-1">
+                                <span class="text-slate-500 italic">No unmapped players logged. Perfect!</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pipeline Guide Panel -->
+                <div class="custom-card p-6 rounded-xl shadow-lg text-sm">
+                    <h2 class="text-base font-bold text-white mb-3">🛠️ ETL Action Guidelines</h2>
+                    <ul class="space-y-2.5 text-slate-300 text-xs">
+                        <li class="flex gap-2">
+                            <span class="text-emerald-400">🟢 Healthy:</span>
+                            <span>All box scores populated, maths match, fully synced to remote D1.</span>
+                        </li>
+                        <li class="flex gap-2">
+                            <span class="text-amber-400">🟡 Pending Sync:</span>
+                            <span>Data is 100% correct locally but awaiting push. Run <code>node run.js --step=sync</code> to upload.</span>
+                        </li>
+                        <li class="flex gap-2">
+                            <span class="text-rose-400">🔴 Broken / Missing:</span>
+                            <span>Missing box scores or score mismatches found. Verify network scraper or check source format changes.</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Drilldown Detail Modal -->
+    <div id="detail-modal" class="modal fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-800 border border-slate-700 rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+            <div class="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
+                <div>
+                    <h3 id="modal-title" class="text-xl font-bold text-white">Database Drilldown</h3>
+                    <p id="modal-subtitle" class="text-sm text-slate-400 mt-0.5">Details and integrity errors</p>
+                </div>
+                <button onclick="closeModal()" class="text-slate-400 hover:text-white transition duration-150 p-1.5 hover:bg-slate-700/50 rounded-lg">
+                    ✕
+                </button>
+            </div>
+
+            <div id="modal-body" class="p-6 overflow-y-auto space-y-6 flex-1 text-sm">
+                <!-- Content will be injected dynamically -->
+            </div>
+
+            <div class="p-4 border-t border-slate-700 bg-slate-900/50 flex justify-end">
+                <button onclick="closeModal()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition duration-150 text-sm font-semibold">
+                    Close Details
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentAuditData = null;
+
+        /**
+         * @description Fetches all audit records and unmapped entities from server.
+         */
+        async function fetchAuditData() {
+            const container = document.getElementById('db-cards-container');
+            try {
+                const res = await fetch('/api/audit');
+                const data = await res.json();
+                currentAuditData = data;
+                renderDashboard(data);
+            } catch (err) {
+                console.error('Error fetching audit metrics:', err);
+                container.innerHTML = `
+                    <div class="col-span-full p-6 bg-red-950/40 border border-red-800 text-red-200 rounded-xl text-center">
+                        <p class="font-bold text-lg">⚠️ Connection to Audit Server Failed</p>
+                        <p class="text-sm mt-1">Ensure node server is running and accessible at this address.</p>
+                    </div>
+                `;
+            }
+        }
+
+        /**
+         * @description Renders status cards and fills header metrics based on audit results.
+         */
+        function renderDashboard(data) {
+            const container = document.getElementById('db-cards-container');
+            container.innerHTML = '';
+
+            let totalDbs = 0;
+            let totalGames = 0;
+            let totalMismatches = 0;
+
+            const databases = data.databases || {};
+
+            if (Object.keys(databases).length === 0) {
+                container.innerHTML = `
+                    <div class="col-span-full py-12 text-center text-slate-400">
+                        <p class="text-lg font-semibold">No SQLite databases found in <code>data/SQL/</code></p>
+                        <p class="text-xs mt-1">Run the extraction and transformation stages to generate SQL databases.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            for (const [name, audit] of Object.entries(databases)) {
+                totalDbs++;
+                totalGames += audit.totalGames || 0;
+                totalMismatches += audit.totalScoreMismatches || 0;
+
+                // Determine database-wide status color
+                let statusColor = 'text-emerald-400 bg-emerald-950/50 border-emerald-800';
+                let statusLabel = '🟢 Healthy';
+
+                if (audit.totalScoreMismatches > 0 || audit.totalMissingBoxscores > 0 || audit.totalLowMinAnomalies > 0) {
+                    statusColor = 'text-rose-400 bg-rose-950/50 border-rose-800';
+                    statusLabel = '🔴 Integrity Alerts';
+                } else if (audit.totalUnsyncedGames > 0 || audit.totalUnsyncedStats > 0) {
+                    statusColor = 'text-amber-400 bg-amber-950/50 border-amber-800';
+                    statusLabel = '🟡 Pending Sync';
+                }
+
+                // Compile Season summary strings
+                const seasonsList = Object.keys(audit.seasons || {}).sort((a,b) => b - a);
+                let seasonsHtml = '';
+
+                if (seasonsList.length === 0) {
+                    seasonsHtml = `<div class="text-slate-500 italic text-xs py-1">No data seasons loaded.</div>`;
+                }
+
+                for (const season of seasonsList) {
+                    const sData = audit.seasons[season];
+                    const sErrors = sData.scoreMismatches.length + sData.missingBoxscores.length + sData.lowMinAnomalies.length;
+
+                    let sBadge = '🟢';
+                    if (sErrors > 0) {
+                        sBadge = '🔴';
+                    } else if (sData.syncStatus.unsyncedGames > 0) {
+                        sBadge = '🟡';
+                    }
+
+                    seasonsHtml += `
+                        <div class="flex items-center justify-between p-2.5 bg-slate-900/30 hover:bg-slate-900/50 rounded border border-slate-800/80 text-xs transition duration-150">
+                            <span class="font-medium text-slate-200 flex items-center gap-1.5">
+                                <span>${sBadge}</span> Season ${season}
+                            </span>
+                            <span class="text-slate-400 font-mono">${sData.gamesCount} games</span>
+                            <button onclick="showDrilldown('${name}', '${season}')" class="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded transition text-[10px] font-bold">
+                                Inspect
+                            </button>
+                        </div>
+                    `;
+                }
+
+                const cardHtml = `
+                    <div class="custom-card p-6 rounded-xl shadow-lg flex flex-col justify-between">
+                        <div>
+                            <div class="flex justify-between items-start mb-4">
+                                <div>
+                                    <h3 class="text-lg font-bold text-white uppercase tracking-tight">${name}</h3>
+                                    <p class="text-xs text-slate-400 mt-0.5">${name.toUpperCase()}.sqlite</p>
+                                </div>
+                                <span class="px-2.5 py-1 rounded-full text-xs font-bold border ${statusColor}">
+                                    ${statusLabel}
+                                </span>
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-3 mb-5 text-center">
+                                <div class="p-2 bg-slate-900/40 rounded border border-slate-800">
+                                    <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Integrity Errors</div>
+                                    <div class="text-base font-bold ${audit.totalScoreMismatches > 0 ? 'text-rose-400' : 'text-slate-300'}">
+                                        ${audit.totalScoreMismatches + audit.totalMissingBoxscores + audit.totalLowMinAnomalies}
+                                    </div>
+                                </div>
+                                <div class="p-2 bg-slate-900/40 rounded border border-slate-800">
+                                    <div class="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Pending Sync</div>
+                                    <div class="text-base font-bold ${audit.totalUnsyncedGames > 0 ? 'text-amber-400' : 'text-slate-300'}">
+                                        ${audit.totalUnsyncedGames}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="space-y-2 mt-4">
+                                <div class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Seasons Summary</div>
+                                ${seasonsHtml}
+                            </div>
+                        </div>
+
+                        <div class="mt-6 pt-4 border-t border-slate-800 flex justify-end">
+                            <button onclick="showDrilldown('${name}')" class="px-3.5 py-1.5 bg-indigo-600/25 border border-indigo-500/30 hover:bg-indigo-600 hover:border-indigo-500 text-indigo-300 hover:text-white rounded-lg text-xs font-bold transition duration-150 w-full text-center">
+                                Database Global View
+                            </button>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += cardHtml;
+            }
+
+            // Fill header general status banner numbers
+            document.getElementById('stat-dbs').textContent = totalDbs;
+            document.getElementById('stat-games').textContent = totalGames;
+            document.getElementById('stat-mismatches').textContent = totalMismatches;
+
+            // Render Unmapped Entities panel on the right
+            const unmappedTeams = data.unmappedEntities?.teams || [];
+            const unmappedPlayers = data.unmappedEntities?.players || [];
+
+            document.getElementById('stat-unmapped').textContent = unmappedTeams.length + unmappedPlayers.length;
+            document.getElementById('unmapped-teams-count').textContent = unmappedTeams.length;
+            document.getElementById('unmapped-players-count').textContent = unmappedPlayers.length;
+
+            const tList = document.getElementById('unmapped-teams-list');
+            if (unmappedTeams.length > 0) {
+                tList.innerHTML = unmappedTeams.map(t => `<div class="py-0.5 border-b border-slate-800/60 last:border-0 hover:text-amber-300 transition duration-150">${t}</div>`).join('');
+            } else {
+                tList.innerHTML = `<span class="text-slate-500 italic">No unmapped teams logged. Perfect!</span>`;
+            }
+
+            const pList = document.getElementById('unmapped-players-list');
+            if (unmappedPlayers.length > 0) {
+                pList.innerHTML = unmappedPlayers.map(p => `<div class="py-0.5 border-b border-slate-800/60 last:border-0 hover:text-orange-300 transition duration-150">${p}</div>`).join('');
+            } else {
+                pList.innerHTML = `<span class="text-slate-500 italic">No unmapped players logged. Perfect!</span>`;
+            }
+        }
+
+        /**
+         * @description Constructs and renders details in the modal for a specific database/season.
+         */
+        function showDrilldown(dbKey, seasonKey = null) {
+            const audit = currentAuditData?.databases?.[dbKey];
+            if (!audit) return;
+
+            const title = document.getElementById('modal-title');
+            const subtitle = document.getElementById('modal-subtitle');
+            const body = document.getElementById('modal-body');
+
+            title.textContent = `🔍 Drilldown: ${dbKey.toUpperCase()}`;
+            subtitle.textContent = seasonKey ? `Audit Analytics for Season ${seasonKey}` : `Global Database Analytics`;
+
+            let html = '';
+
+            const renderSeasonDetail = (season, data) => {
+                let seasonHtml = `
+                    <div class="bg-slate-900/40 p-4 rounded-xl border border-slate-700/80 mb-6">
+                        <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-800 pb-3 mb-4 gap-2">
+                            <h4 class="text-lg font-bold text-slate-100 flex items-center gap-1.5">
+                                📅 Season ${season}
+                            </h4>
+                            <span class="px-2.5 py-1 bg-slate-800 text-slate-300 font-mono text-xs rounded border border-slate-700">
+                                Total Games: ${data.gamesCount}
+                            </span>
+                        </div>
+
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                            <div class="p-3 bg-slate-800/30 rounded border border-slate-800">
+                                <div class="text-[10px] text-slate-400 font-semibold uppercase">Score Mismatches</div>
+                                <div class="text-lg font-black mt-1 ${data.scoreMismatches.length > 0 ? 'text-rose-400' : 'text-slate-300'}">${data.scoreMismatches.length}</div>
+                            </div>
+                            <div class="p-3 bg-slate-800/30 rounded border border-slate-800">
+                                <div class="text-[10px] text-slate-400 font-semibold uppercase">Missing Boxscores</div>
+                                <div class="text-lg font-black mt-1 ${data.missingBoxscores.length > 0 ? 'text-rose-400' : 'text-slate-300'}">${data.missingBoxscores.length}</div>
+                            </div>
+                            <div class="p-3 bg-slate-800/30 rounded border border-slate-800">
+                                <div class="text-[10px] text-slate-400 font-semibold uppercase">Low Minute Alerts</div>
+                                <div class="text-lg font-black mt-1 ${data.lowMinAnomalies.length > 0 ? 'text-amber-400' : 'text-slate-300'}">${data.lowMinAnomalies.length}</div>
+                            </div>
+                            <div class="p-3 bg-slate-800/30 rounded border border-slate-800">
+                                <div class="text-[10px] text-slate-400 font-semibold uppercase">Sync Backlog (Games)</div>
+                                <div class="text-lg font-black mt-1 ${data.syncStatus.unsyncedGames > 0 ? 'text-amber-400' : 'text-slate-300'}">${data.syncStatus.unsyncedGames}</div>
+                            </div>
+                        </div>
+                `;
+
+                // Score Mismatches
+                if (data.scoreMismatches.length > 0) {
+                    seasonHtml += `
+                        <div class="mb-5">
+                            <h5 class="text-sm font-bold text-rose-400 mb-2">❌ Score Mismatches (SUM(player_pts) != final_score)</h5>
+                            <div class="overflow-x-auto bg-slate-950/60 rounded-lg border border-rose-900/30">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-rose-950/30 text-rose-300 border-b border-rose-900/30 font-bold">
+                                        <tr>
+                                            <th class="p-2.5">Game ID</th>
+                                            <th class="p-2.5">Team Name</th>
+                                            <th class="p-2.5 text-center">Team Score</th>
+                                            <th class="p-2.5 text-center">Player Sum</th>
+                                            <th class="p-2.5 text-center">Variance</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-800">
+                                        ${data.scoreMismatches.map(m => `
+                                            <tr class="hover:bg-rose-950/10">
+                                                <td class="p-2.5 font-mono text-slate-300">${m.game_id}</td>
+                                                <td class="p-2.5 font-semibold text-slate-200">${m.team_name}</td>
+                                                <td class="p-2.5 text-center text-slate-300 font-bold">${m.team_score}</td>
+                                                <td class="p-2.5 text-center text-rose-300 font-bold">${m.sum_player_pts}</td>
+                                                <td class="p-2.5 text-center text-rose-400 font-extrabold font-mono">${m.team_score - m.sum_player_pts}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Missing Boxscores
+                if (data.missingBoxscores.length > 0) {
+                    seasonHtml += `
+                        <div class="mb-5">
+                            <h5 class="text-sm font-bold text-rose-400 mb-2">❌ Missing Box Scores (No Player Game Stats Found)</h5>
+                            <div class="overflow-x-auto bg-slate-950/60 rounded-lg border border-rose-900/30">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-rose-950/30 text-rose-300 border-b border-rose-900/30 font-bold">
+                                        <tr>
+                                            <th class="p-2.5">Game ID</th>
+                                            <th class="p-2.5">Team Name</th>
+                                            <th class="p-2.5">Team ID</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-800">
+                                        ${data.missingBoxscores.map(m => `
+                                            <tr class="hover:bg-rose-950/10">
+                                                <td class="p-2.5 font-mono text-slate-300">${m.game_id}</td>
+                                                <td class="p-2.5 font-semibold text-slate-200">${m.team_name}</td>
+                                                <td class="p-2.5 text-slate-400 font-mono">${m.team_id}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Low Minute Anomalies
+                if (data.lowMinAnomalies.length > 0) {
+                    seasonHtml += `
+                        <div class="mb-5">
+                            <h5 class="text-sm font-bold text-amber-400 mb-2">⚠️ Low Minute Anomalies (Expected ~200/240 mins)</h5>
+                            <div class="overflow-x-auto bg-slate-950/60 rounded-lg border border-amber-900/30">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-amber-950/30 text-amber-300 border-b border-amber-900/30 font-bold">
+                                        <tr>
+                                            <th class="p-2.5">Game ID</th>
+                                            <th class="p-2.5">Team Name</th>
+                                            <th class="p-2.5 text-center">Sum Player Minutes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-800">
+                                        ${data.lowMinAnomalies.map(m => `
+                                            <tr class="hover:bg-amber-950/10">
+                                                <td class="p-2.5 font-mono text-slate-300">${m.game_id}</td>
+                                                <td class="p-2.5 font-semibold text-slate-200">${m.team_name}</td>
+                                                <td class="p-2.5 text-center text-amber-400 font-bold font-mono">${Number(m.total_player_minutes).toFixed(1)}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Outliers
+                if (data.outliers.length > 0) {
+                    seasonHtml += `
+                        <div class="mb-5">
+                            <h5 class="text-sm font-bold text-purple-400 mb-2">🔮 Detected Outliers & Extremes</h5>
+                            <div class="overflow-x-auto bg-slate-950/60 rounded-lg border border-purple-900/30">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-purple-950/30 text-purple-300 border-b border-purple-900/30 font-bold">
+                                        <tr>
+                                            <th class="p-2.5">Game ID</th>
+                                            <th class="p-2.5">Player Name</th>
+                                            <th class="p-2.5">Team</th>
+                                            <th class="p-2.5 text-center">PTS</th>
+                                            <th class="p-2.5 text-center">REB</th>
+                                            <th class="p-2.5 text-center">AST</th>
+                                            <th class="p-2.5 text-center">MIN</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-800">
+                                        ${data.outliers.map(m => `
+                                            <tr class="hover:bg-purple-950/10">
+                                                <td class="p-2.5 font-mono text-slate-300">${m.game_id}</td>
+                                                <td class="p-2.5 font-semibold text-slate-100">${m.player_name}</td>
+                                                <td class="p-2.5 text-slate-400">${m.team_name}</td>
+                                                <td class="p-2.5 text-center font-bold text-purple-300">${m.pts}</td>
+                                                <td class="p-2.5 text-center font-bold text-slate-300">${m.reb}</td>
+                                                <td class="p-2.5 text-center font-bold text-slate-300">${m.ast}</td>
+                                                <td class="p-2.5 text-center font-bold text-slate-300">${m.min}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                if (data.scoreMismatches.length === 0 && data.missingBoxscores.length === 0 && data.lowMinAnomalies.length === 0 && data.outliers.length === 0) {
+                    seasonHtml += `
+                        <div class="p-4 bg-emerald-950/20 border border-emerald-900/30 rounded-lg text-emerald-400 font-semibold text-center text-xs">
+                            🎉 100% Data Integrity. Zero Score Mismatches, Missing Boxscores, or Stat Anomalies detected for Season ${season}!
+                        </div>
+                    `;
+                }
+
+                seasonHtml += `</div>`;
+                return seasonHtml;
+            };
+
+            if (seasonKey) {
+                // Show single season details
+                const sData = audit.seasons[seasonKey];
+                if (sData) {
+                    html += renderSeasonDetail(seasonKey, sData);
+                }
+            } else {
+                // Show global database view
+                const seasonsList = Object.keys(audit.seasons || {}).sort((a,b) => b - a);
+                for (const season of seasonsList) {
+                    html += renderSeasonDetail(season, audit.seasons[season]);
+                }
+            }
+
+            body.innerHTML = html;
+            document.getElementById('detail-modal').classList.remove('hidden');
+        }
+
+        /**
+         * @description Closes the modal view.
+         */
+        function closeModal() {
+            document.getElementById('detail-modal').classList.add('hidden');
+        }
+
+        // Close on escape key
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // Initialize dashboard on load
+        fetchAuditData();
+    </script>
+</body>
+</html>
