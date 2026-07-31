@@ -58,8 +58,8 @@ export function parseCeblFibaJson(rawJson, gameId, season) {
 			};
 		}
 
-		const teamName = teamObj.sName || teamObj.sShortName || 'Unknown Team';
-		const score = parseInt(teamObj.sScore || 0, 10);
+		const teamName = teamObj.name || teamObj.nameInternational || teamObj.sName || teamObj.sShortName || teamObj.shortName || 'Unknown Team';
+		const score = parseInt(teamObj.score !== undefined ? teamObj.score : (teamObj.sScore || 0), 10);
 		const playersMap = teamObj.pl || {};
 		const roster = Object.values(playersMap);
 
@@ -70,9 +70,9 @@ export function parseCeblFibaJson(rawJson, gameId, season) {
 				return null;
 			}
 
-			const firstName = p.internationalFirstName || p.sFirstName || p.sFirstNameInitial || '';
-			const lastName = p.internationalLastName || p.sLastName || p.sName || '';
-			const fullName = `${firstName} ${lastName}`.trim() || p.sShortName || 'Unknown Player';
+			const firstName = p.internationalFirstName || p.sFirstName || p.sFirstNameInitial || p.firstName || '';
+			const lastName = p.internationalLastName || p.sLastName || p.sName || p.familyName || '';
+			const fullName = `${firstName} ${lastName}`.trim() || p.sShortName || p.name || 'Unknown Player';
 
 			const pts = parseInt(p.sPoints || p.sPts || 0, 10);
 			const fgm = parseInt(p.sFieldGoalsMade || p.sFgm || 0, 10);
@@ -116,8 +116,9 @@ export function parseCeblFibaJson(rawJson, gameId, season) {
 			};
 		}).filter(Boolean);
 
+		const teamShortName = teamObj.shortName || teamObj.sShortName || teamObj.name || teamObj.sName || 'TEAM';
 		return {
-			teamId: String(teamObj.sShortName || teamName).toUpperCase().substring(0, 4),
+			teamId: String(teamShortName).toUpperCase().substring(0, 4),
 			teamName,
 			score,
 			players
