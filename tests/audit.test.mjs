@@ -19,6 +19,19 @@ test.describe('AuditEngine Unit Tests', () => {
 		// Remove existing DB file if it exists
 		await fs.rm(DB_PATH, { force: true });
 
+		// Set up mock raw unplayed games directory and file
+		const rawDir = path.resolve(__dirname, '../data/raw/audit_test/2025');
+		await fs.mkdir(rawDir, { recursive: true });
+		await fs.writeFile(
+			path.join(rawDir, 'mock_unplayed_game.json'),
+			JSON.stringify({
+				gameId: 'mock_unplayed_game',
+				homeTeam: { teamName: 'Unplayed' },
+				awayTeam: { teamName: 'Unplayed' }
+			}, null, 2),
+			'utf8'
+		);
+
 		// Set up mock DB schema and data using DatabaseSync
 		db = new DatabaseSync(DB_PATH);
 
@@ -125,6 +138,9 @@ test.describe('AuditEngine Unit Tests', () => {
 	test.after(async () => {
 		// Clean up database file
 		await fs.rm(DB_PATH, { force: true });
+		// Clean up raw test dir
+		const rawDir = path.resolve(__dirname, '../data/raw/audit_test');
+		await fs.rm(rawDir, { recursive: true, force: true });
 	});
 
 	test('should detect coverage, missing box scores, score mismatches, low minutes and outliers', () => {
@@ -167,5 +183,11 @@ test.describe('AuditEngine Unit Tests', () => {
 		// Unsynced player rows: G_02 (2), G_04 (2), G_05 (1) = 5 stats rows
 		assert.equal(s2025.syncStatus.unsyncedGames, 4);
 		assert.equal(s2025.syncStatus.unsyncedStats, 5);
+
+		// Verify unplayed games detection
+		assert.equal(report.totalUnplayedGames, 1);
+		assert.equal(s2025.unplayedGames.length, 1);
+		assert.equal(s2025.unplayedGames[0].gameId, 'mock_unplayed_game');
+		assert.ok(s2025.unplayedGames[0].filePath.endsWith('mock_unplayed_game.json'));
 	});
 });

@@ -196,7 +196,14 @@ export function startServer(port = PORT) {
 
 				console.log(`🚀 Executing targeted secure rerun: node ${args.join(' ')}`);
 
-				const child = spawn('node', args, { cwd: PROJECT_ROOT });
+				const cleanEnv = { ...process.env };
+				for (const key of Object.keys(cleanEnv)) {
+					if (key.startsWith('NODE_TEST_') || key === 'NODE_CHANNEL_FD') {
+						delete cleanEnv[key];
+					}
+				}
+
+				const child = spawn('node', args, { cwd: PROJECT_ROOT, env: cleanEnv });
 
 				let stdout = '';
 				let stderr = '';
@@ -223,6 +230,120 @@ export function startServer(port = PORT) {
 				res.writeHead(500, { 'Content-Type': 'application/json' });
 				return res.end(JSON.stringify({ error: err.message }));
 			}
+			return;
+		}
+
+		// API: Delete Unplayed Games and Rerun Transform & Load
+		if (req.url === '/api/unplayed/delete' && req.method === 'POST') {
+			try {
+				const { league, season, gameId } = await parseJsonBody(req);
+				if (!league || !season) {
+					res.writeHead(400, { 'Content-Type': 'application/json' });
+					return res.end(JSON.stringify({ error: 'Missing league or season in request body.' }));
+				}
+
+				// Strict input validation to prevent shell/argument injection
+				const leagueRegex = /^[a-zA-Z0-9_\-]+$/;
+				const seasonRegex = /^\d{4}$/;
+				const gameIdRegex = /^[a-zA-Z0-9_\-]+$/;
+
+				if (!leagueRegex.test(league) || !seasonRegex.test(String(season)) || (gameId && !gameIdRegex.test(gameId))) {
+					res.writeHead(400, { 'Content-Type': 'application/json' });
+					return res.end(JSON.stringify({ error: 'Invalid input parameters. Only alphanumeric, hyphen, and underscore characters are allowed.' }));
+				}
+
+				const rawSeasonDir = path.resolve(PROJECT_ROOT, 'data/raw', league.toLowerCase(), String(season));
+				let deletedCount = 0;
+				const deletedGames = [];
+
+				if (fs.existsSync(rawSeasonDir)) {
+					const files = fs.readdirSync(rawSeasonDir);
+					for (const file of files) {
+						if (file.endsWith('.json')) {
+							const fileGameId = file.replace('.json', '');
+							if (gameId && fileGameId !== gameId) {
+								continue;
+							}
+
+							const filePath = path.join(rawSeasonDir, file);
+							try {
+								const content = fs.readFileSync(filePath, 'utf8');
+								const raw = JSON.parse(content);
+								if (raw && (
+									(raw.homeTeam && raw.homeTeam.teamName === 'Unplayed') ||
+									(raw.awayTeam && raw.awayTeam.teamName === 'Unplayed')
+								)) {
+									fs.unlinkSync(filePath);
+									deletedCount++;
+									deletedGames.push(fileGameId);
+								}
+							} catch (e) {
+								console.error(`❌ Error reading or deleting file ${file}:`, e.message);
+							}
+						}
+					}
+				}
+
+				console.log(`🗑️ Deleted ${deletedCount} unplayed games for ${league} - ${season}: ${deletedGames.join(', ')}`);
+
+				// Now rerun transform and load stages
+				const args = [
+					'run.js',
+					`--league=${league.toLowerCase()}`,
+					`--years=${season}`,
+					'--step=transform,load'
+				];
+
+				console.log(`🚀 Executing transform & load rerun: node ${args.join(' ')}`);
+
+				const cleanEnv = { ...process.env };
+				for (const key of Object.keys(cleanEnv)) {
+					if (key.startsWith('NODE_TEST_') || key === 'NODE_CHANNEL_FD') {
+						delete cleanEnv[key];
+					}
+				}
+
+				const child = spawn('node', args, { cwd: PROJECT_ROOT, env: cleanEnv });
+
+				let stdout = '';
+				let stderr = '';
+
+				child.stdout.on('data', (data) => {
+					stdout += data.toString();
+				});
+
+				child.stderr.on('data', (data) => {
+					stderr += data.toString();
+				});
+
+				child.on('close', (code) => {
+					if (code !== 0) {
+						console.error(`❌ Transform & Load rerun failed with exit code ${code}`);
+						res.writeHead(500, { 'Content-Type': 'application/json' });
+						return res.end(JSON.stringify({
+							success: false,
+							error: `Transform/load rerun process exited with code ${code}`,
+							deletedCount,
+							deletedGames,
+							stdout,
+							stderr
+						}));
+					}
+					console.log(`✅ Transform & load rerun completed successfully.`);
+					res.writeHead(200, { 'Content-Type': 'application/json' });
+					return res.end(JSON.stringify({
+						success: true,
+						deletedCount,
+						deletedGames,
+						stdout,
+						stderr
+					}));
+				});
+			} catch (err) {
+				res.writeHead(500, { 'Content-Type': 'application/json' });
+				return res.end(JSON.stringify({ error: err.message }));
+			}
+			return;
 		}
 
 		// Serve static dashboard HTML
