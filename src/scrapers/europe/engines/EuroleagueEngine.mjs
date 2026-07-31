@@ -239,23 +239,54 @@ export class EuroleagueEngine extends HTTPClient {
 			});
 		};
 
+		const mapTeamStats = (totr) => {
+			if (!totr) return null;
+			if (totr.fgm !== undefined) return totr;
+
+			const fgm2 = Number(totr.FieldGoalsMade2 ?? 0);
+			const fg3m = Number(totr.FieldGoalsMade3 ?? 0);
+			const fgm = fgm2 + fg3m;
+
+			const fga2 = Number(totr.FieldGoalsAttempted2 ?? 0);
+			const fga3 = Number(totr.FieldGoalsAttempted3 ?? 0);
+			const fga = fga2 + fga3;
+
+			return {
+				pts: Number(totr.Points ?? 0),
+				fgm,
+				fga,
+				fg3m,
+				fg3a: Number(totr.FieldGoalsAttempted3 ?? 0),
+				ftm: Number(totr.FreeThrowsMade ?? 0),
+				fta: Number(totr.FreeThrowsAttempted ?? 0),
+				oreb: Number(totr.OffensiveRebounds ?? 0),
+				dreb: Number(totr.DefensiveRebounds ?? 0),
+				reb: Number(totr.TotalRebounds ?? 0),
+				ast: Number(totr.Assistances ?? 0),
+				stl: Number(totr.Steals ?? 0),
+				blk: Number(totr.BlocksFavour ?? totr.Blocks ?? 0),
+				tov: Number(totr.Turnovers ?? 0),
+				pf: Number(totr.FoulsCommited ?? totr.Fouls ?? 0)
+			};
+		};
+
 		return {
 			gameId,
 			competitionId,
 			seasonId: yearPrefix,
 			gameDate,
 			homeTeam: {
-				teamId: String(homeRaw.TeamCode || '').trim(),
-				teamName: String(homeRaw.Team || header?.HomeTeam || 'Home Team').trim(),
-				score: Number(header?.HomeScore ?? homeRaw.Points ?? 0),
-				statistics: homeRaw.TeamStats || {},
+				teamId: String(header?.CodeTeamA || homeRaw.TeamCode || homeRaw.tmr?.Team || 'HOME').trim(),
+				teamName: String(header?.TeamA || homeRaw.Team || header?.HomeTeam || 'Home Team').trim(),
+				score: Number(header?.ScoreA ?? header?.HomeScore ?? homeRaw.totr?.Points ?? homeRaw.Points ?? 0),
+				statistics: mapTeamStats(homeRaw.totr) || homeRaw.TeamStats || {},
 				players: mapPlayers(homeRaw.PlayersStats)
 			},
 			awayTeam: {
-				teamId: String(awayRaw.TeamCode || '').trim(),
-				teamName: String(awayRaw.Team || header?.AwayTeam || 'Away Team').trim(),
-				score: Number(header?.AwayScore ?? awayRaw.Points ?? 0),
-				statistics: awayRaw.TeamStats || {},
+				teamId: String(header?.CodeTeamB || awayRaw.TeamCode || awayRaw.tmr?.Team || 'AWAY').trim(),
+				teamName: String(header?.TeamB || awayRaw.Team || header?.AwayTeam || 'Away Team').trim(),
+				score: Number(header?.ScoreB ?? header?.AwayScore ?? awayRaw.totr?.Points ?? awayRaw.Points ?? 0),
+				statistics: mapTeamStats(awayRaw.totr) || awayRaw.TeamStats || {},
 				players: mapPlayers(awayRaw.PlayersStats)
 			}
 		};

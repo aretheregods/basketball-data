@@ -127,6 +127,8 @@ export async function transformEurope(rawDir, year) {
 				let teamFtm = 0, teamFta = 0, teamOreb = 0, teamDreb = 0, teamReb = 0;
 				let teamAst = 0, teamStl = 0, teamBlk = 0, teamTov = 0, teamPf = 0;
 
+				let sumPlayerPts = 0;
+
 				for (const p of players) {
 					const resolvedPlayerId = resolver.resolvePlayer(p.playerName);
 					const normalizedPlayerName = BaseNormalizer.normalizeName(p.playerName);
@@ -139,6 +141,7 @@ export async function transformEurope(rawDir, year) {
 
 					const stats = p.statistics || {};
 					const pts = Number(stats.pts ?? 0);
+					sumPlayerPts += pts;
 					const fgm = Number(stats.fgm ?? 0);
 					const fga = Number(stats.fga ?? 0);
 					const fg3m = Number(stats.fg3m ?? 0);
@@ -195,6 +198,57 @@ export async function transformEurope(rawDir, year) {
 						game_score: BaseNormalizer.calculateGameScore(
 							pts, fgm, fga, fta, ftm, oreb, dreb, stl, ast, blk, pf, tov
 						),
+						season: String(year),
+						league: competitionId,
+						synced: 0
+					});
+				}
+
+				const pointsVariance = teamPts - sumPlayerPts;
+				if (teamPts > 0 && pointsVariance !== 0) {
+					const resolvedPlayerId = `${resolvedTeamId}_team`;
+					const teamPlayerName = 'Team/Bench';
+					const normalizedPlayerName = 'team bench';
+
+					playersMap.set(resolvedPlayerId, {
+						id: resolvedPlayerId,
+						canonical_name: teamPlayerName,
+						normalized_name: normalizedPlayerName
+					});
+
+					allPlayers.push({
+						game_id: gameId,
+						player_id: resolvedPlayerId,
+						player_name: teamPlayerName,
+						normalized_name: normalizedPlayerName,
+						team_id: resolvedTeamId,
+						team_abbreviation: String(teamObj.teamId || resolvedTeamId).toUpperCase().substring(0, 4),
+						team_city: 'Europe',
+						start_position: '',
+						comment: 'Team/Bench stats variance adjustment',
+						min: '0.0',
+						fgm: 0,
+						fga: 0,
+						fg_pct: 0.0,
+						fg3m: 0,
+						fg3a: 0,
+						fg3_pct: 0.0,
+						ftm: 0,
+						fta: 0,
+						ft_pct: 0.0,
+						oreb: 0,
+						dreb: 0,
+						reb: 0,
+						ast: 0,
+						stl: 0,
+						blk: 0,
+						tov: 0,
+						pf: 0,
+						pts: pointsVariance,
+						plus_minus: 0.0,
+						ts_pct: 0.0,
+						efg_pct: 0.0,
+						game_score: pointsVariance,
 						season: String(year),
 						league: competitionId,
 						synced: 0
