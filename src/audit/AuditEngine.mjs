@@ -44,7 +44,22 @@ export class AuditEngine {
 	runFullAudit() {
 		this.connect();
 		try {
-			const seasons = this.getSeasons();
+			const leagueKey = path.basename(this.dbPath, '.sqlite').toLowerCase();
+			const dbSeasons = this.getSeasons();
+			const rawSeasons = [];
+			const rawLeagueDir = path.resolve('data/raw', leagueKey);
+			if (fs.existsSync(rawLeagueDir)) {
+				try {
+					const dirs = fs.readdirSync(rawLeagueDir);
+					for (const dir of dirs) {
+						if (/^\d{4}$/.test(dir)) {
+							rawSeasons.push(dir);
+						}
+					}
+				} catch (e) {}
+			}
+			const seasons = [...new Set([...dbSeasons, ...rawSeasons])].sort((a, b) => b - a);
+
 			const report = {
 				seasons: {},
 				totalGames: 0,
@@ -53,7 +68,8 @@ export class AuditEngine {
 				totalUnsyncedGames: 0,
 				totalUnsyncedStats: 0,
 				totalOutliers: 0,
-				totalLowMinAnomalies: 0
+				totalLowMinAnomalies: 0,
+				totalUnplayedGames: 0
 			};
 
 			for (const season of seasons) {
@@ -63,6 +79,7 @@ export class AuditEngine {
 				const lowMinAnomalies = this.getLowMinAnomalies(season);
 				const outliers = this.getOutliers(season);
 				const syncStatus = this.getSyncStatus(season);
+				const unplayedGames = this.getUnplayedGamesFromRaw(leagueKey, season);
 
 				report.seasons[season] = {
 					gamesCount,
@@ -70,7 +87,8 @@ export class AuditEngine {
 					scoreMismatches,
 					lowMinAnomalies,
 					outliers,
-					syncStatus
+					syncStatus,
+					unplayedGames
 				};
 
 				report.totalGames += gamesCount;
@@ -80,12 +98,48 @@ export class AuditEngine {
 				report.totalOutliers += outliers.length;
 				report.totalUnsyncedGames += syncStatus.unsyncedGames;
 				report.totalUnsyncedStats += syncStatus.unsyncedStats;
+				report.totalUnplayedGames += unplayedGames.length;
 			}
 
 			return report;
 		} finally {
 			this.close();
 		}
+	}
+
+	/**
+	 * @description Scans raw game JSON files to find unplayed games.
+	 * @param {string} leagueKey - League key name
+	 * @param {string|number} season - The season year
+	 * @returns {Array<{ gameId: string, filePath: string }>} List of unplayed games
+	 */
+	getUnplayedGamesFromRaw(leagueKey, season) {
+		const unplayedGames = [];
+		const rawSeasonDir = path.resolve('data/raw', leagueKey, String(season));
+		if (fs.existsSync(rawSeasonDir)) {
+			try {
+				const files = fs.readdirSync(rawSeasonDir);
+				for (const file of files) {
+					if (file.endsWith('.json')) {
+						const filePath = path.join(rawSeasonDir, file);
+						try {
+							const content = fs.readFileSync(filePath, 'utf8');
+							const raw = JSON.parse(content);
+							if (raw && (
+								(raw.homeTeam && raw.homeTeam.teamName === 'Unplayed') ||
+								(raw.awayTeam && raw.awayTeam.teamName === 'Unplayed')
+							)) {
+								unplayedGames.push({
+									gameId: raw.gameId || file.replace('.json', ''),
+									filePath: path.relative(path.resolve(), filePath)
+								});
+							}
+						} catch (err) {}
+					}
+				}
+			} catch (e) {}
+		}
+		return unplayedGames;
 	}
 
 	/**

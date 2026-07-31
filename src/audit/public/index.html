@@ -300,6 +300,44 @@
             document.getElementById('modal-terminal-container').classList.add('hidden');
         }
 
+        // Delete Unplayed games (individually or season-wide) and rerun transform/load
+        async function deleteUnplayed(league, season, gameId = null) {
+            const container = document.getElementById('modal-terminal-container');
+            const terminal = document.getElementById('modal-terminal');
+
+            container.classList.remove('hidden');
+            let actionDesc = gameId ? `game ${gameId}` : `all unplayed games`;
+            terminal.textContent = `🚀 Deleting unplayed ${actionDesc} for league: ${league}, season: ${season}...\n`;
+            terminal.scrollTop = terminal.scrollHeight;
+
+            try {
+                const res = await fetch('/api/unplayed/delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ league, season, gameId })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    terminal.textContent += `\n🗑️ Deleted file count: ${data.deletedCount}\nFiles: ${data.deletedGames.join(', ') || 'None'}\n\nSTDOUT:\n${data.stdout}\n✅ Pipeline transform & load completed successfully!`;
+                    showToast(`⚡ Successfully deleted unplayed game(s) and reran pipeline!`);
+                    // Refresh data
+                    await fetchAuditData();
+                    // Keep drilldown updated
+                    setTimeout(() => {
+                        showDrilldown(league, season);
+                    }, 500);
+                } else {
+                    terminal.textContent += `\n❌ Action failed!\nERROR:\n${data.error}\nSTDERR:\n${data.stderr}\nSTDOUT:\n${data.stdout}`;
+                    showToast("❌ Delete & Rerun action failed", "error");
+                }
+            } catch (err) {
+                terminal.textContent += `\n❌ Request connection error: ${err.message}`;
+                showToast("Connection to server failed.", "error");
+            }
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
         // Trigger pipeline rerun API call
         async function runPipeline(league, season, gameId) {
             const container = document.getElementById('modal-terminal-container');
@@ -597,7 +635,7 @@
                             </span>
                         </div>
 
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
                             <div class="p-3 bg-slate-50 dark:bg-slate-800/30 rounded border border-slate-200 dark:border-slate-800">
                                 <div class="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase">Score Mismatches</div>
                                 <div class="text-lg font-black mt-1 ${data.scoreMismatches.length > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}">${data.scoreMismatches.length}</div>
@@ -609,6 +647,10 @@
                             <div class="p-3 bg-slate-50 dark:bg-slate-800/30 rounded border border-slate-200 dark:border-slate-800">
                                 <div class="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase">Low Minute Alerts</div>
                                 <div class="text-lg font-black mt-1 ${data.lowMinAnomalies.length > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}">${data.lowMinAnomalies.length}</div>
+                            </div>
+                            <div class="p-3 bg-slate-50 dark:bg-slate-800/30 rounded border border-slate-200 dark:border-slate-800">
+                                <div class="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase">Unplayed Games</div>
+                                <div class="text-lg font-black mt-1 ${data.unplayedGames && data.unplayedGames.length > 0 ? 'text-amber-600 dark:text-amber-500' : 'text-slate-700 dark:text-slate-300'}">${data.unplayedGames ? data.unplayedGames.length : 0}</div>
                             </div>
                             <div class="p-3 bg-slate-50 dark:bg-slate-800/30 rounded border border-slate-200 dark:border-slate-800">
                                 <div class="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase">Sync Backlog (Games)</div>
@@ -752,6 +794,42 @@
                                                 <td class="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300">${m.reb}</td>
                                                 <td class="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300">${m.ast}</td>
                                                 <td class="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300">${m.min}</td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                // Unplayed Games
+                if (data.unplayedGames && data.unplayedGames.length > 0) {
+                    seasonHtml += `
+                        <div class="mb-5">
+                            <div class="flex justify-between items-center mb-2">
+                                <h5 class="text-sm font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">⚠️ Unplayed Games Found (${data.unplayedGames.length})</h5>
+                                <button onclick="deleteUnplayed('${dbKey}', '${season}')" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded text-[10px] font-bold shadow-sm flex items-center gap-1">
+                                    🗑️ Delete All Unplayed & Rerun
+                                </button>
+                            </div>
+                            <div class="overflow-x-auto bg-slate-50 dark:bg-slate-950/60 rounded-lg border border-amber-200 dark:border-amber-900/30">
+                                <table class="w-full text-left text-xs">
+                                    <thead class="bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border-b border-amber-200 dark:border-amber-900/30 font-bold">
+                                        <tr>
+                                            <th class="p-2.5">Game ID</th>
+                                            <th class="p-2.5">Raw File Path</th>
+                                            <th class="p-2.5 text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-200 dark:divide-slate-800 text-slate-800 dark:text-slate-300">
+                                        ${data.unplayedGames.map(g => `
+                                            <tr class="hover:bg-amber-50 dark:hover:bg-amber-950/10">
+                                                <td class="p-2.5 font-mono">${g.gameId}</td>
+                                                <td class="p-2.5 font-mono text-slate-500 dark:text-slate-400 text-[10px]">${g.filePath}</td>
+                                                <td class="p-2.5 text-right space-x-1 whitespace-nowrap">
+                                                    <button onclick="deleteUnplayed('${dbKey}', '${season}', '${g.gameId}')" title="Delete & Rerun" class="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded text-[10px] font-bold">🗑️ Delete & Rerun</button>
+                                                </td>
                                             </tr>
                                         `).join('')}
                                     </tbody>
