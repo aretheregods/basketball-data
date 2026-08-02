@@ -212,9 +212,10 @@ export class BslScraper extends HTTPClient {
 			const headingRegex = /<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/gi;
 			let hMatch;
 			let lastHeading = '';
+			const banned = ['match', 'player stats', 'team stats', 'results', 'index', 'points', 'rebounds', 'assists', 'steals', 'blocks', 'head-to-head', 'home team', 'away team', 'overall', 'glossary', 'stats', 'factor', 'quarter', 'impact'];
 			while ((hMatch = headingRegex.exec(searchBlock)) !== null) {
 				const clean = hMatch[1].replace(/<[^>]+>/g, '').trim();
-				if (clean && !clean.toLowerCase().includes('glossary') && !clean.toLowerCase().includes('stats') && !clean.toLowerCase().includes('factor') && !clean.toLowerCase().includes('quarter') && !clean.toLowerCase().includes('impact')) {
+				if (clean && !banned.some(b => clean.toLowerCase().includes(b))) {
 					lastHeading = clean;
 				}
 			}
@@ -227,7 +228,7 @@ export class BslScraper extends HTTPClient {
 			let lastTitle = '';
 			while ((tMatch = titleRegex.exec(searchBlock)) !== null) {
 				const clean = tMatch[1].replace(/<[^>]+>/g, '').trim();
-				if (clean && !clean.toLowerCase().includes('glossary') && !clean.toLowerCase().includes('stats')) {
+				if (clean && !banned.some(b => clean.toLowerCase().includes(b))) {
 					lastTitle = clean;
 				}
 			}
