@@ -417,6 +417,36 @@ node run.js --league=wnba --years=2023 --boxscore-type=advanced
 
 ---
 
+## Data Rectification and Cleaning Guide
+
+If your database contains corrupted or misaligned historical records (such as **EuroLeague/EuroCup games with 0 team scores** or **ABA/BSL Adriatic games with "Match" team names and doubled stats**), you can rectify and rebuild your dataset cleanly without re-downloading any raw files from the network.
+
+Because the LikelyHigh ETL pipeline decouples network extraction (Stage 1) from CPU transformation (Stage 2), raw unmodified HTML and API payloads remain cached on local disk under `data/raw/`.
+
+### Step-by-Step Guide to Rectify the European Dataset:
+
+#### Step 1: Locate and Re-process Cached Raw Data
+To clean and rebuild the European staging database (`EUROPE.sqlite`) from your local disk caches for the target season years (e.g. `2021`, `2025`), execute the pipeline by targeting the `europe` league and specifying the `transform` and `load` stages:
+
+```bash
+node run.js --league=europe --years=2021,2025 --step=transform,load
+```
+
+* **What happens behind the scenes:**
+  - **Stage 2 (Transform)**: Automatically re-reads the raw local JSON/HTML files. It applies the corrected `ScoreA`/`ScoreB` mapping for EuroLeague/EuroCup, uses the h4-compatible and banned-name filtered header parser for ABA/BSL (resolving the `"Match"` team name bug), and appends the `"Team/Bench"` pseudo-player to reconcile points variances. It caches the corrected structures to `data/transformed/europe/<year>/transformed.json`.
+  - **Stage 3 (Load)**: Connects to `data/SQL/EUROPE.sqlite` and executes a transaction block that **automatically purges all old, incorrect matching records** for the targeted years before batch-inserting the corrected clean records.
+
+#### Step 2: Push the Corrected Records to Cloudflare D1
+Once the local SQLite database has been successfully loaded with the corrected records, synchronize these updates to your remote production database on the Cloudflare edge:
+
+```bash
+node run.js --league=europe --years=2021,2025 --step=sync
+```
+
+*(You can also execute all three steps in a single, continuous command: `node run.js --league=europe --years=2021,2025 --step=transform,load,sync`)*
+
+---
+
 ## Troubleshooting & FAQs
 
 ### Q: Why did Stage 4 [SYNC] crash with "Wrangler execution failed"?
