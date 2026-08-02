@@ -54,6 +54,56 @@ export async function transformEurope(rawDir, year) {
 				continue;
 			}
 
+			// Self-healing team name fallback: If both team names are identical or either is "Match" (case-insensitive),
+			// resolve them to distinct names based on gameId slugs or fallbacks to prevent roster/team-merging.
+			const isMatchOrIdentical = (
+				String(homeTeam.teamName || '').toLowerCase() === 'match' ||
+				String(awayTeam.teamName || '').toLowerCase() === 'match' ||
+				String(homeTeam.teamName || '').toLowerCase() === String(awayTeam.teamName || '').toLowerCase()
+			);
+
+			if (isMatchOrIdentical) {
+				const suffixRegex = /-[EUBLIGDVK_S_Y]\d{4}_[A-Za-z0-9_]+$/i;
+				const parts = String(gameId || '').split('-vs-');
+				let homeFallback = '';
+				let awayFallback = '';
+
+				if (parts.length === 2) {
+					const awaySlug = parts[0];
+					const homePart = parts[1];
+					const homeSlug = homePart.replace(suffixRegex, '');
+
+					const titleCase = (slug) => {
+						return slug
+							.split('-')
+							.map(word => word.charAt(0).toUpperCase() + word.slice(1))
+							.join(' ');
+					};
+
+					homeFallback = titleCase(homeSlug);
+					awayFallback = titleCase(awaySlug);
+				}
+
+				if (!homeFallback || !awayFallback) {
+					homeFallback = `${gameId}_HOME`;
+					awayFallback = `${gameId}_AWAY`;
+				}
+
+				const lowerHome = String(homeTeam.teamName || '').toLowerCase();
+				const lowerAway = String(awayTeam.teamName || '').toLowerCase();
+
+				// If home team is "Match" or identical to away, heal it
+				if (lowerHome === 'match' || lowerHome === lowerAway) {
+					homeTeam.teamName = homeFallback;
+					homeTeam.teamId = homeFallback.toUpperCase().substring(0, 4);
+				}
+				// If away team is "Match" or identical to home (after home might have changed), heal it
+				if (lowerAway === 'match' || String(homeTeam.teamName || '').toLowerCase() === String(awayTeam.teamName || '').toLowerCase()) {
+					awayTeam.teamName = awayFallback;
+					awayTeam.teamId = awayFallback.toUpperCase().substring(0, 4);
+				}
+			}
+
 			// Self-healing score fallback: If raw team scores are 0/missing but players have points (typical of old Eurocup/Euroleague extracts),
 			// heal the team score by using the sum of player points.
 			const calculatePlayerSum = (teamObj) => {

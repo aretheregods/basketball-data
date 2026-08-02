@@ -424,6 +424,46 @@ export class BslScraper extends HTTPClient {
 		const homeTeamName = homeTable ? homeTable.candidateTeamName || 'Home Team' : 'Home Team';
 		const awayTeamName = awayTable ? awayTable.candidateTeamName || 'Away Team' : 'Away Team';
 
+		// Defensive check: If they are still somehow "Match" or identical, heal them with expected slugs/fallbacks
+		if (
+			String(homeTeamName).toLowerCase() === 'match' ||
+			String(awayTeamName).toLowerCase() === 'match' ||
+			String(homeTeamName).toLowerCase() === String(awayTeamName).toLowerCase()
+		) {
+			const suffixRegex = /-[EUBLIGDVK_S_Y]\d{4}_[A-Za-z0-9_]+$/i;
+			const parts = String(gameId || '').split('-vs-');
+			let homeFallback = '';
+			let awayFallback = '';
+
+			if (parts.length === 2) {
+				const awaySlug = parts[0];
+				const homePart = parts[1];
+				const homeSlug = homePart.replace(suffixRegex, '');
+
+				const titleCase = (slug) => {
+					return slug
+						.split('-')
+						.map(word => word.charAt(0).toUpperCase() + word.slice(1))
+						.join(' ');
+				};
+
+				homeFallback = titleCase(homeSlug);
+				awayFallback = titleCase(awaySlug);
+			}
+
+			if (!homeFallback || !awayFallback) {
+				homeFallback = `${gameId}_HOME`;
+				awayFallback = `${gameId}_AWAY`;
+			}
+
+			if (String(homeTeamName).toLowerCase() === 'match' || String(homeTeamName).toLowerCase() === String(awayTeamName).toLowerCase()) {
+				homeTeamName = homeFallback;
+			}
+			if (String(awayTeamName).toLowerCase() === 'match' || String(homeTeamName).toLowerCase() === String(awayTeamName).toLowerCase()) {
+				awayTeamName = awayFallback;
+			}
+		}
+
 		const homeScore = homeTable ? (homeTable.totals ? homeTable.totals.pts : homeTable.players.reduce((sum, p) => sum + p.pts, 0)) : 0;
 		const awayScore = awayTable ? (awayTable.totals ? awayTable.totals.pts : awayTable.players.reduce((sum, p) => sum + p.pts, 0)) : 0;
 
