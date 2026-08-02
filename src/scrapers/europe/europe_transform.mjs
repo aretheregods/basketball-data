@@ -54,6 +54,23 @@ export async function transformEurope(rawDir, year) {
 				continue;
 			}
 
+			// Self-healing score fallback: If raw team scores are 0/missing but players have points (typical of old Eurocup/Euroleague extracts),
+			// heal the team score by using the sum of player points.
+			const calculatePlayerSum = (teamObj) => {
+				const players = teamObj.players || [];
+				return players.reduce((sum, p) => sum + Number(p.statistics?.pts ?? 0), 0);
+			};
+
+			const homePlayerSum = calculatePlayerSum(homeTeam);
+			const awayPlayerSum = calculatePlayerSum(awayTeam);
+
+			if (Number(homeTeam.score ?? 0) === 0 && homePlayerSum > 0) {
+				homeTeam.score = homePlayerSum;
+			}
+			if (Number(awayTeam.score ?? 0) === 0 && awayPlayerSum > 0) {
+				awayTeam.score = awayPlayerSum;
+			}
+
 			// Define competition details and type
 			const compNames = {
 				euroleague: 'EuroLeague',
