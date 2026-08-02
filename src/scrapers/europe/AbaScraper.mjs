@@ -169,13 +169,17 @@ export class AbaScraper extends HTTPClient {
 			if (idx === -1) return '';
 
 			const searchBlock = fullHtml.substring(0, idx);
-			const headingRegex = /<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi;
+			const headingRegex = /<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/gi;
 			let hMatch;
 			let lastHeading = '';
+			const banned = ['match', 'player stats', 'team stats', 'results', 'index', 'points', 'rebounds', 'assists', 'steals', 'blocks', 'head-to-head', 'home team', 'away team', 'overall'];
 			while ((hMatch = headingRegex.exec(searchBlock)) !== null) {
-				lastHeading = hMatch[1].replace(/<[^>]+>/g, '').trim();
+				const content = hMatch[1].replace(/<[^>]+>/g, '').trim();
+				if (content.length > 2 && content.length < 50 && !banned.some(b => content.toLowerCase().includes(b))) {
+					lastHeading = content;
+				}
 			}
-			if (lastHeading && lastHeading.length > 2 && lastHeading.length < 50) {
+			if (lastHeading) {
 				return lastHeading;
 			}
 
@@ -183,9 +187,12 @@ export class AbaScraper extends HTTPClient {
 			let tMatch;
 			let lastTitle = '';
 			while ((tMatch = titleRegex.exec(searchBlock)) !== null) {
-				lastTitle = tMatch[1].replace(/<[^>]+>/g, '').trim();
+				const content = tMatch[1].replace(/<[^>]+>/g, '').trim();
+				if (content.length > 2 && content.length < 50 && !banned.some(b => content.toLowerCase().includes(b))) {
+					lastTitle = content;
+				}
 			}
-			if (lastTitle && lastTitle.length > 2 && lastTitle.length < 50) {
+			if (lastTitle) {
 				return lastTitle;
 			}
 
