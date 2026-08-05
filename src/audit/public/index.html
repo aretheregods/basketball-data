@@ -12,7 +12,7 @@
         }
     </script>
     <style>
-        .modal {
+        dialog::backdrop {
             background-color: rgba(15, 23, 42, 0.6);
             backdrop-filter: blur(4px);
         }
@@ -194,8 +194,8 @@
     </div>
 
     <!-- Drilldown Detail Modal -->
-    <div id="detail-modal" class="modal fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col transition-colors duration-150">
+    <dialog id="detail-modal" class="rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] p-0 border-0 bg-transparent focus:outline-none m-auto overflow-hidden">
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden flex flex-col transition-colors duration-150 max-h-[85vh]">
             <div class="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
                 <div>
                     <h3 id="modal-title" class="text-xl font-bold text-slate-900 dark:text-white">Database Drilldown</h3>
@@ -225,7 +225,7 @@
                 </button>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <script>
         let currentAuditData = null;
@@ -868,19 +868,28 @@
             body.innerHTML = html;
             // Clear rerun console on show
             clearTerminal();
-            document.getElementById('detail-modal').classList.remove('hidden');
+            document.getElementById('detail-modal').showModal();
         }
 
         /**
          * @description Closes the modal view.
          */
         function closeModal() {
-            document.getElementById('detail-modal').classList.add('hidden');
+            document.getElementById('detail-modal').close();
         }
 
-        // Close on escape key
-        window.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') closeModal();
+        // Close modal when clicking outside of it (on the backdrop)
+        document.getElementById('detail-modal').addEventListener('click', (e) => {
+            const dialog = document.getElementById('detail-modal');
+            const rect = dialog.getBoundingClientRect();
+            if (
+                e.clientX < rect.left ||
+                e.clientX > rect.right ||
+                e.clientY < rect.top ||
+                e.clientY > rect.bottom
+            ) {
+                closeModal();
+            }
         });
 
         // Initialize dashboard on load

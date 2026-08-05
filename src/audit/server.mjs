@@ -378,7 +378,7 @@ export function startServer(port = PORT) {
 		res.end('404 Not Found');
 	});
 
-	server.listen(port, () => {
+	server.listen(port, '0.0.0.0', () => {
 		console.log(`📊 Audit Dashboard live at http://localhost:${port}`);
 	});
 
