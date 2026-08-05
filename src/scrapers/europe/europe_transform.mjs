@@ -54,6 +54,73 @@ export async function transformEurope(rawDir, year) {
 				continue;
 			}
 
+			// Self-healing team name fallback: If both team names are identical or either is "Match" (case-insensitive),
+			// resolve them to distinct names based on gameId slugs or fallbacks to prevent roster/team-merging.
+			const isMatchOrIdentical = (
+				String(homeTeam.teamName || '').toLowerCase() === 'match' ||
+				String(awayTeam.teamName || '').toLowerCase() === 'match' ||
+				String(homeTeam.teamName || '').toLowerCase() === String(awayTeam.teamName || '').toLowerCase()
+			);
+
+			if (isMatchOrIdentical) {
+				const suffixRegex = /-[EUBLIGDVK_S_Y]\d{4}_[A-Za-z0-9_]+$/i;
+				const parts = String(gameId || '').split('-vs-');
+				let homeFallback = '';
+				let awayFallback = '';
+
+				if (parts.length === 2) {
+					const awaySlug = parts[0];
+					const homePart = parts[1];
+					const homeSlug = homePart.replace(suffixRegex, '');
+
+					const titleCase = (slug) => {
+						return slug
+							.split('-')
+							.map(word => word.charAt(0).toUpperCase() + word.slice(1))
+							.join(' ');
+					};
+
+					homeFallback = titleCase(homeSlug);
+					awayFallback = titleCase(awaySlug);
+				}
+
+				if (!homeFallback || !awayFallback) {
+					homeFallback = `${gameId}_HOME`;
+					awayFallback = `${gameId}_AWAY`;
+				}
+
+				const lowerHome = String(homeTeam.teamName || '').toLowerCase();
+				const lowerAway = String(awayTeam.teamName || '').toLowerCase();
+
+				// If home team is "Match" or identical to away, heal it
+				if (lowerHome === 'match' || lowerHome === lowerAway) {
+					homeTeam.teamName = homeFallback;
+					homeTeam.teamId = homeFallback.toUpperCase().substring(0, 4);
+				}
+				// If away team is "Match" or identical to home (after home might have changed), heal it
+				if (lowerAway === 'match' || String(homeTeam.teamName || '').toLowerCase() === String(awayTeam.teamName || '').toLowerCase()) {
+					awayTeam.teamName = awayFallback;
+					awayTeam.teamId = awayFallback.toUpperCase().substring(0, 4);
+				}
+			}
+
+			// Self-healing score fallback: If raw team scores are 0/missing but players have points (typical of old Eurocup/Euroleague extracts),
+			// heal the team score by using the sum of player points.
+			const calculatePlayerSum = (teamObj) => {
+				const players = teamObj.players || [];
+				return players.reduce((sum, p) => sum + Number(p.statistics?.pts ?? 0), 0);
+			};
+
+			const homePlayerSum = calculatePlayerSum(homeTeam);
+			const awayPlayerSum = calculatePlayerSum(awayTeam);
+
+			if (Number(homeTeam.score ?? 0) === 0 && homePlayerSum > 0) {
+				homeTeam.score = homePlayerSum;
+			}
+			if (Number(awayTeam.score ?? 0) === 0 && awayPlayerSum > 0) {
+				awayTeam.score = awayPlayerSum;
+			}
+
 			// Define competition details and type
 			const compNames = {
 				euroleague: 'EuroLeague',
@@ -127,6 +194,8 @@ export async function transformEurope(rawDir, year) {
 				let teamFtm = 0, teamFta = 0, teamOreb = 0, teamDreb = 0, teamReb = 0;
 				let teamAst = 0, teamStl = 0, teamBlk = 0, teamTov = 0, teamPf = 0;
 
+				let sumPlayerPts = 0;
+
 				for (const p of players) {
 					const resolvedPlayerId = resolver.resolvePlayer(p.playerName);
 					const normalizedPlayerName = BaseNormalizer.normalizeName(p.playerName);
@@ -139,6 +208,7 @@ export async function transformEurope(rawDir, year) {
 
 					const stats = p.statistics || {};
 					const pts = Number(stats.pts ?? 0);
+					sumPlayerPts += pts;
 					const fgm = Number(stats.fgm ?? 0);
 					const fga = Number(stats.fga ?? 0);
 					const fg3m = Number(stats.fg3m ?? 0);
@@ -195,6 +265,57 @@ export async function transformEurope(rawDir, year) {
 						game_score: BaseNormalizer.calculateGameScore(
 							pts, fgm, fga, fta, ftm, oreb, dreb, stl, ast, blk, pf, tov
 						),
+						season: String(year),
+						league: competitionId,
+						synced: 0
+					});
+				}
+
+				const pointsVariance = teamPts - sumPlayerPts;
+				if (teamPts > 0 && pointsVariance !== 0) {
+					const resolvedPlayerId = `${resolvedTeamId}_team`;
+					const teamPlayerName = 'Team/Bench';
+					const normalizedPlayerName = 'team bench';
+
+					playersMap.set(resolvedPlayerId, {
+						id: resolvedPlayerId,
+						canonical_name: teamPlayerName,
+						normalized_name: normalizedPlayerName
+					});
+
+					allPlayers.push({
+						game_id: gameId,
+						player_id: resolvedPlayerId,
+						player_name: teamPlayerName,
+						normalized_name: normalizedPlayerName,
+						team_id: resolvedTeamId,
+						team_abbreviation: String(teamObj.teamId || resolvedTeamId).toUpperCase().substring(0, 4),
+						team_city: 'Europe',
+						start_position: '',
+						comment: 'Team/Bench stats variance adjustment',
+						min: '0.0',
+						fgm: 0,
+						fga: 0,
+						fg_pct: 0.0,
+						fg3m: 0,
+						fg3a: 0,
+						fg3_pct: 0.0,
+						ftm: 0,
+						fta: 0,
+						ft_pct: 0.0,
+						oreb: 0,
+						dreb: 0,
+						reb: 0,
+						ast: 0,
+						stl: 0,
+						blk: 0,
+						tov: 0,
+						pf: 0,
+						pts: pointsVariance,
+						plus_minus: 0.0,
+						ts_pct: 0.0,
+						efg_pct: 0.0,
+						game_score: pointsVariance,
 						season: String(year),
 						league: competitionId,
 						synced: 0

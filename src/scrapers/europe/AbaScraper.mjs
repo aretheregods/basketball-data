@@ -169,13 +169,17 @@ export class AbaScraper extends HTTPClient {
 			if (idx === -1) return '';
 
 			const searchBlock = fullHtml.substring(0, idx);
-			const headingRegex = /<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/gi;
+			const headingRegex = /<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/gi;
 			let hMatch;
 			let lastHeading = '';
+			const banned = ['match', 'player stats', 'team stats', 'results', 'index', 'points', 'rebounds', 'assists', 'steals', 'blocks', 'head-to-head', 'home team', 'away team', 'overall'];
 			while ((hMatch = headingRegex.exec(searchBlock)) !== null) {
-				lastHeading = hMatch[1].replace(/<[^>]+>/g, '').trim();
+				const content = hMatch[1].replace(/<[^>]+>/g, '').trim();
+				if (content.length > 2 && content.length < 50 && !banned.some(b => content.toLowerCase().includes(b))) {
+					lastHeading = content;
+				}
 			}
-			if (lastHeading && lastHeading.length > 2 && lastHeading.length < 50) {
+			if (lastHeading) {
 				return lastHeading;
 			}
 
@@ -183,9 +187,12 @@ export class AbaScraper extends HTTPClient {
 			let tMatch;
 			let lastTitle = '';
 			while ((tMatch = titleRegex.exec(searchBlock)) !== null) {
-				lastTitle = tMatch[1].replace(/<[^>]+>/g, '').trim();
+				const content = tMatch[1].replace(/<[^>]+>/g, '').trim();
+				if (content.length > 2 && content.length < 50 && !banned.some(b => content.toLowerCase().includes(b))) {
+					lastTitle = content;
+				}
 			}
-			if (lastTitle && lastTitle.length > 2 && lastTitle.length < 50) {
+			if (lastTitle) {
 				return lastTitle;
 			}
 
@@ -286,25 +293,94 @@ export class AbaScraper extends HTTPClient {
 				.replace(/[\s-]+/g, '-');
 		};
 
+		const getTeamNameFromInput = (html, id) => {
+			const regex1 = new RegExp(`<input[^>]*id="${id}"[^>]*value="([^"]+)"`, 'i');
+			const regex2 = new RegExp(`<input[^>]*value="([^"]+)"[^>]*id="${id}"`, 'i');
+			const match1 = html.match(regex1);
+			if (match1) return match1[1].trim();
+			const match2 = html.match(regex2);
+			if (match2) return match2[1].trim();
+			return '';
+		};
+
+		const inputHomeName = getTeamNameFromInput(htmlContent, 'match_data_home');
+		const inputAwayName = getTeamNameFromInput(htmlContent, 'match_data_guest');
+
 		let homeTable = null;
 		let awayTable = null;
 
+		const homeInputSlug = slugify(inputHomeName);
+		const awayInputSlug = slugify(inputAwayName);
+		const homeSlugToUse = homeInputSlug || slugify(homeSlugExpected);
+		const awaySlugToUse = awayInputSlug || slugify(awaySlugExpected);
+
 		statsTables.forEach(table => {
 			const candSlug = slugify(table.candidateTeamName);
-			if (homeSlugExpected && candSlug.includes(homeSlugExpected)) {
+			if (homeSlugToUse && candSlug.includes(homeSlugToUse)) {
 				homeTable = table;
-			} else if (awaySlugExpected && candSlug.includes(awaySlugExpected)) {
+			} else if (awaySlugToUse && candSlug.includes(awaySlugToUse)) {
 				awayTable = table;
 			}
 		});
 
 		if (!homeTable || !awayTable) {
-			homeTable = statsTables[1] || statsTables[0];
-			awayTable = statsTables[0];
+			statsTables.forEach(table => {
+				const candSlug = slugify(table.candidateTeamName);
+				if (homeSlugExpected && candSlug.includes(homeSlugExpected)) {
+					homeTable = table;
+				} else if (awaySlugExpected && candSlug.includes(awaySlugExpected)) {
+					awayTable = table;
+				}
+			});
 		}
 
-		const homeTeamName = homeTable.candidateTeamName || 'Home Team';
-		const awayTeamName = awayTable.candidateTeamName || 'Away Team';
+		if (!homeTable || !awayTable) {
+			homeTable = statsTables[0];
+			awayTable = statsTables[1] || statsTables[0];
+		}
+
+		let homeTeamName = inputHomeName || (homeTable ? homeTable.candidateTeamName : '') || 'Home Team';
+		let awayTeamName = inputAwayName || (awayTable ? awayTable.candidateTeamName : '') || 'Away Team';
+
+		// Defensive check: If they are still somehow "Match" or identical, heal them with expected slugs/fallbacks
+		if (
+			String(homeTeamName).toLowerCase() === 'match' ||
+			String(awayTeamName).toLowerCase() === 'match' ||
+			String(homeTeamName).toLowerCase() === String(awayTeamName).toLowerCase()
+		) {
+			const suffixRegex = /-[EUBLIGDVK_S_Y]\d{4}_[A-Za-z0-9_]+$/i;
+			const parts = String(gameId || '').split('-vs-');
+			let homeFallback = '';
+			let awayFallback = '';
+
+			if (parts.length === 2) {
+				const awaySlug = parts[0];
+				const homePart = parts[1];
+				const homeSlug = homePart.replace(suffixRegex, '');
+
+				const titleCase = (slug) => {
+					return slug
+						.split('-')
+						.map(word => word.charAt(0).toUpperCase() + word.slice(1))
+						.join(' ');
+				};
+
+				homeFallback = titleCase(homeSlug);
+				awayFallback = titleCase(awaySlug);
+			}
+
+			if (!homeFallback || !awayFallback) {
+				homeFallback = `${gameId}_HOME`;
+				awayFallback = `${gameId}_AWAY`;
+			}
+
+			if (String(homeTeamName).toLowerCase() === 'match' || String(homeTeamName).toLowerCase() === String(awayTeamName).toLowerCase()) {
+				homeTeamName = homeFallback;
+			}
+			if (String(awayTeamName).toLowerCase() === 'match' || String(homeTeamName).toLowerCase() === String(awayTeamName).toLowerCase()) {
+				awayTeamName = awayFallback;
+			}
+		}
 
 		const homeScore = homeTable.totals ? homeTable.totals.pts : (homeTable.players.reduce((sum, p) => sum + p.pts, 0) || 0);
 		const awayScore = awayTable.totals ? awayTable.totals.pts : (awayTable.players.reduce((sum, p) => sum + p.pts, 0) || 0);

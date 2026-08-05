@@ -212,9 +212,10 @@ export class BslScraper extends HTTPClient {
 			const headingRegex = /<h[1-4][^>]*>([\s\S]*?)<\/h[1-4]>/gi;
 			let hMatch;
 			let lastHeading = '';
+			const banned = ['match', 'player stats', 'team stats', 'results', 'index', 'points', 'rebounds', 'assists', 'steals', 'blocks', 'head-to-head', 'home team', 'away team', 'overall', 'glossary', 'stats', 'factor', 'quarter', 'impact'];
 			while ((hMatch = headingRegex.exec(searchBlock)) !== null) {
 				const clean = hMatch[1].replace(/<[^>]+>/g, '').trim();
-				if (clean && !clean.toLowerCase().includes('glossary') && !clean.toLowerCase().includes('stats') && !clean.toLowerCase().includes('factor') && !clean.toLowerCase().includes('quarter') && !clean.toLowerCase().includes('impact')) {
+				if (clean && !banned.some(b => clean.toLowerCase().includes(b))) {
 					lastHeading = clean;
 				}
 			}
@@ -227,7 +228,7 @@ export class BslScraper extends HTTPClient {
 			let lastTitle = '';
 			while ((tMatch = titleRegex.exec(searchBlock)) !== null) {
 				const clean = tMatch[1].replace(/<[^>]+>/g, '').trim();
-				if (clean && !clean.toLowerCase().includes('glossary') && !clean.toLowerCase().includes('stats')) {
+				if (clean && !banned.some(b => clean.toLowerCase().includes(b))) {
 					lastTitle = clean;
 				}
 			}
@@ -422,6 +423,46 @@ export class BslScraper extends HTTPClient {
 
 		const homeTeamName = homeTable ? homeTable.candidateTeamName || 'Home Team' : 'Home Team';
 		const awayTeamName = awayTable ? awayTable.candidateTeamName || 'Away Team' : 'Away Team';
+
+		// Defensive check: If they are still somehow "Match" or identical, heal them with expected slugs/fallbacks
+		if (
+			String(homeTeamName).toLowerCase() === 'match' ||
+			String(awayTeamName).toLowerCase() === 'match' ||
+			String(homeTeamName).toLowerCase() === String(awayTeamName).toLowerCase()
+		) {
+			const suffixRegex = /-[EUBLIGDVK_S_Y]\d{4}_[A-Za-z0-9_]+$/i;
+			const parts = String(gameId || '').split('-vs-');
+			let homeFallback = '';
+			let awayFallback = '';
+
+			if (parts.length === 2) {
+				const awaySlug = parts[0];
+				const homePart = parts[1];
+				const homeSlug = homePart.replace(suffixRegex, '');
+
+				const titleCase = (slug) => {
+					return slug
+						.split('-')
+						.map(word => word.charAt(0).toUpperCase() + word.slice(1))
+						.join(' ');
+				};
+
+				homeFallback = titleCase(homeSlug);
+				awayFallback = titleCase(awaySlug);
+			}
+
+			if (!homeFallback || !awayFallback) {
+				homeFallback = `${gameId}_HOME`;
+				awayFallback = `${gameId}_AWAY`;
+			}
+
+			if (String(homeTeamName).toLowerCase() === 'match' || String(homeTeamName).toLowerCase() === String(awayTeamName).toLowerCase()) {
+				homeTeamName = homeFallback;
+			}
+			if (String(awayTeamName).toLowerCase() === 'match' || String(homeTeamName).toLowerCase() === String(awayTeamName).toLowerCase()) {
+				awayTeamName = awayFallback;
+			}
+		}
 
 		const homeScore = homeTable ? (homeTable.totals ? homeTable.totals.pts : homeTable.players.reduce((sum, p) => sum + p.pts, 0)) : 0;
 		const awayScore = awayTable ? (awayTable.totals ? awayTable.totals.pts : awayTable.players.reduce((sum, p) => sum + p.pts, 0)) : 0;

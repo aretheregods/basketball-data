@@ -121,6 +121,12 @@ node run.js [options]
 3. **Game Score (GmSC)**:
    $$\text{GmSC} = \text{PTS} + 0.4 \times \text{FGM} - 0.7 \times \text{FGA} - 0.4 \times (\text{FTA} - \text{FTM}) + 0.7 \times \text{OREB} + 0.3 \times \text{DREB} + \text{STL} + 0.7 \times \text{AST} + 0.7 \times \text{BLK} - 0.4 \times \text{PF} - \text{TOV}$$
    *Normalized to 1 decimal place.*
+4. **Team/Bench Points Variance Reconciliation (European Leagues)**:
+   In European basketball leagues, the sum of individual player points does not always equal the official final team score due to unassigned points (e.g. coach/bench technical free throws, or incomplete source boxscore sheets).
+   To maintain mathematical agreement and pass SQL integrity checks, the European Transform stage calculates:
+   $$\text{Variance} = \text{Team Score} - \sum \text{Individual Player Points}$$
+   If $\text{Variance} \neq 0$ and the team score is greater than 0, a virtual `"Team/Bench"` pseudo-player row (using ID `<team_id>_team`) is automatically appended with `pts` set to the variance. This ensures that:
+   $$\sum \text{Player Points} = \text{Team Score}$$
 
 ### Directory Structure & Paths
 - **Cached output directory**: `data/transformed/<league>/<year>/`
@@ -411,6 +417,36 @@ node run.js --league=wnba --years=2023 --boxscore-type=advanced
 
 ---
 
+## Data Rectification and Cleaning Guide
+
+If your database contains corrupted or misaligned historical records (such as **EuroLeague/EuroCup games with 0 team scores** or **ABA/BSL Adriatic games with "Match" team names and doubled stats**), you can rectify and rebuild your dataset cleanly without re-downloading any raw files from the network.
+
+Because the LikelyHigh ETL pipeline decouples network extraction (Stage 1) from CPU transformation (Stage 2), raw unmodified HTML and API payloads remain cached on local disk under `data/raw/`.
+
+### Step-by-Step Guide to Rectify the European Dataset:
+
+#### Step 1: Locate and Re-process Cached Raw Data
+To clean and rebuild the European staging database (`EUROPE.sqlite`) from your local disk caches for the target season years (e.g. `2021`, `2025`), execute the pipeline by targeting the `europe` league and specifying the `transform` and `load` stages:
+
+```bash
+node run.js --league=europe --years=2021,2025 --step=transform,load
+```
+
+* **What happens behind the scenes:**
+  - **Stage 2 (Transform)**: Automatically re-reads the raw local JSON/HTML files. It applies the corrected `ScoreA`/`ScoreB` mapping for EuroLeague/EuroCup, uses the h4-compatible and banned-name filtered header parser for ABA/BSL (resolving the `"Match"` team name bug), and appends the `"Team/Bench"` pseudo-player to reconcile points variances. It caches the corrected structures to `data/transformed/europe/<year>/transformed.json`.
+  - **Stage 3 (Load)**: Connects to `data/SQL/EUROPE.sqlite` and executes a transaction block that **automatically purges all old, incorrect matching records** for the targeted years before batch-inserting the corrected clean records.
+
+#### Step 2: Push the Corrected Records to Cloudflare D1
+Once the local SQLite database has been successfully loaded with the corrected records, synchronize these updates to your remote production database on the Cloudflare edge:
+
+```bash
+node run.js --league=europe --years=2021,2025 --step=sync
+```
+
+*(You can also execute all three steps in a single, continuous command: `node run.js --league=europe --years=2021,2025 --step=transform,load,sync`)*
+
+---
+
 ## Troubleshooting & FAQs
 
 ### Q: Why did Stage 4 [SYNC] crash with "Wrangler execution failed"?
@@ -435,6 +471,20 @@ node run.js --league=wnba --years=2023 --boxscore-type=advanced
   ```bash
   rm -rf data/SQL/*.sqlite
   ```
+
+### Q: How do I clean or correct corrupted/incorrect database records without re-fetching everything?
+* **Design Advantage**: Because pipeline stages are completely decoupled and raw files are cached unmodified on disk under `data/raw/<league>/<year>/`, **you do not need to delete or re-download raw files from the network.**
+* **Process**:
+  1. Update the Transformation logic (Stage 2) or Scraper engine with the correct parsing/mapping rules.
+  2. Re-run Stage 2 and Stage 3 with the `--step` option to process the raw caches offline and rebuild the database:
+     ```bash
+     node run.js --league=europe --years=2025 --step=transform,load
+     ```
+     Stage 3 (`load`) automatically purges old records matching that league and year from `data/SQL/<LEAGUE>.sqlite` inside a transaction before inserting the corrected records, ensuring a clean, idempotent reset.
+  3. Re-sync the clean local SQLite delta updates to Cloudflare D1:
+     ```bash
+     node run.js --league=europe --years=2025 --step=sync
+     ```
 
 ### Q: How do I verify if my schema matches the API expectations?
 * The pipeline automatically checks all fetched datasets during Stage 1 execution against drafts located inside the `schemas/` folder. If a source API contract has shifted, it throws a localized schema error and halts execution to protect downstream data types.

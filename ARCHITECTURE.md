@@ -187,6 +187,12 @@ To prevent player duplication and database join mismatches across leagues with v
 * Team mappings (e.g., `config/europe_team_mappings.json`, `config/puertorico_team_mappings.json`) are parsed **exactly once** outside of the file transformation loops in Stage 2. This prevents CPU bottlenecks and disk-bound blocking.
 * Unresolved team or player names are caught by the `EuropeanEntityResolver` and written to `data/unmapped_entities.json` to flag missing mappings during pipeline execution.
 
+### Team/Bench Points Variance Reconciliation
+* For European leagues (under `europe_transform.mjs`), if the sum of individual player points does not perfectly equal the overall team score (due to coach technicals, bench unassigned points, or missing boxscore data from the source), a points reconciliation mechanism calculates:
+  $$\text{Variance} = \text{Team Score} - \sum \text{Player Points}$$
+* If a non-zero variance exists and the team has scored points, a virtual `"Team/Bench"` pseudo-player (ID format: `<team_id>_team`) is dynamically appended to the player stats array with `pts` matching the variance.
+* This ensures complete relational integrity in the SQL database where `SUM(player_game_stats.pts)` equals `team_game_stats.pts` exactly, resolving dashboard score mismatches without requiring manual schema overrides.
+
 ---
 
 ## 6. Database Staging & Production Sync (D1)

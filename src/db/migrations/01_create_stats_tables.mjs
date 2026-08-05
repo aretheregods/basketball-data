@@ -40,7 +40,7 @@ export function up(db) {
 			season TEXT,
 			league TEXT,
 			synced INTEGER DEFAULT 0,
-			PRIMARY KEY (game_id, player_id)
+			PRIMARY KEY (game_id, team_id, player_id)
 		);
 
 		CREATE TABLE team_game_stats (
