@@ -4,129 +4,118 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LikelyHigh ETL Health Dashboard</title>
-    <!-- Tailwind CSS CDN with Class-based Dark Mode -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class'
-        }
-    </script>
-    <style>
-        dialog::backdrop {
-            background-color: rgba(15, 23, 42, 0.6);
-            backdrop-filter: blur(4px);
-        }
-    </style>
+    <!-- Raw custom CSS using nesting and modern properties -->
+    <link rel="stylesheet" href="style.css">
 </head>
-<body class="p-4 md:p-8 bg-slate-50 dark:bg-[#0f172a] text-slate-800 dark:text-slate-100 transition-colors duration-200 min-h-screen">
-    <div class="max-w-7xl mx-auto">
+<body>
+    <div class="dashboard-container">
         <!-- Header -->
-        <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 pb-6 border-b border-slate-200 dark:border-slate-700 gap-4">
+        <header class="header-container">
             <div>
-                <h1 class="text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight flex items-center gap-2">
-                    🏀 <span class="bg-gradient-to-r from-orange-600 to-amber-500 dark:from-orange-500 dark:to-amber-400 bg-clip-text text-transparent">LikelyHigh ETL Health Dashboard</span>
+                <h1 class="header-title">
+                    🏀 <span class="header-gradient-text">LikelyHigh ETL Health Dashboard</span>
                 </h1>
-                <p class="text-slate-500 dark:text-slate-400 mt-1">Real-time local integrity auditing, coverage tracking, and database consistency engine</p>
+                <p class="header-subtitle">Real-time local integrity auditing, coverage tracking, and database consistency engine</p>
             </div>
-            <div class="flex items-center gap-3">
+            <div class="header-actions">
                 <!-- Theme Switcher -->
-                <button onclick="toggleTheme()" class="px-4 py-2.5 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold rounded-lg shadow-sm border border-slate-200 dark:border-slate-600 transition duration-150 flex items-center gap-2 text-sm">
+                <button onclick="toggleTheme()" class="btn btn-secondary">
                     <span id="theme-toggle-icon">🌙</span>
                     <span id="theme-toggle-text">Dark Mode</span>
                 </button>
-                <button onclick="fetchAuditData()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-lg shadow-md transition duration-150 flex items-center gap-2 text-sm">
+                <button onclick="fetchAuditData()" class="btn btn-primary">
                     🔄 Refresh Audit
                 </button>
             </div>
         </header>
 
         <!-- Toast Notifications -->
-        <div id="toast" class="fixed top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg border text-sm font-semibold transition-all duration-300 transform translate-y-[-20px] opacity-0 pointer-events-none">
+        <div id="toast" class="toast-notification">
             <!-- Toast message -->
         </div>
 
         <!-- Stats Overview Banner -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-            <div class="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 p-5 rounded-xl shadow-sm dark:shadow-lg transition-colors duration-150">
-                <p class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Audited Databases</p>
-                <p id="stat-dbs" class="text-3xl font-black text-slate-900 dark:text-white mt-1">0</p>
-                <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">Active SQLite instances</div>
+        <div class="dashboard-stats-grid">
+            <div class="stat-card">
+                <p class="stat-label">Audited Databases</p>
+                <p id="stat-dbs" class="stat-value">0</p>
+                <div class="stat-desc">Active SQLite instances</div>
             </div>
-            <div class="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 p-5 rounded-xl shadow-sm dark:shadow-lg transition-colors duration-150">
-                <p class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Total Games Loaded</p>
-                <p id="stat-games" class="text-3xl font-black text-emerald-600 dark:text-emerald-400 mt-1">0</p>
-                <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">Across all seasons</div>
+            <div class="stat-card">
+                <p class="stat-label">Total Games Loaded</p>
+                <p id="stat-games" class="stat-value stat-value-emerald">0</p>
+                <div class="stat-desc">Across all seasons</div>
             </div>
-            <div class="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 p-5 rounded-xl shadow-sm dark:shadow-lg transition-colors duration-150">
-                <p class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Integrity / Math Mismatches</p>
-                <p id="stat-mismatches" class="text-3xl font-black text-rose-600 dark:text-rose-500 mt-1">0</p>
-                <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">Sum of player pts != final score</div>
+            <div class="stat-card">
+                <p class="stat-label">Integrity / Math Mismatches</p>
+                <p id="stat-mismatches" class="stat-value stat-value-rose">0</p>
+                <div class="stat-desc">Sum of player pts != final score</div>
             </div>
-            <div class="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 p-5 rounded-xl shadow-sm dark:shadow-lg transition-colors duration-150">
-                <p class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Unmapped Entities</p>
-                <p id="stat-unmapped" class="text-3xl font-black text-amber-600 dark:text-amber-500 mt-1">0</p>
-                <div class="text-xs text-slate-500 dark:text-slate-400 mt-1">Awaiting alias resolution</div>
+            <div class="stat-card">
+                <p class="stat-label">Unmapped Entities</p>
+                <p id="stat-unmapped" class="stat-value stat-value-amber">0</p>
+                <div class="stat-desc">Awaiting alias resolution</div>
             </div>
         </div>
 
         <!-- Main Workspace -->
-        <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <main class="main-layout">
             <!-- Left & Mid Columns: Database cards -->
-            <div class="lg:col-span-2 space-y-6">
-                <h2 class="text-xl font-bold text-slate-950 dark:text-white flex items-center gap-2">
+            <div class="lg:col-span-2">
+                <h2 class="section-title">
                     🗄️ Database Health Cards
                 </h2>
-                <div id="db-cards-container" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div id="db-cards-container" class="cards-grid">
                     <!-- Loading State -->
-                    <div class="col-span-full py-12 text-center text-slate-500 dark:text-slate-400">
-                        <div class="animate-spin inline-block w-8 h-8 border-4 border-current border-t-transparent text-indigo-500 rounded-full mb-2"></div>
+                    <div class="loading-state">
+                        <div class="spinner"></div>
                         <p>Scanning local databases and compiling analytics...</p>
                     </div>
                 </div>
             </div>
 
             <!-- Right Column: Unmapped entities and interactive control forms -->
-            <div class="space-y-6">
+            <div class="right-panel">
                 <!-- Unmapped Entities Panel -->
-                <div class="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 p-6 rounded-xl shadow-sm dark:shadow-lg transition-colors duration-150">
-                    <h2 class="text-xl font-bold text-slate-950 dark:text-white mb-2 flex items-center gap-2">
+                <div class="panel-card">
+                    <h2 class="section-title">
                         ⚠️ Entity Resolution Gaps
                     </h2>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">
+                    <p class="panel-desc">
                         Teams and players parsed from raw HTML/JSON feeds that could not be resolved to canonical records. Add these to your mapping configurations to fix.
                     </p>
 
-                    <div class="space-y-4 mb-6">
+                    <div class="unmapped-group">
                         <div>
-                            <h3 class="text-sm font-semibold text-amber-600 dark:text-amber-400 mb-2 flex items-center justify-between">
+                            <h3 class="panel-sub-title text-amber">
                                 <span>Unmapped Teams</span>
-                                <span id="unmapped-teams-count" class="px-2 py-0.5 bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 rounded-full text-xs font-bold">0</span>
+                                <span id="unmapped-teams-count" class="badge-amber">0</span>
                             </h3>
-                            <div id="unmapped-teams-list" class="max-h-32 overflow-y-auto bg-slate-100 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-mono space-y-1">
-                                <span class="text-slate-500 dark:text-slate-400 italic">No unmapped teams logged. Perfect!</span>
+                            <div id="unmapped-teams-list" class="unmapped-list">
+                                <span class="italic-muted">No unmapped teams logged. Perfect!</span>
                             </div>
                         </div>
 
                         <div>
-                            <h3 class="text-sm font-semibold text-orange-600 dark:text-orange-400 mb-2 flex items-center justify-between">
+                            <h3 class="panel-sub-title text-orange">
                                 <span>Unmapped Players</span>
-                                <span id="unmapped-players-count" class="px-2 py-0.5 bg-orange-100 dark:bg-orange-950 text-orange-800 dark:text-orange-300 rounded-full text-xs font-bold">0</span>
+                                <span id="unmapped-players-count" class="badge-orange">0</span>
                             </h3>
-                            <div id="unmapped-players-list" class="max-h-32 overflow-y-auto bg-slate-100 dark:bg-slate-900/50 p-3 rounded-lg border border-slate-200 dark:border-slate-800 text-xs font-mono space-y-1">
-                                <span class="text-slate-500 dark:text-slate-400 italic">No unmapped players logged. Perfect!</span>
+                            <div id="unmapped-players-list" class="unmapped-list">
+                                <span class="italic-muted">No unmapped players logged. Perfect!</span>
                             </div>
                         </div>
                     </div>
 
                     <!-- Config Alias Form -->
-                    <div class="border-t border-slate-200 dark:border-slate-700 pt-4">
-                        <h4 class="text-sm font-bold text-slate-900 dark:text-white mb-2 flex items-center gap-1.5">
+                    <div class="alias-form-container">
+                        <h4 class="form-title">
                             📝 Add Team Alias Mapping
                         </h4>
-                        <form id="alias-form" onsubmit="submitAlias(event)" class="space-y-3">
+                        <form id="alias-form" onsubmit="submitAlias(event)">
                             <div>
-                                <label class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">League</label>
-                                <select id="alias-league" required class="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:border-indigo-500 focus:outline-none dark:text-white">
+                                <label>League</label>
+                                <select id="alias-league" required>
                                     <option value="puertorico">Puerto Rico (bsn)</option>
                                     <option value="europe">Europe (acb, lba, lnb, etc.)</option>
                                     <option value="mexico">Mexico (lnbp)</option>
@@ -134,14 +123,14 @@
                                 </select>
                             </div>
                             <div>
-                                <label class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Raw Unmapped Team String</label>
-                                <input type="text" id="alias-raw" required placeholder="e.g. VAQUEROS BAYAMÓN" class="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:border-indigo-500 focus:outline-none dark:text-white">
+                                <label>Raw Unmapped Team String</label>
+                                <input type="text" id="alias-raw" required placeholder="e.g. VAQUEROS BAYAMÓN">
                             </div>
                             <div>
-                                <label class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Canonical Team ID (Slug)</label>
-                                <input type="text" id="alias-canonical" required placeholder="e.g. vaqueros-bayamon" class="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:border-indigo-500 focus:outline-none dark:text-white font-mono">
+                                <label>Canonical Team ID (Slug)</label>
+                                <input type="text" id="alias-canonical" required placeholder="e.g. vaqueros-bayamon" class="font-mono">
                             </div>
-                            <button type="submit" class="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-md text-xs font-bold transition duration-150 shadow-sm">
+                            <button type="submit" class="bg-indigo">
                                 Save Alias Mapping
                             </button>
                         </form>
@@ -149,18 +138,18 @@
                 </div>
 
                 <!-- Score Override Form -->
-                <div class="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 p-6 rounded-xl shadow-sm dark:shadow-lg transition-colors duration-150">
-                    <h2 class="text-sm font-bold text-slate-950 dark:text-white mb-2 flex items-center gap-1.5">
+                <div class="panel-card">
+                    <h2 class="form-title">
                         🔧 Quick Score/Points Override
                     </h2>
-                    <p class="text-[11px] text-slate-500 dark:text-slate-400 mb-3">
+                    <p class="panel-desc" style="margin-bottom: 0.75rem;">
                         If a league's official site published corrupted data, write a score override mapping here to apply it deterministically during Stage 2.
                     </p>
-                    <form id="override-form" onsubmit="submitOverride(event)" class="space-y-3">
-                        <div class="grid grid-cols-2 gap-2">
+                    <form id="override-form" onsubmit="submitOverride(event)">
+                        <div class="form-row-2">
                             <div>
-                                <label class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">League</label>
-                                <select id="override-league" required class="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:border-indigo-500 focus:outline-none dark:text-white">
+                                <label>League</label>
+                                <select id="override-league" required>
                                     <option value="puertorico">Puerto Rico</option>
                                     <option value="europe">Europe</option>
                                     <option value="mexico">Mexico</option>
@@ -170,21 +159,21 @@
                                 </select>
                             </div>
                             <div>
-                                <label class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Game ID</label>
-                                <input type="text" id="override-game" required placeholder="e.g. 10492" class="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:border-indigo-500 focus:outline-none dark:text-white font-mono">
+                                <label>Game ID</label>
+                                <input type="text" id="override-game" required placeholder="e.g. 10492" class="font-mono">
                             </div>
                         </div>
-                        <div class="grid grid-cols-2 gap-2">
+                        <div class="form-row-2">
                             <div>
-                                <label class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Team ID (Slug/No)</label>
-                                <input type="text" id="override-team" required placeholder="e.g. vancouver-bandits" class="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:border-indigo-500 focus:outline-none dark:text-white font-mono">
+                                <label>Team ID (Slug/No)</label>
+                                <input type="text" id="override-team" required placeholder="e.g. vancouver-bandits" class="font-mono">
                             </div>
                             <div>
-                                <label class="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Correct Score</label>
-                                <input type="number" id="override-score" required placeholder="e.g. 92" class="w-full text-xs p-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:border-indigo-500 focus:outline-none dark:text-white">
+                                <label>Correct Score</label>
+                                <input type="number" id="override-score" required placeholder="e.g. 92">
                             </div>
                         </div>
-                        <button type="submit" class="w-full py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-md text-xs font-bold transition duration-150 shadow-sm">
+                        <button type="submit" class="bg-amber">
                             Add Score Override
                         </button>
                     </form>
@@ -194,33 +183,33 @@
     </div>
 
     <!-- Drilldown Detail Modal -->
-    <dialog id="detail-modal" class="rounded-xl shadow-2xl max-w-4xl w-full max-h-[85vh] p-0 border-0 bg-transparent focus:outline-none m-auto overflow-hidden">
-        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden flex flex-col transition-colors duration-150 max-h-[85vh]">
-            <div class="p-6 border-b border-slate-200 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/50">
+    <dialog id="detail-modal" class="detail-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
                 <div>
-                    <h3 id="modal-title" class="text-xl font-bold text-slate-900 dark:text-white">Database Drilldown</h3>
-                    <p id="modal-subtitle" class="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Details and integrity errors</p>
+                    <h3 id="modal-title" class="modal-title">Database Drilldown</h3>
+                    <p id="modal-subtitle" class="modal-subtitle">Details and integrity errors</p>
                 </div>
-                <button onclick="closeModal()" class="text-slate-400 hover:text-slate-600 dark:hover:text-white transition duration-150 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">
+                <button onclick="closeModal()" class="btn-close">
                     ✕
                 </button>
             </div>
 
-            <div id="modal-body" class="p-6 overflow-y-auto space-y-6 flex-1 text-sm bg-slate-50 dark:bg-slate-900/30">
+            <div id="modal-body" class="modal-body">
                 <!-- Content will be injected dynamically -->
             </div>
 
             <!-- Terminal output section in modal for Rerun results -->
-            <div id="modal-terminal-container" class="hidden p-4 bg-slate-950 border-t border-slate-200 dark:border-slate-700 font-mono text-[11px] flex flex-col">
-                <div class="flex justify-between items-center text-slate-400 mb-2 font-bold select-none text-[10px]">
-                    <span class="flex items-center gap-1.5">⚡ PIPELINE RERUN EXECUTION LOG</span>
-                    <button onclick="clearTerminal()" class="hover:text-white transition">Clear Console</button>
+            <div id="modal-terminal-container" class="terminal-container" style="display: none;">
+                <div class="terminal-header">
+                    <span class="terminal-title">⚡ PIPELINE RERUN EXECUTION LOG</span>
+                    <button onclick="clearTerminal()">Clear Console</button>
                 </div>
-                <pre id="modal-terminal" class="bg-slate-900/50 text-slate-300 p-3 rounded border border-slate-800 max-h-40 overflow-y-auto select-text whitespace-pre-wrap leading-relaxed"></pre>
+                <pre id="modal-terminal" class="terminal-console"></pre>
             </div>
 
-            <div class="p-4 border-t border-slate-200 dark:border-slate-700 bg-slate-100/50 dark:bg-slate-900/50 flex justify-end">
-                <button onclick="closeModal()" class="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-750 dark:hover:bg-slate-700 text-slate-800 dark:text-white rounded-lg transition duration-150 text-sm font-semibold border border-slate-300 dark:border-slate-600">
+            <div class="modal-footer">
+                <button onclick="closeModal()" class="btn btn-secondary">
                     Close Details
                 </button>
             </div>
@@ -269,17 +258,24 @@
             const toast = document.getElementById('toast');
             toast.textContent = message;
 
-            toast.className = `fixed top-5 right-5 z-50 px-4 py-3 rounded-lg shadow-lg border text-sm font-semibold transition-all duration-300 transform translate-y-0 opacity-100`;
+            // Remove previous toast type classes
+            toast.classList.remove('toast-success', 'toast-error', 'toast-warning', 'show');
+
             if (type === 'success') {
-                toast.classList.add('bg-emerald-50', 'text-emerald-800', 'border-emerald-200', 'dark:bg-emerald-950', 'dark:text-emerald-200', 'dark:border-emerald-800');
+                toast.classList.add('toast-success');
             } else if (type === 'error') {
-                toast.classList.add('bg-rose-50', 'text-rose-800', 'border-rose-200', 'dark:bg-rose-950', 'dark:text-rose-200', 'dark:border-rose-800');
+                toast.classList.add('toast-error');
             } else {
-                toast.classList.add('bg-amber-50', 'text-amber-800', 'border-amber-200', 'dark:bg-amber-950', 'dark:text-amber-200', 'dark:border-amber-800');
+                toast.classList.add('toast-warning');
             }
 
+            // Trigger reflow to restart transition if hidden
+            void toast.offsetWidth;
+
+            toast.classList.add('show');
+
             setTimeout(() => {
-                toast.classList.add('translate-y-[-20px]', 'opacity-0', 'pointer-events-none');
+                toast.classList.remove('show');
             }, 3000);
         }
 
@@ -297,7 +293,7 @@
         // Clear rerun console
         function clearTerminal() {
             document.getElementById('modal-terminal').textContent = '';
-            document.getElementById('modal-terminal-container').classList.add('hidden');
+            document.getElementById('modal-terminal-container').style.display = 'none';
         }
 
         // Delete Unplayed games (individually or season-wide) and rerun transform/load
@@ -305,7 +301,7 @@
             const container = document.getElementById('modal-terminal-container');
             const terminal = document.getElementById('modal-terminal');
 
-            container.classList.remove('hidden');
+            container.style.display = 'flex';
             let actionDesc = gameId ? `game ${gameId}` : `all unplayed games`;
             terminal.textContent = `🚀 Deleting unplayed ${actionDesc} for league: ${league}, season: ${season}...\n`;
             terminal.scrollTop = terminal.scrollHeight;
@@ -343,7 +339,7 @@
             const container = document.getElementById('modal-terminal-container');
             const terminal = document.getElementById('modal-terminal');
 
-            container.classList.remove('hidden');
+            container.style.display = 'flex';
             terminal.textContent = `🚀 Dispatching background process...\n> node run.js --league=${league.toLowerCase()} --years=${season} --step=extract,transform,load --games=${gameId}\n\nRunning pipeline stages. Please wait (usually takes 5-10s)...\n`;
             terminal.scrollTop = terminal.scrollHeight;
 
@@ -455,9 +451,9 @@
             } catch (err) {
                 console.error('Error fetching audit metrics:', err);
                 container.innerHTML = `
-                    <div class="col-span-full p-6 bg-red-100 dark:bg-red-950/40 border border-red-300 dark:border-red-800 text-red-800 dark:text-red-200 rounded-xl text-center">
-                        <p class="font-bold text-lg">⚠️ Connection to Audit Server Failed</p>
-                        <p class="text-sm mt-1">Ensure node server is running and accessible at this address.</p>
+                    <div style="grid-column: 1 / -1; padding: 1.5rem; background-color: var(--rose-50); border: 1px solid var(--rose-200); color: var(--rose-800); border-radius: 0.75rem; text-align: center;">
+                        <p class="font-bold text-lg" style="font-weight: bold; font-size: 1.125rem;">⚠️ Connection to Audit Server Failed</p>
+                        <p class="text-sm mt-1" style="font-size: 0.875rem; margin-top: 0.25rem;">Ensure node server is running and accessible at this address.</p>
                     </div>
                 `;
             }
@@ -478,9 +474,9 @@
 
             if (Object.keys(databases).length === 0) {
                 container.innerHTML = `
-                    <div class="col-span-full py-12 text-center text-slate-500">
-                        <p class="text-lg font-semibold">No SQLite databases found in <code>data/SQL/</code></p>
-                        <p class="text-xs mt-1">Run the extraction and transformation stages to generate SQL databases.</p>
+                    <div style="grid-column: 1 / -1; padding: 3rem 0; text-align: center; color: var(--text-secondary);">
+                        <p style="font-size: 1.125rem; font-weight: 600;">No SQLite databases found in <code>data/SQL/</code></p>
+                        <p style="font-size: 0.75rem; margin-top: 0.25rem;">Run the extraction and transformation stages to generate SQL databases.</p>
                     </div>
                 `;
                 return;
@@ -491,15 +487,15 @@
                 totalGames += audit.totalGames || 0;
                 totalMismatches += audit.totalScoreMismatches || 0;
 
-                // Determine database-wide status color
-                let statusColor = 'text-emerald-700 bg-emerald-100 border-emerald-300 dark:text-emerald-400 dark:bg-emerald-950/50 dark:border-emerald-800';
+                // Determine database-wide status class
+                let statusClass = 'status-healthy';
                 let statusLabel = '🟢 Healthy';
 
                 if (audit.totalScoreMismatches > 0 || audit.totalMissingBoxscores > 0 || audit.totalLowMinAnomalies > 0) {
-                    statusColor = 'text-rose-700 bg-rose-100 border-rose-300 dark:text-rose-400 dark:bg-rose-950/50 dark:border-rose-800';
+                    statusClass = 'status-alerts';
                     statusLabel = '🔴 Integrity Alerts';
                 } else if (audit.totalUnsyncedGames > 0 || audit.totalUnsyncedStats > 0) {
-                    statusColor = 'text-amber-700 bg-amber-100 border-amber-300 dark:text-amber-400 dark:bg-amber-950/50 dark:border-amber-800';
+                    statusClass = 'status-pending';
                     statusLabel = '🟡 Pending Sync';
                 }
 
@@ -508,7 +504,7 @@
                 let seasonsHtml = '';
 
                 if (seasonsList.length === 0) {
-                    seasonsHtml = `<div class="text-slate-500 italic text-xs py-1">No data seasons loaded.</div>`;
+                    seasonsHtml = `<div class="italic-muted" style="font-size: 0.75rem; padding: 0.25rem 0;">No data seasons loaded.</div>`;
                 }
 
                 for (const season of seasonsList) {
@@ -523,12 +519,12 @@
                     }
 
                     seasonsHtml += `
-                        <div class="flex items-center justify-between p-2.5 bg-slate-50 dark:bg-slate-900/30 hover:bg-slate-100 dark:hover:bg-slate-900/50 rounded border border-slate-200 dark:border-slate-800/80 text-xs transition duration-150">
-                            <span class="font-medium text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                        <div class="season-item">
+                            <span class="season-name">
                                 <span>${sBadge}</span> Season ${season}
                             </span>
-                            <span class="text-slate-500 dark:text-slate-400 font-mono">${sData.gamesCount} games</span>
-                            <button onclick="showDrilldown('${name}', '${season}')" class="px-2 py-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-800 dark:text-white rounded transition text-[10px] font-bold border border-slate-300 dark:border-slate-600">
+                            <span class="season-games">${sData.gamesCount} games</span>
+                            <button onclick="showDrilldown('${name}', '${season}')" class="btn-inspect">
                                 Inspect
                             </button>
                         </div>
@@ -536,41 +532,41 @@
                 }
 
                 const cardHtml = `
-                    <div class="bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 rounded-xl shadow-md p-6 flex flex-col justify-between hover:border-slate-400 dark:hover:border-slate-500 hover:translate-y-[-2px] transition-all duration-200">
+                    <div class="db-card">
                         <div>
-                            <div class="flex justify-between items-start mb-4">
+                            <div class="db-card-header">
                                 <div>
-                                    <h3 class="text-lg font-bold text-slate-900 dark:text-white uppercase tracking-tight">${name}</h3>
-                                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${name.toUpperCase()}.sqlite</p>
+                                    <h3>${name}</h3>
+                                    <p class="db-card-subtitle">${name.toUpperCase()}.sqlite</p>
                                 </div>
-                                <span class="px-2.5 py-1 rounded-full text-xs font-bold border ${statusColor}">
+                                <span class="db-status-badge ${statusClass}">
                                     ${statusLabel}
                                 </span>
                             </div>
 
-                            <div class="grid grid-cols-2 gap-3 mb-5 text-center">
-                                <div class="p-2 bg-slate-50 dark:bg-slate-900/40 rounded border border-slate-200 dark:border-slate-800">
-                                    <div class="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Integrity Errors</div>
-                                    <div class="text-base font-bold ${audit.totalScoreMismatches > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}">
+                            <div class="db-stat-grid">
+                                <div class="db-stat-box">
+                                    <div class="db-stat-label">Integrity Errors</div>
+                                    <div class="db-stat-num ${audit.totalScoreMismatches > 0 ? 'text-rose' : ''}">
                                         ${audit.totalScoreMismatches + audit.totalMissingBoxscores + audit.totalLowMinAnomalies}
                                     </div>
                                 </div>
-                                <div class="p-2 bg-slate-50 dark:bg-slate-900/40 rounded border border-slate-200 dark:border-slate-800">
-                                    <div class="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider font-semibold">Pending Sync</div>
-                                    <div class="text-base font-bold ${audit.totalUnsyncedGames > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}">
+                                <div class="db-stat-box">
+                                    <div class="db-stat-label">Pending Sync</div>
+                                    <div class="db-stat-num ${audit.totalUnsyncedGames > 0 ? 'text-amber' : ''}">
                                         ${audit.totalUnsyncedGames}
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="space-y-2 mt-4">
-                                <div class="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-1">Seasons Summary</div>
+                            <div class="season-list-title">Seasons Summary</div>
+                            <div class="season-list">
                                 ${seasonsHtml}
                             </div>
                         </div>
 
-                        <div class="mt-6 pt-4 border-t border-slate-200 dark:border-slate-800 flex justify-end">
-                            <button onclick="showDrilldown('${name}')" class="px-3.5 py-1.5 bg-indigo-50 dark:bg-indigo-600/25 border border-indigo-200 dark:border-indigo-500/30 hover:bg-indigo-600 hover:border-indigo-500 text-indigo-700 hover:text-white dark:text-indigo-300 dark:hover:text-white rounded-lg text-xs font-bold transition duration-150 w-full text-center">
+                        <div class="db-card-actions">
+                            <button onclick="showDrilldown('${name}')" class="btn-block-indigo">
                                 Database Global View
                             </button>
                         </div>
@@ -594,16 +590,16 @@
 
             const tList = document.getElementById('unmapped-teams-list');
             if (unmappedTeams.length > 0) {
-                tList.innerHTML = unmappedTeams.map(t => `<div class="py-0.5 border-b border-slate-200 dark:border-slate-800/60 last:border-0 hover:text-amber-600 dark:hover:text-amber-300 transition duration-150 font-semibold cursor-pointer" onclick="document.getElementById('alias-raw').value = '${t.replace(/'/g, "\\'")}'">${t}</div>`).join('');
+                tList.innerHTML = unmappedTeams.map(t => `<div class="unmapped-item" onclick="document.getElementById('alias-raw').value = '${t.replace(/'/g, "\\'")}'">${t}</div>`).join('');
             } else {
-                tList.innerHTML = `<span class="text-slate-500 dark:text-slate-400 italic">No unmapped teams logged. Perfect!</span>`;
+                tList.innerHTML = `<span class="italic-muted">No unmapped teams logged. Perfect!</span>`;
             }
 
             const pList = document.getElementById('unmapped-players-list');
             if (unmappedPlayers.length > 0) {
-                pList.innerHTML = unmappedPlayers.map(p => `<div class="py-0.5 border-b border-slate-200 dark:border-slate-800/60 last:border-0 hover:text-orange-600 dark:hover:text-orange-300 transition duration-150 font-semibold">${p}</div>`).join('');
+                pList.innerHTML = unmappedPlayers.map(p => `<div class="unmapped-item">${p}</div>`).join('');
             } else {
-                pList.innerHTML = `<span class="text-slate-500 dark:text-slate-400 italic">No unmapped players logged. Perfect!</span>`;
+                pList.innerHTML = `<span class="italic-muted">No unmapped players logged. Perfect!</span>`;
             }
         }
 
@@ -625,36 +621,36 @@
 
             const renderSeasonDetail = (season, data) => {
                 let seasonHtml = `
-                    <div class="bg-white dark:bg-[#1e293b] p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 mb-6 shadow-sm">
-                        <div class="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 mb-4 gap-2">
-                            <h4 class="text-lg font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                                📅 Season ${season}
+                    <div class="modal-season-card">
+                        <div class="modal-season-header">
+                            <h4>
+                                <span>📅</span> Season ${season}
                             </h4>
-                            <span class="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-mono text-xs rounded border border-slate-200 dark:border-slate-700">
+                            <span class="badge-games">
                                 Total Games: ${data.gamesCount}
                             </span>
                         </div>
 
-                        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-                            <div class="p-3 bg-slate-50 dark:bg-slate-800/30 rounded border border-slate-200 dark:border-slate-800">
-                                <div class="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase">Score Mismatches</div>
-                                <div class="text-lg font-black mt-1 ${data.scoreMismatches.length > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}">${data.scoreMismatches.length}</div>
+                        <div class="modal-stats-grid">
+                            <div class="modal-stat-box">
+                                <div class="stat-box-label">Score Mismatches</div>
+                                <div class="stat-box-val ${data.scoreMismatches.length > 0 ? 'text-rose' : ''}">${data.scoreMismatches.length}</div>
                             </div>
-                            <div class="p-3 bg-slate-50 dark:bg-slate-800/30 rounded border border-slate-200 dark:border-slate-800">
-                                <div class="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase">Missing Boxscores</div>
-                                <div class="text-lg font-black mt-1 ${data.missingBoxscores.length > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'}">${data.missingBoxscores.length}</div>
+                            <div class="modal-stat-box">
+                                <div class="stat-box-label">Missing Boxscores</div>
+                                <div class="stat-box-val ${data.missingBoxscores.length > 0 ? 'text-rose' : ''}">${data.missingBoxscores.length}</div>
                             </div>
-                            <div class="p-3 bg-slate-50 dark:bg-slate-800/30 rounded border border-slate-200 dark:border-slate-800">
-                                <div class="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase">Low Minute Alerts</div>
-                                <div class="text-lg font-black mt-1 ${data.lowMinAnomalies.length > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}">${data.lowMinAnomalies.length}</div>
+                            <div class="modal-stat-box">
+                                <div class="stat-box-label">Low Minute Alerts</div>
+                                <div class="stat-box-val ${data.lowMinAnomalies.length > 0 ? 'text-amber' : ''}">${data.lowMinAnomalies.length}</div>
                             </div>
-                            <div class="p-3 bg-slate-50 dark:bg-slate-800/30 rounded border border-slate-200 dark:border-slate-800">
-                                <div class="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase">Unplayed Games</div>
-                                <div class="text-lg font-black mt-1 ${data.unplayedGames && data.unplayedGames.length > 0 ? 'text-amber-600 dark:text-amber-500' : 'text-slate-700 dark:text-slate-300'}">${data.unplayedGames ? data.unplayedGames.length : 0}</div>
+                            <div class="modal-stat-box">
+                                <div class="stat-box-label">Unplayed Games</div>
+                                <div class="stat-box-val ${data.unplayedGames && data.unplayedGames.length > 0 ? 'text-amber' : ''}">${data.unplayedGames ? data.unplayedGames.length : 0}</div>
                             </div>
-                            <div class="p-3 bg-slate-50 dark:bg-slate-800/30 rounded border border-slate-200 dark:border-slate-800">
-                                <div class="text-[10px] text-slate-500 dark:text-slate-400 font-semibold uppercase">Sync Backlog (Games)</div>
-                                <div class="text-lg font-black mt-1 ${data.syncStatus.unsyncedGames > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-700 dark:text-slate-300'}">${data.syncStatus.unsyncedGames}</div>
+                            <div class="modal-stat-box">
+                                <div class="stat-box-label">Sync Backlog (Games)</div>
+                                <div class="stat-box-val ${data.syncStatus.unsyncedGames > 0 ? 'text-amber' : ''}">${data.syncStatus.unsyncedGames}</div>
                             </div>
                         </div>
                 `;
@@ -662,32 +658,32 @@
                 // Score Mismatches
                 if (data.scoreMismatches.length > 0) {
                     seasonHtml += `
-                        <div class="mb-5">
-                            <h5 class="text-sm font-bold text-rose-600 dark:text-rose-400 mb-2">❌ Score Mismatches (SUM(player_pts) != final_score)</h5>
-                            <div class="overflow-x-auto bg-slate-50 dark:bg-slate-950/60 rounded-lg border border-rose-200 dark:border-rose-900/30">
-                                <table class="w-full text-left text-xs">
-                                    <thead class="bg-rose-100 dark:bg-rose-950/30 text-rose-800 dark:text-rose-300 border-b border-rose-200 dark:border-rose-900/30 font-bold">
+                        <div class="data-table-section">
+                            <h5 class="text-rose">❌ Score Mismatches (SUM(player_pts) != final_score)</h5>
+                            <div class="data-table-container border-rose">
+                                <table class="data-table">
+                                    <thead class="bg-rose">
                                         <tr>
-                                            <th class="p-2.5">Game ID</th>
-                                            <th class="p-2.5">Team Name</th>
-                                            <th class="p-2.5 text-center">Team Score</th>
-                                            <th class="p-2.5 text-center">Player Sum</th>
-                                            <th class="p-2.5 text-center">Variance</th>
-                                            <th class="p-2.5 text-right">Actions</th>
+                                            <th>Game ID</th>
+                                            <th>Team Name</th>
+                                            <th class="text-center">Team Score</th>
+                                            <th class="text-center">Player Sum</th>
+                                            <th class="text-center">Variance</th>
+                                            <th class="text-right">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody class="divide-y divide-slate-200 dark:divide-slate-800 text-slate-800 dark:text-slate-300">
+                                    <tbody>
                                         ${data.scoreMismatches.map(m => `
-                                            <tr class="hover:bg-rose-50 dark:hover:bg-rose-950/10">
-                                                <td class="p-2.5 font-mono">${m.game_id}</td>
-                                                <td class="p-2.5 font-semibold">${m.team_name}</td>
-                                                <td class="p-2.5 text-center font-bold">${m.team_score}</td>
-                                                <td class="p-2.5 text-center text-rose-600 dark:text-rose-400 font-bold">${m.sum_player_pts}</td>
-                                                <td class="p-2.5 text-center text-rose-700 dark:text-rose-400 font-extrabold font-mono">${m.team_score - m.sum_player_pts}</td>
-                                                <td class="p-2.5 text-right space-x-1 whitespace-nowrap">
-                                                    <button onclick="copyCommand('${dbKey}', '${season}', '${m.game_id}')" title="Copy CLI Command" class="px-2 py-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 rounded text-[10px] font-bold border border-slate-300 dark:border-slate-600">📋 Copy</button>
-                                                    <button onclick="runPipeline('${dbKey}', '${season}', '${m.game_id}')" title="Trigger Rerun" class="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-bold">⚡ Rerun</button>
-                                                    <button onclick="fillOverrideForm('${dbKey}', '${m.game_id}', '${m.team_id}', '${m.sum_player_pts}')" title="Add Override" class="px-2 py-1 bg-amber-600 hover:bg-amber-500 text-white rounded text-[10px] font-bold">📝 Override</button>
+                                            <tr class="hover-rose">
+                                                <td class="font-mono">${m.game_id}</td>
+                                                <td class="font-semibold">${m.team_name}</td>
+                                                <td class="text-center font-bold">${m.team_score}</td>
+                                                <td class="text-center text-rose font-bold">${m.sum_player_pts}</td>
+                                                <td class="text-center text-rose font-bold font-mono">${m.team_score - m.sum_player_pts}</td>
+                                                <td class="text-right whitespace-nowrap">
+                                                    <button onclick="copyCommand('${dbKey}', '${season}', '${m.game_id}')" title="Copy CLI Command" class="btn-table-action btn-table-copy">📋 Copy</button>
+                                                    <button onclick="runPipeline('${dbKey}', '${season}', '${m.game_id}')" title="Trigger Rerun" class="btn-table-action btn-table-rerun">⚡ Rerun</button>
+                                                    <button onclick="fillOverrideForm('${dbKey}', '${m.game_id}', '${m.team_id}', '${m.sum_player_pts}')" title="Add Override" class="btn-table-action btn-table-override">📝 Override</button>
                                                 </td>
                                             </tr>
                                         `).join('')}
@@ -701,27 +697,27 @@
                 // Missing Boxscores
                 if (data.missingBoxscores.length > 0) {
                     seasonHtml += `
-                        <div class="mb-5">
-                            <h5 class="text-sm font-bold text-rose-600 dark:text-rose-400 mb-2">❌ Missing Box Scores (No Player Game Stats Found)</h5>
-                            <div class="overflow-x-auto bg-slate-50 dark:bg-slate-950/60 rounded-lg border border-rose-200 dark:border-rose-900/30">
-                                <table class="w-full text-left text-xs">
-                                    <thead class="bg-rose-100 dark:bg-rose-950/30 text-rose-800 dark:text-rose-300 border-b border-rose-200 dark:border-rose-900/30 font-bold">
+                        <div class="data-table-section">
+                            <h5 class="text-rose">❌ Missing Box Scores (No Player Game Stats Found)</h5>
+                            <div class="data-table-container border-rose">
+                                <table class="data-table">
+                                    <thead class="bg-rose">
                                         <tr>
-                                            <th class="p-2.5">Game ID</th>
-                                            <th class="p-2.5">Team Name</th>
-                                            <th class="p-2.5">Team ID</th>
-                                            <th class="p-2.5 text-right">Actions</th>
+                                            <th>Game ID</th>
+                                            <th>Team Name</th>
+                                            <th>Team ID</th>
+                                            <th class="text-right">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody class="divide-y divide-slate-200 dark:divide-slate-800 text-slate-800 dark:text-slate-300">
+                                    <tbody>
                                         ${data.missingBoxscores.map(m => `
-                                            <tr class="hover:bg-rose-50 dark:hover:bg-rose-950/10">
-                                                <td class="p-2.5 font-mono">${m.game_id}</td>
-                                                <td class="p-2.5 font-semibold">${m.team_name}</td>
-                                                <td class="p-2.5 font-mono text-slate-500 dark:text-slate-400">${m.team_id}</td>
-                                                <td class="p-2.5 text-right space-x-1 whitespace-nowrap">
-                                                    <button onclick="copyCommand('${dbKey}', '${season}', '${m.game_id}')" class="px-2 py-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 rounded text-[10px] font-bold border border-slate-300 dark:border-slate-600">📋 Copy</button>
-                                                    <button onclick="runPipeline('${dbKey}', '${season}', '${m.game_id}')" class="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-bold">⚡ Rerun</button>
+                                            <tr class="hover-rose">
+                                                <td class="font-mono">${m.game_id}</td>
+                                                <td class="font-semibold">${m.team_name}</td>
+                                                <td class="font-mono text-muted">${m.team_id}</td>
+                                                <td class="text-right whitespace-nowrap">
+                                                    <button onclick="copyCommand('${dbKey}', '${season}', '${m.game_id}')" class="btn-table-action btn-table-copy">📋 Copy</button>
+                                                    <button onclick="runPipeline('${dbKey}', '${season}', '${m.game_id}')" class="btn-table-action btn-table-rerun">⚡ Rerun</button>
                                                 </td>
                                             </tr>
                                         `).join('')}
@@ -735,27 +731,27 @@
                 // Low Minute Anomalies
                 if (data.lowMinAnomalies.length > 0) {
                     seasonHtml += `
-                        <div class="mb-5">
-                            <h5 class="text-sm font-bold text-amber-600 dark:text-amber-400 mb-2">⚠️ Low Minute Anomalies (Expected ~200/240 mins)</h5>
-                            <div class="overflow-x-auto bg-slate-50 dark:bg-slate-950/60 rounded-lg border border-amber-200 dark:border-amber-900/30">
-                                <table class="w-full text-left text-xs">
-                                    <thead class="bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border-b border-amber-200 dark:border-amber-900/30 font-bold">
+                        <div class="data-table-section">
+                            <h5 class="text-amber">⚠️ Low Minute Anomalies (Expected ~200/240 mins)</h5>
+                            <div class="data-table-container border-amber">
+                                <table class="data-table">
+                                    <thead class="bg-amber">
                                         <tr>
-                                            <th class="p-2.5">Game ID</th>
-                                            <th class="p-2.5">Team Name</th>
-                                            <th class="p-2.5 text-center">Sum Player Minutes</th>
-                                            <th class="p-2.5 text-right">Actions</th>
+                                            <th>Game ID</th>
+                                            <th>Team Name</th>
+                                            <th class="text-center">Sum Player Minutes</th>
+                                            <th class="text-right">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody class="divide-y divide-slate-200 dark:divide-slate-800 text-slate-800 dark:text-slate-300">
+                                    <tbody>
                                         ${data.lowMinAnomalies.map(m => `
-                                            <tr class="hover:bg-amber-50 dark:hover:bg-amber-950/10">
-                                                <td class="p-2.5 font-mono">${m.game_id}</td>
-                                                <td class="p-2.5 font-semibold">${m.team_name}</td>
-                                                <td class="p-2.5 text-center text-amber-700 dark:text-amber-400 font-bold font-mono">${Number(m.total_player_minutes).toFixed(1)}</td>
-                                                <td class="p-2.5 text-right space-x-1 whitespace-nowrap">
-                                                    <button onclick="copyCommand('${dbKey}', '${season}', '${m.game_id}')" class="px-2 py-1 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 rounded text-[10px] font-bold border border-slate-300 dark:border-slate-600">📋 Copy</button>
-                                                    <button onclick="runPipeline('${dbKey}', '${season}', '${m.game_id}')" class="px-2 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-bold">⚡ Rerun</button>
+                                            <tr class="hover-amber">
+                                                <td class="font-mono">${m.game_id}</td>
+                                                <td class="font-semibold">${m.team_name}</td>
+                                                <td class="text-center text-amber font-bold font-mono">${Number(m.total_player_minutes).toFixed(1)}</td>
+                                                <td class="text-right whitespace-nowrap">
+                                                    <button onclick="copyCommand('${dbKey}', '${season}', '${m.game_id}')" class="btn-table-action btn-table-copy">📋 Copy</button>
+                                                    <button onclick="runPipeline('${dbKey}', '${season}', '${m.game_id}')" class="btn-table-action btn-table-rerun">⚡ Rerun</button>
                                                 </td>
                                             </tr>
                                         `).join('')}
@@ -769,31 +765,31 @@
                 // Outliers
                 if (data.outliers.length > 0) {
                     seasonHtml += `
-                        <div class="mb-5">
-                            <h5 class="text-sm font-bold text-purple-600 dark:text-purple-400 mb-2">🔮 Detected Outliers & Extremes</h5>
-                            <div class="overflow-x-auto bg-slate-50 dark:bg-slate-950/60 rounded-lg border border-purple-200 dark:border-purple-900/30">
-                                <table class="w-full text-left text-xs">
-                                    <thead class="bg-purple-100 dark:bg-purple-950/30 text-purple-800 dark:text-purple-300 border-b border-purple-200 dark:border-purple-900/30 font-bold">
+                        <div class="data-table-section">
+                            <h5 class="text-purple">🔮 Detected Outliers & Extremes</h5>
+                            <div class="data-table-container border-purple">
+                                <table class="data-table">
+                                    <thead class="bg-purple">
                                         <tr>
-                                            <th class="p-2.5">Game ID</th>
-                                            <th class="p-2.5">Player Name</th>
-                                            <th class="p-2.5">Team</th>
-                                            <th class="p-2.5 text-center">PTS</th>
-                                            <th class="p-2.5 text-center">REB</th>
-                                            <th class="p-2.5 text-center">AST</th>
-                                            <th class="p-2.5 text-center">MIN</th>
+                                            <th>Game ID</th>
+                                            <th>Player Name</th>
+                                            <th>Team</th>
+                                            <th class="text-center">PTS</th>
+                                            <th class="text-center">REB</th>
+                                            <th class="text-center">AST</th>
+                                            <th class="text-center">MIN</th>
                                         </tr>
                                     </thead>
-                                    <tbody class="divide-y divide-slate-200 dark:divide-slate-800 text-slate-800 dark:text-slate-300">
+                                    <tbody>
                                         ${data.outliers.map(m => `
-                                            <tr class="hover:bg-purple-50 dark:hover:bg-purple-950/10">
-                                                <td class="p-2.5 font-mono">${m.game_id}</td>
-                                                <td class="p-2.5 font-semibold text-slate-900 dark:text-slate-100">${m.player_name}</td>
-                                                <td class="p-2.5 text-slate-600 dark:text-slate-400">${m.team_name}</td>
-                                                <td class="p-2.5 text-center font-bold text-purple-600 dark:text-purple-300">${m.pts}</td>
-                                                <td class="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300">${m.reb}</td>
-                                                <td class="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300">${m.ast}</td>
-                                                <td class="p-2.5 text-center font-bold text-slate-700 dark:text-slate-300">${m.min}</td>
+                                            <tr class="hover-purple">
+                                                <td class="font-mono">${m.game_id}</td>
+                                                <td class="font-semibold">${m.player_name}</td>
+                                                <td class="text-muted">${m.team_name}</td>
+                                                <td class="text-center font-bold text-purple">${m.pts}</td>
+                                                <td class="text-center font-bold">${m.reb}</td>
+                                                <td class="text-center font-bold">${m.ast}</td>
+                                                <td class="text-center font-bold">${m.min}</td>
                                             </tr>
                                         `).join('')}
                                     </tbody>
@@ -806,29 +802,29 @@
                 // Unplayed Games
                 if (data.unplayedGames && data.unplayedGames.length > 0) {
                     seasonHtml += `
-                        <div class="mb-5">
-                            <div class="flex justify-between items-center mb-2">
-                                <h5 class="text-sm font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">⚠️ Unplayed Games Found (${data.unplayedGames.length})</h5>
-                                <button onclick="deleteUnplayed('${dbKey}', '${season}')" class="px-2.5 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded text-[10px] font-bold shadow-sm flex items-center gap-1">
+                        <div class="data-table-section">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                <h5 class="text-amber" style="margin-bottom: 0;">⚠️ Unplayed Games Found (${data.unplayedGames.length})</h5>
+                                <button onclick="deleteUnplayed('${dbKey}', '${season}')" class="btn-table-action btn-table-delete">
                                     🗑️ Delete All Unplayed & Rerun
                                 </button>
                             </div>
-                            <div class="overflow-x-auto bg-slate-50 dark:bg-slate-950/60 rounded-lg border border-amber-200 dark:border-amber-900/30">
-                                <table class="w-full text-left text-xs">
-                                    <thead class="bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border-b border-amber-200 dark:border-amber-900/30 font-bold">
+                            <div class="data-table-container border-amber">
+                                <table class="data-table">
+                                    <thead class="bg-amber">
                                         <tr>
-                                            <th class="p-2.5">Game ID</th>
-                                            <th class="p-2.5">Raw File Path</th>
-                                            <th class="p-2.5 text-right">Actions</th>
+                                            <th>Game ID</th>
+                                            <th>Raw File Path</th>
+                                            <th class="text-right">Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody class="divide-y divide-slate-200 dark:divide-slate-800 text-slate-800 dark:text-slate-300">
+                                    <tbody>
                                         ${data.unplayedGames.map(g => `
-                                            <tr class="hover:bg-amber-50 dark:hover:bg-amber-950/10">
-                                                <td class="p-2.5 font-mono">${g.gameId}</td>
-                                                <td class="p-2.5 font-mono text-slate-500 dark:text-slate-400 text-[10px]">${g.filePath}</td>
-                                                <td class="p-2.5 text-right space-x-1 whitespace-nowrap">
-                                                    <button onclick="deleteUnplayed('${dbKey}', '${season}', '${g.gameId}')" title="Delete & Rerun" class="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded text-[10px] font-bold">🗑️ Delete & Rerun</button>
+                                            <tr class="hover-amber">
+                                                <td class="font-mono">${g.gameId}</td>
+                                                <td class="font-mono text-muted" style="font-size: 10px;">${g.filePath}</td>
+                                                <td class="text-right whitespace-nowrap">
+                                                    <button onclick="deleteUnplayed('${dbKey}', '${season}', '${g.gameId}')" title="Delete & Rerun" class="btn-table-action btn-table-delete">🗑️ Delete & Rerun</button>
                                                 </td>
                                             </tr>
                                         `).join('')}
@@ -841,7 +837,7 @@
 
                 if (data.scoreMismatches.length === 0 && data.missingBoxscores.length === 0 && data.lowMinAnomalies.length === 0 && data.outliers.length === 0) {
                     seasonHtml += `
-                        <div class="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/30 rounded-lg text-emerald-800 dark:text-emerald-400 font-semibold text-center text-xs">
+                        <div class="success-box">
                             🎉 100% Data Integrity. Zero Score Mismatches, Missing Boxscores, or Stat Anomalies detected for Season ${season}!
                         </div>
                     `;
