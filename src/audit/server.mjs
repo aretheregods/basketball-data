@@ -69,6 +69,9 @@ export function startServer(port = PORT) {
 					const files = fs.readdirSync(DB_DIR);
 					for (const file of files) {
 						if (file.endsWith('.sqlite')) {
+							if (file.toLowerCase().includes('_test')) {
+								continue;
+							}
 							const leagueKey = file.replace('.sqlite', '').toLowerCase();
 							const dbPath = path.join(DB_DIR, file);
 							try {

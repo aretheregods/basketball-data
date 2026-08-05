@@ -113,4 +113,25 @@ test.describe('Audit Server API - /api/unplayed/delete Integration Tests', () =>
 		const exists3 = await fs.access(path.join(rawDir, 'game_3.json')).then(() => true).catch(() => false);
 		assert.equal(exists3, true, 'game_3.json should not be deleted');
 	});
+
+	test('should filter out test databases containing _test in /api/audit', async () => {
+		const dbDir = path.resolve(PROJECT_ROOT, 'data/SQL');
+		await fs.mkdir(dbDir, { recursive: true });
+
+		// Create a test database file
+		const testDbPath = path.join(dbDir, 'DUMMY_TEST.sqlite');
+		await fs.writeFile(testDbPath, '', 'utf8');
+
+		try {
+			const res = await fetch(`http://localhost:${PORT}/api/audit`);
+			const data = await res.json();
+			assert.equal(res.status, 200);
+			assert.ok(data.databases);
+			// Verify that dummy_test is NOT in the audited databases list
+			assert.equal(data.databases['dummy_test'], undefined, 'dummy_test database should be filtered out');
+		} finally {
+			// Clean up dummy test database
+			await fs.rm(testDbPath, { force: true });
+		}
+	});
 });
