@@ -17,7 +17,7 @@ const __dirname = path.dirname(__filename);
 
 test.describe('Puerto Rico BSN Scraper & Pipeline Integration', () => {
 	const league = 'puertorico_test';
-	const year = '2099'; // Unique test year to isolate test runs
+	const year = '2024'; // Unique test year to isolate test runs
 
 	test.before(async () => {
 		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
@@ -32,20 +32,20 @@ test.describe('Puerto Rico BSN Scraper & Pipeline Integration', () => {
 	test('BsnHarvester should return mock slugs in test mode', async () => {
 		const harvester = new BsnHarvester();
 		harvester.scraper = { bypassNetwork: true };
-		const slugs = await harvester.getSeasonGameSlugs('2099');
+		const slugs = await harvester.getSeasonGameSlugs('2024');
 
 		assert.ok(slugs.length > 0, 'Should return some slugs');
-		assert.ok(slugs[0].includes('-B2099_'), 'Slugs must contain Bsegment segment');
+		assert.ok(slugs[0].includes('-B2024_'), 'Slugs must contain Bsegment segment');
 		const sampleGameId = slugs[0].split('-').pop();
-		assert.match(sampleGameId, /^B2099_\d+$/, 'gameId Segment must match BSN pattern');
+		assert.match(sampleGameId, /^B2024_\d+$/, 'gameId Segment must match BSN pattern');
 	});
 
 	test('BsnScraper should return correct unified schema mock data', async () => {
 		const scraper = new BsnScraper();
-		const boxscore = await scraper.request('vaqueros-de-bayamon-vs-capitanes-de-arecibo-B2099_2111481');
+		const boxscore = await scraper.request('vaqueros-de-bayamon-vs-capitanes-de-arecibo-B2024_2111481');
 
-		assert.equal(boxscore.gameId, 'vaqueros-de-bayamon-vs-capitanes-de-arecibo-B2099_2111481');
-		assert.equal(boxscore.season, '2099');
+		assert.equal(boxscore.gameId, 'vaqueros-de-bayamon-vs-capitanes-de-arecibo-B2024_2111481');
+		assert.equal(boxscore.season, '2024');
 
 		// Home team check
 		assert.equal(boxscore.homeTeam.teamName, 'VAQUEROS DE BAYAMON');
@@ -169,7 +169,7 @@ test.describe('Puerto Rico BSN Scraper & Pipeline Integration', () => {
 			</html>
 		`;
 
-		const boxscore = parseBsnHtml(sampleHtml, 'vaqueros-de-bayamon', 'capitanes-de-arecibo', 'vaqueros-de-bayamon-vs-capitanes-de-arecibo-B2099_2111481', '2099');
+		const boxscore = parseBsnHtml(sampleHtml, 'vaqueros-de-bayamon', 'capitanes-de-arecibo', 'vaqueros-de-bayamon-vs-capitanes-de-arecibo-B2024_2111481', '2024');
 
 		assert.equal(boxscore.homeTeam.teamName, 'VAQUEROS DE BAYAMON');
 		assert.equal(boxscore.awayTeam.teamName, 'CAPITANES DE ARECIBO');
@@ -194,7 +194,7 @@ test.describe('Puerto Rico BSN Scraper & Pipeline Integration', () => {
 			// 1. STAGE 1: Extract
 			const gameIds = await extractStage(scraper, league, year);
 			assert.ok(gameIds.length > 0);
-			assert.ok(gameIds.includes('B2099_2111481'));
+			assert.ok(gameIds.includes('B2024_2111481'));
 
 			// 2. STAGE 2: Transform
 			const transformed = await transformStage(league, year);
