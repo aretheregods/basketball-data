@@ -628,7 +628,36 @@ export async function transformStage(league, year) {
 					});
 
 					const players = teamObj.players || [];
+
+					// Deduplicate players with identical personIds by keeping the entry with played minutes
+					const playersMap = new Map();
 					for (const p of players) {
+						const playerId = Number(p.personId || 0);
+						if (!playerId) continue;
+
+						if (!playersMap.has(playerId)) {
+							playersMap.set(playerId, []);
+						}
+						playersMap.get(playerId).push(p);
+					}
+
+					const deduplicatedPlayers = [];
+					for (const [playerId, group] of playersMap.entries()) {
+						if (group.length === 1) {
+							deduplicatedPlayers.push(group[0]);
+						} else {
+							// Find the first one with non-empty minutes
+							const played = group.find(p => p.statistics?.minutes && p.statistics.minutes !== "");
+							if (played) {
+								deduplicatedPlayers.push(played);
+							} else {
+								// Fallback to the first one
+								deduplicatedPlayers.push(group[0]);
+							}
+						}
+					}
+
+					for (const p of deduplicatedPlayers) {
 						const playerId = Number(p.personId || 0);
 						if (!playerId) continue;
 
