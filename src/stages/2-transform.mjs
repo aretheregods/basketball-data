@@ -139,6 +139,11 @@ export async function transformStage(league, year) {
 				continue;
 			}
 
+			if (BaseNormalizer.isGameUnplayed(rawData, league)) {
+				console.log(`⏭️ [Transform] Skipping unplayed/future game: ${fileName}`);
+				continue;
+			}
+
 			if (league.toLowerCase() === 'mexico' || league.toLowerCase().startsWith('mexico')) {
 				const gameId = String(rawData.gameId || '').trim();
 				if (!gameId) continue;

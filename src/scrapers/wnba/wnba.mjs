@@ -321,6 +321,8 @@ export class WNBAScraper extends HTTPClient {
 		return {
 			resource: "boxscore",
 			parameters: { GameID: gameId },
+			gameStatus: game.gameStatus,
+			gameDateUTC: game.gameTimeUTC || game.gameDateUTC,
 			resultSets: [
 				{
 					name: "PlayerStats",
