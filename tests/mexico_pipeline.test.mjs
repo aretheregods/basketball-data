@@ -16,7 +16,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '../');
 
 test.describe('Mexico LNBP Scraper & Pipeline Integration', () => {
 	const league = 'mexico_test';
-	const year = '2099'; // Unique test year to isolate test runs
+	const year = '2024'; // Unique test year to isolate test runs
 
 	test.before(async () => {
 		process.env.NODE_ENV = 'test';
@@ -31,20 +31,20 @@ test.describe('Mexico LNBP Scraper & Pipeline Integration', () => {
 
 	test('LnbpHarvester should return mock slugs in test mode', async () => {
 		const harvester = new LnbpHarvester();
-		const slugs = await harvester.getSeasonGameSlugs('2099');
+		const slugs = await harvester.getSeasonGameSlugs('2024');
 
 		assert.ok(slugs.length > 0, 'Should return some slugs');
-		assert.ok(slugs[0].includes('-M2099_'), 'Slugs must be formatted with M segment segment');
+		assert.ok(slugs[0].includes('-M2024_'), 'Slugs must be formatted with M segment segment');
 		const sampleGameId = slugs[0].split('-').pop();
-		assert.match(sampleGameId, /^M2099_\d+$/, 'gameId Segment must match Mexico pattern');
+		assert.match(sampleGameId, /^M2024_\d+$/, 'gameId Segment must match Mexico pattern');
 	});
 
 	test('LnbpScraper should return correct unified schema mock data', async () => {
 		const scraper = new LnbpScraper();
-		const boxscore = await scraper.request('fuerza-regia-vs-astros-de-jalisco-M2099_890123');
+		const boxscore = await scraper.request('fuerza-regia-vs-astros-de-jalisco-M2024_890123');
 
-		assert.equal(boxscore.gameId, 'fuerza-regia-vs-astros-de-jalisco-M2099_890123');
-		assert.equal(boxscore.season, '2099');
+		assert.equal(boxscore.gameId, 'fuerza-regia-vs-astros-de-jalisco-M2024_890123');
+		assert.equal(boxscore.season, '2024');
 
 		// Home team check
 		assert.equal(boxscore.homeTeam.teamName, 'FUERZA REGIA');
@@ -168,7 +168,7 @@ test.describe('Mexico LNBP Scraper & Pipeline Integration', () => {
 			</html>
 		`;
 
-		const boxscore = parseLnbpHtml(sampleHtml, 'fuerza-regia', 'astros-de-jalisco', 'fuerza-regia-vs-astros-de-jalisco-M2099_890123', '2099');
+		const boxscore = parseLnbpHtml(sampleHtml, 'fuerza-regia', 'astros-de-jalisco', 'fuerza-regia-vs-astros-de-jalisco-M2024_890123', '2024');
 
 		assert.equal(boxscore.homeTeam.teamName, 'FUERZA REGIA');
 		assert.equal(boxscore.awayTeam.teamName, 'ASTROS DE JALISCO');
@@ -193,7 +193,7 @@ test.describe('Mexico LNBP Scraper & Pipeline Integration', () => {
 			// 1. STAGE 1: Extract
 			const gameIds = await extractStage(scraper, league, year);
 			assert.ok(gameIds.length > 0);
-			assert.ok(gameIds.includes('M2099_890123'));
+			assert.ok(gameIds.includes('M2024_890123'));
 
 			// 2. STAGE 2: Transform
 			const transformed = await transformStage(league, year);

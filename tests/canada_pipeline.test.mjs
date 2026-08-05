@@ -15,7 +15,7 @@ const __dirname = path.dirname(__filename);
 
 test.describe('Canada CEBL Scraper & Pipeline Integration', () => {
 	const league = 'canada_test';
-	const year = '2099'; // Unique test year to isolate test runs
+	const year = '2024'; // Unique test year to isolate test runs
 
 	test.before(async () => {
 		process.env.NODE_ENV = 'test';
@@ -30,20 +30,20 @@ test.describe('Canada CEBL Scraper & Pipeline Integration', () => {
 
 	test('CeblHarvester should return mock slugs in test mode', async () => {
 		const harvester = new CeblHarvester();
-		const slugs = await harvester.getSeasonGameSlugs('2099');
+		const slugs = await harvester.getSeasonGameSlugs('2024');
 
 		assert.ok(slugs.length > 0, 'Should return some slugs');
-		assert.ok(slugs[0].includes('-2099-'), 'Slugs must contain year segment');
+		assert.ok(slugs[0].includes('-2024-'), 'Slugs must contain year segment');
 		const sampleGameId = slugs[0].split('-').pop();
 		assert.match(sampleGameId, /^\d+$/, 'gameId Segment must match CEBL numeric pattern');
 	});
 
 	test('CeblScraper should return correct unified schema mock data', async () => {
 		const scraper = new CeblScraper();
-		const boxscore = await scraper.request('cebl-2099-10492');
+		const boxscore = await scraper.request('cebl-2024-10492');
 
-		assert.equal(boxscore.gameId, 'cebl-2099-10492');
-		assert.equal(boxscore.season, '2099');
+		assert.equal(boxscore.gameId, 'cebl-2024-10492');
+		assert.equal(boxscore.season, '2024');
 
 		// Home team check
 		assert.equal(boxscore.homeTeam.teamName, 'VANCOUVER BANDITS');
@@ -60,7 +60,7 @@ test.describe('Canada CEBL Scraper & Pipeline Integration', () => {
 
 	test('CeblScraper FIBA JSON Parser should correctly parse CEBL team names, scores, and player statistics from raw FIBA JSON', async () => {
 		const sampleFibaJson = {
-			gDate: "15/07/2099",
+			gDate: "15/07/2024",
 			tm: {
 				"1": {
 					sName: "VANCOUVER BANDITS",
@@ -127,9 +127,9 @@ test.describe('Canada CEBL Scraper & Pipeline Integration', () => {
 			}
 		};
 
-		const boxscore = parseCeblFibaJson(sampleFibaJson, 'cebl-2099-10492', '2099');
+		const boxscore = parseCeblFibaJson(sampleFibaJson, 'cebl-2024-10492', '2024');
 
-		assert.equal(boxscore.gameDate, '2099-07-15');
+		assert.equal(boxscore.gameDate, '2024-07-15');
 		assert.equal(boxscore.homeTeam.teamName, 'VANCOUVER BANDITS');
 		assert.equal(boxscore.awayTeam.teamName, 'NIAGARA RIVER LIONS');
 		assert.equal(boxscore.homeTeam.score, 95);
