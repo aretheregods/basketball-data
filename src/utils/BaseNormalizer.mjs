@@ -252,4 +252,85 @@ export class BaseNormalizer {
 	parseMinutesToFloat(minStr) {
 		return BaseNormalizer.parseMinutesToFloat(minStr);
 	}
+
+	/**
+	 * @description Checks if a raw game JSON payload represents an unplayed/future game.
+	 * @param {Object} raw - The raw game JSON object
+	 * @param {string} [leagueKey] - The lowercase league key
+	 * @returns {boolean} True if the game is unplayed or scheduled in the future, false otherwise
+	 */
+	static isGameUnplayed(raw, leagueKey) {
+		if (!raw) return true;
+
+		// Explicit unplayed flags
+		if (raw.is_unplayed === 1 || raw.is_unplayed === true || raw.status === 'SCHEDULED') {
+			return true;
+		}
+
+		// Check for unplayed skeleton names
+		if (raw.homeTeam && String(raw.homeTeam.teamName).toLowerCase() === 'unplayed') {
+			return true;
+		}
+		if (raw.awayTeam && String(raw.awayTeam.teamName).toLowerCase() === 'unplayed') {
+			return true;
+		}
+
+		// Stats API resultSets (WNBA-style)
+		if (Array.isArray(raw.resultSets)) {
+			// Check preserved gameStatus
+			if (raw.gameStatus === 1) {
+				return true;
+			}
+
+			const playerStatsSet = raw.resultSets.find(s => s.name === 'PlayerStats');
+			if (!playerStatsSet || !Array.isArray(playerStatsSet.rowSet) || playerStatsSet.rowSet.length === 0) {
+				return true;
+			}
+
+			// Or if game date is in the future
+			if (raw.gameDateUTC || raw.gameDate) {
+				const gameDate = new Date(raw.gameDateUTC || raw.gameDate);
+				if (!isNaN(gameDate.getTime()) && gameDate > new Date()) {
+					return true;
+				}
+			}
+
+			return false;
+		}
+
+		// Next.js / Nested JSON format (NBA-style, Mexico, Canada, Puerto Rico, Europe)
+		const homeTeam = raw.homeTeam;
+		const awayTeam = raw.awayTeam;
+
+		if (homeTeam && awayTeam) {
+			// Empty players roster represents future game (only if arrays are explicitly present)
+			if (Array.isArray(homeTeam.players) && homeTeam.players.length === 0 &&
+				Array.isArray(awayTeam.players) && awayTeam.players.length === 0) {
+				return true;
+			}
+
+			if (raw.gameStatus === 1) {
+				return true;
+			}
+
+			if (raw.gameTimeUTC || raw.gameDate || raw.gameDateUTC) {
+				const gameDate = new Date(raw.gameTimeUTC || raw.gameDate || raw.gameDateUTC);
+				if (!isNaN(gameDate.getTime()) && gameDate > new Date()) {
+					return true;
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
+	 * @description Checks if a raw game JSON payload represents an unplayed/future game.
+	 * @param {Object} raw - The raw game JSON object
+	 * @param {string} [leagueKey] - The lowercase league key
+	 * @returns {boolean} True if the game is unplayed or scheduled in the future, false otherwise
+	 */
+	isGameUnplayed(raw, leagueKey) {
+		return BaseNormalizer.isGameUnplayed(raw, leagueKey);
+	}
 }

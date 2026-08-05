@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
 import { AuditEngine } from './AuditEngine.mjs';
+import { BaseNormalizer } from '../utils/BaseNormalizer.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -269,10 +270,7 @@ export function startServer(port = PORT) {
 							try {
 								const content = fs.readFileSync(filePath, 'utf8');
 								const raw = JSON.parse(content);
-								if (raw && (
-									(raw.homeTeam && raw.homeTeam.teamName === 'Unplayed') ||
-									(raw.awayTeam && raw.awayTeam.teamName === 'Unplayed')
-								)) {
+								if (raw && BaseNormalizer.isGameUnplayed(raw, league)) {
 									fs.unlinkSync(filePath);
 									deletedCount++;
 									deletedGames.push(fileGameId);

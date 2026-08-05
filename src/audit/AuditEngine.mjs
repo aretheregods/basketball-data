@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import fs from 'fs';
 import path from 'path';
+import { BaseNormalizer } from '../utils/BaseNormalizer.mjs';
 
 /**
  * @file AuditEngine.mjs
@@ -125,10 +126,7 @@ export class AuditEngine {
 						try {
 							const content = fs.readFileSync(filePath, 'utf8');
 							const raw = JSON.parse(content);
-							if (raw && (
-								(raw.homeTeam && raw.homeTeam.teamName === 'Unplayed') ||
-								(raw.awayTeam && raw.awayTeam.teamName === 'Unplayed')
-							)) {
+							if (raw && BaseNormalizer.isGameUnplayed(raw, leagueKey)) {
 								unplayedGames.push({
 									gameId: raw.gameId || file.replace('.json', ''),
 									filePath: path.relative(path.resolve(), filePath)
