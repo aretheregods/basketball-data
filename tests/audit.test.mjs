@@ -50,7 +50,7 @@ test.describe('AuditEngine Unit Tests', () => {
 				season TEXT,
 				league TEXT,
 				synced INTEGER DEFAULT 0,
-				PRIMARY KEY (game_id, player_id)
+				PRIMARY KEY (game_id, team_id, player_id)
 			);
 
 			CREATE TABLE IF NOT EXISTS team_game_stats (
