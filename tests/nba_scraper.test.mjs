@@ -192,6 +192,11 @@ test.beforeEach(() => {
 test.describe('NBAScraper & Pipeline Integration', () => {
 	test('getSeasonGameSlugs should fetch, validate and map game slugs with prefix filters', async () => {
 		const scraper = new NBAScraper();
+		const testYear = '2023_test';
+		const expectedCachePath = path.resolve('data/raw/nba', `schedule_${testYear}.json`);
+
+		// Ensure we start with no existing cache for the isolated test year
+		await fs.rm(expectedCachePath, { force: true });
 
 		fetchMock = async (url, config) => {
 			assert.match(url, /00_full_schedule\.json/);
@@ -202,13 +207,18 @@ test.describe('NBAScraper & Pipeline Integration', () => {
 			};
 		};
 
-		const result = await scraper.getSeasonGameSlugs('2023');
-		assert.equal(result, scraper);
-		// 0092300001 should be filtered out! Only 0022300001 and 0022300002 are preserved.
-		assert.deepEqual(scraper.gameSlugs, [
-			'lal-vs-bos-0022300001',
-			'phx-vs-gsw-0022300002'
-		]);
+		try {
+			const result = await scraper.getSeasonGameSlugs(testYear);
+			assert.equal(result, scraper);
+			// 0092300001 should be filtered out! Only 0022300001 and 0022300002 are preserved.
+			assert.deepEqual(scraper.gameSlugs, [
+				'lal-vs-bos-0022300001',
+				'phx-vs-gsw-0022300002'
+			]);
+		} finally {
+			// Clean up generated schedule cache file to keep repo clean
+			await fs.rm(expectedCachePath, { force: true });
+		}
 	});
 
 	test('getAPIBoxScore should fetch, validate against schema and return nested game state directly', async () => {

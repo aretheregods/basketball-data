@@ -97,7 +97,7 @@ export async function extractStage(scraper, league, year) {
 				validateSchema(`${schemaFolder}/boxscore.json`, fallback);
 				await fs.writeFile(filePath, JSON.stringify(fallback, null, 2), 'utf8');
 			} else {
-				throw error;
+				console.warn(`⚠️ Warning: Skipping Game ID ${gameId} due to extraction failure. Loop will continue...`);
 			}
 		}
 	}
