@@ -235,6 +235,39 @@ test.describe('Pipeline Stages', () => {
 		});
 	});
 
+	test('Stage 1 [EXTRACT] fail-soft error handling: should continue on individual game failure for non-European leagues', async () => {
+		await runWithCleanErrors(async () => {
+			const scraper = new WNBAScraper();
+			scraper.getSeasonGameSlugs = async () => {
+				scraper.gameSlugs = ['nyl-vs-con-0012300001', 'las-vs-min-0012300002'];
+				return scraper;
+			};
+			scraper.request = async (url) => {
+				if (url.includes('0012300001')) {
+					throw new Error('Simulated HTTP 500 Network Error');
+				}
+				return mockBoxScoreData;
+			};
+
+			const gameIds = await extractStage(scraper, league, year);
+			// It should identify both unique game IDs to scrape
+			assert.deepEqual(gameIds, ['0012300001', '0012300002']);
+
+			// Verify that game 0012300001 failed (so no file exists)
+			const expectedFile1 = path.resolve('data/raw', league, year, '0012300001.json');
+			const file1Exists = await fs.access(expectedFile1).then(() => true).catch(() => false);
+			assert.equal(file1Exists, false);
+
+			// Verify that game 0012300002 succeeded and was saved
+			const expectedFile2 = path.resolve('data/raw', league, year, '0012300002.json');
+			const file2Exists = await fs.access(expectedFile2).then(() => true).catch(() => false);
+			assert.equal(file2Exists, true);
+
+			const savedContent = JSON.parse(await fs.readFile(expectedFile2, 'utf8'));
+			assert.deepEqual(savedContent.parameters.GameID, "0012300001");
+		});
+	});
+
 	test('Stage 2 [TRANSFORM] should process raw file and normalize fields', async () => {
 		await runWithCleanErrors(async () => {
 			// Pre-populate raw file
