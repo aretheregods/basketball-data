@@ -36,6 +36,18 @@ export async function extractStage(scraper, league, year) {
 	// 2. Extract unique game IDs from slugs
 	// Slugs are formatted as cleanMatchup-gameId, so we split by '-' and get the last piece
 	const gameIds = [...new Set(scraper.gameSlugs.map(slug => slug.split('-').pop()))];
+
+	// Sort game IDs numerically (with fallback to alphabetical localeCompare for alphanumeric IDs)
+	// to ensure extraction runs in actual chronological/numerical order (e.g., October games first).
+	gameIds.sort((a, b) => {
+		const numA = parseInt(a, 10);
+		const numB = parseInt(b, 10);
+		if (!isNaN(numA) && !isNaN(numB)) {
+			return numA - numB;
+		}
+		return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+	});
+
 	console.log(`🔍 Found ${gameIds.length} unique game IDs to scrape.`);
 
 	// 3. Download and save raw payload for each game
