@@ -268,6 +268,42 @@ test.describe('NBAScraper & Pipeline Integration', () => {
 		assert.equal(scraper.getGameUrl('0022300001'), 'https://www.nba.com/game/0022300001');
 	});
 
+	test('Duplicate NBA players deduplication test', async () => {
+		const testYear = '1986';
+		const rawDir = path.resolve('data/raw/nba', testYear);
+		const transformedDir = path.resolve('data/transformed/nba', testYear);
+
+		const gameWithDuplicates = JSON.parse(JSON.stringify(mockNBANextData.props.pageProps.game));
+		// Add duplicate player entry for Kevin Durant
+		gameWithDuplicates.homeTeam.players.push({
+			personId: 201142,
+			firstName: "Kevin",
+			familyName: "Durant-Duplicate",
+			position: "F",
+			comment: "",
+			statistics: {
+				minutes: "", // empty minutes
+				points: 0
+			}
+		});
+
+		try {
+			await fs.mkdir(rawDir, { recursive: true });
+			await fs.writeFile(path.join(rawDir, '0022300001.json'), JSON.stringify(gameWithDuplicates), 'utf8');
+
+			const transformed = await transformStage('nba', testYear);
+			// Should only have 2 players: 1 home (Kevin Durant, since the duplicate is filtered out) + 1 away (LeBron James)
+			assert.equal(transformed.players.length, 2);
+
+			const kdPlayer = transformed.players.find(p => p.player_id === 201142);
+			assert.equal(kdPlayer.player_name, "Kevin Durant"); // Kept the one with actual minutes
+			assert.equal(kdPlayer.pts, 25);
+		} finally {
+			await fs.rm(rawDir, { recursive: true, force: true });
+			await fs.rm(transformedDir, { recursive: true, force: true });
+		}
+	});
+
 	test('Full Transform & Load Integration for NBA', async () => {
 		const testYear = '1985'; // Custom year to keep SQL staging isolated
 		const rawDir = path.resolve('data/raw/nba', testYear);
