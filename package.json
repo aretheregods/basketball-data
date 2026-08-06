@@ -21,7 +21,7 @@
     "#utils": "./src/utils/index.mjs"
   },
   "devDependencies": {
-    "playwright": "^1.61.1",
+    "playwright": "^1.62.1",
     "typescript": "^7.0.2"
   },
   "dependencies": {
