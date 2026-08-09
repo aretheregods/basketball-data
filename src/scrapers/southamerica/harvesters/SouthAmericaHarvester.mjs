@@ -16,7 +16,6 @@ export class SouthAmericaHarvester extends HTTPClient {
 		// Map competition keys to their correct Proballers League IDs
 		this.leagueIdMap = {
 			bcla: 100028, // Basketball Champions League Americas (BCLA)
-			lsb: 2686,   // Liga Sudamericana
 			nbb: 100091,  // Novo Basquete Brasil (Brazil NBB)
 			lnb: 188,     // Argentina Liga A (Liga Nacional)
 			lub: 356      // Uruguay Liga
@@ -25,7 +24,6 @@ export class SouthAmericaHarvester extends HTTPClient {
 		// Map competition keys to their correct Proballers URL slugs
 		this.leagueSlugMap = {
 			bcla: 'basketball-champions-league-americas',
-			lsb: 'liga-sudamericana',
 			nbb: 'brazil-nbb',
 			lnb: 'argentina-liga-a',
 			lub: 'uruguay-liga'
@@ -51,7 +49,7 @@ export class SouthAmericaHarvester extends HTTPClient {
 						`sao-paulo-vs-minas-${compUpper}${year}_20002`
 					);
 				} else {
-					// Default to BCLA or other mockup format
+					// Default to BCLA/LSB or other continental/domestic mockup format
 					allSlugs.push(
 						`flamengo-vs-quimsa-${compUpper}${year}_10001`,
 						`sesi-franca-vs-nacional-${compUpper}${year}_10002`
@@ -63,13 +61,25 @@ export class SouthAmericaHarvester extends HTTPClient {
 
 		// Non-test mode: dynamic Playwright scraper
 		for (const comp of activeComps) {
+			const compUpper = comp.toUpperCase();
+
+			// Liga Sudamericana (LSB) is hosted directly on FIBA's official website and not covered by Proballers.
+			// Due to FIBA's strict geographic/datacenter geoblocking blocks, direct scraping in this sandbox
+			// is gracefully bypassed with an informative log to guide developers.
+			if (comp === 'lsb') {
+				console.log(`⚠️ [SouthAmericaHarvester] Liga Sudamericana (LSB) schedule is not available on Proballers.`);
+				console.log(`💡 Note: To ingest LSB games, obtain the 7-digit FIBA LiveStats ID and place the raw Genius Sports JSON payload directly in:`);
+				console.log(`   data/raw/southamerica/${year}/LSB${year}_{fibaId}.json`);
+				console.log(`   Then execute the transform/load stages: node run.js --league=southamerica --years=${year} --step=transform,load`);
+				continue;
+			}
+
 			const leagueId = this.leagueIdMap[comp];
 			if (!leagueId) {
 				console.warn(`⚠️ [SouthAmericaHarvester] No Proballers league ID registered for competition: "${comp}". Skipping.`);
 				continue;
 			}
 
-			const compUpper = comp.toUpperCase();
 			const leagueSlug = this.leagueSlugMap[comp] || `southamerica-${comp}`;
 			const scheduleUrl = `https://www.proballers.com/basketball/league/${leagueId}/${leagueSlug}/schedule/${year}`;
 			console.log(`📡 [SouthAmericaHarvester] Harvesting ${compUpper} season ${year} from ${scheduleUrl}...`);
