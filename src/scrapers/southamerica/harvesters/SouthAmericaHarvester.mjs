@@ -13,13 +13,13 @@ export class SouthAmericaHarvester extends HTTPClient {
 		super('https://www.proballers.com');
 		this.scraper = scraperInstance;
 
-		// Map competition keys to their Proballers League IDs
+		// Map competition keys to their correct Proballers League IDs
 		this.leagueIdMap = {
-			bcla: 2465, // Basketball Champions League Americas
-			lsb: 2686,  // Liga Sudamericana
-			nbb: 246,   // Novo Basquete Brasil
-			lnb: 153,   // Liga Nacional de Básquet (Argentina)
-			lub: 283    // Liga Uruguaya de Básquet
+			bcla: 100028, // Basketball Champions League Americas (BCLA)
+			lsb: 2686,   // Liga Sudamericana
+			nbb: 100091,  // Novo Basquete Brasil (Brazil NBB)
+			lnb: 188,     // Argentina Liga A (Liga Nacional)
+			lub: 356      // Uruguay Liga
 		};
 
 		// Map competition keys to their correct Proballers URL slugs
@@ -27,8 +27,8 @@ export class SouthAmericaHarvester extends HTTPClient {
 			bcla: 'basketball-champions-league-americas',
 			lsb: 'liga-sudamericana',
 			nbb: 'brazil-nbb',
-			lnb: 'argentina-liga-nacional',
-			lub: 'uruguay-liga-uruguaya'
+			lnb: 'argentina-liga-a',
+			lub: 'uruguay-liga'
 		};
 	}
 
@@ -51,7 +51,7 @@ export class SouthAmericaHarvester extends HTTPClient {
 						`sao-paulo-vs-minas-${compUpper}${year}_20002`
 					);
 				} else {
-					// Default to BCLA or other continental/domestic mockup format
+					// Default to BCLA or other mockup format
 					allSlugs.push(
 						`flamengo-vs-quimsa-${compUpper}${year}_10001`,
 						`sesi-franca-vs-nacional-${compUpper}${year}_10002`
