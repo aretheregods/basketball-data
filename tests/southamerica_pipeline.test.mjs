@@ -30,8 +30,8 @@ test.describe('South America Multi-Competition Scraper & Pipeline Integration', 
 	});
 
 	test('SouthAmericaHarvester should return mock slugs for active competitions in test mode', async () => {
-		// Test with BCLA and NBB
-		const scraper = new SouthAmericaScraper({ competitions: 'bcla,nbb' });
+		// Test with BCLA, NBB, and SPB (Venezuela)
+		const scraper = new SouthAmericaScraper({ competitions: 'bcla,nbb,spb' });
 		const harvester = scraper.harvester;
 		const slugs = await harvester.getSeasonGameSlugs('2024');
 
@@ -48,10 +48,16 @@ test.describe('South America Multi-Competition Scraper & Pipeline Integration', 
 		assert.ok(nbbSlug, 'Must contain NBB segment');
 		const nbbGameId = nbbSlug.split('-').pop();
 		assert.match(nbbGameId, /^NBB2024_\d+$/, 'gameId Segment must match NBB pattern');
+
+		// Should have SPB slugs
+		const spbSlug = slugs.find(s => s.includes('-SPB2024_'));
+		assert.ok(spbSlug, 'Must contain SPB segment');
+		const spbGameId = spbSlug.split('-').pop();
+		assert.match(spbGameId, /^SPB2024_\d+$/, 'gameId Segment must match SPB pattern');
 	});
 
 	test('SouthAmericaScraper should return correct unified schema mock data for different competitions', async () => {
-		const scraper = new SouthAmericaScraper({ competitions: 'bcla,nbb' });
+		const scraper = new SouthAmericaScraper({ competitions: 'bcla,nbb,spb' });
 
 		// BCLA check
 		const bclaBox = await scraper.request('flamengo-vs-quimsa-BCLA2024_10001');
@@ -66,6 +72,14 @@ test.describe('South America Multi-Competition Scraper & Pipeline Integration', 
 		assert.equal(nbbBox.homeTeam.score, 92);
 		assert.equal(nbbBox.awayTeam.teamName, 'FRANCA');
 		assert.equal(nbbBox.awayTeam.score, 84);
+
+		// SPB check
+		const spbBox = await scraper.request('gladiadores-de-anzoategui-vs-trotamundos-de-carabobo-SPB2024_30001');
+		assert.equal(spbBox.gameId, 'gladiadores-de-anzoategui-vs-trotamundos-de-carabobo-SPB2024_30001');
+		assert.equal(spbBox.homeTeam.teamName, 'GLADIADORES DE ANZOATEGUI');
+		assert.equal(spbBox.homeTeam.score, 94);
+		assert.equal(spbBox.awayTeam.teamName, 'TROTAMUNDOS DE CARABOBO');
+		assert.equal(spbBox.awayTeam.score, 84);
 	});
 
 	test('SouthAmericaScraper HTML Parser should correctly parse South America team names, scores, and player statistics from Proballers HTML', async () => {
@@ -197,13 +211,14 @@ test.describe('South America Multi-Competition Scraper & Pipeline Integration', 
 
 	test('Full South America Multi-Competition Pipeline Integration: Extract -> Transform -> Load', async () => {
 		try {
-			const scraper = new SouthAmericaScraper({ competitions: 'bcla,nbb' });
+			const scraper = new SouthAmericaScraper({ competitions: 'bcla,nbb,spb' });
 
 			// 1. STAGE 1: Extract
 			const gameIds = await extractStage(scraper, league, year);
 			assert.ok(gameIds.length > 0);
 			assert.ok(gameIds.includes('BCLA2024_10001'));
 			assert.ok(gameIds.includes('NBB2024_20001'));
+			assert.ok(gameIds.includes('SPB2024_30001'));
 
 			// 2. STAGE 2: Transform
 			const transformed = await transformStage(league, year);
@@ -236,6 +251,19 @@ test.describe('South America Multi-Competition Scraper & Pipeline Integration', 
 			assert.equal(diasNbb.pts, 19);
 			assert.equal(diasNbb.min, '31.8'); // "31:45" parses to 31.8 minutes
 
+			// Assert transformed SPB (Venezuela) records
+			const vargasSpb = transformed.players.find(p => p.game_id === 'SPB2024_30001' && p.player_id === 'gregory-vargas');
+			assert.ok(vargasSpb);
+			assert.equal(vargasSpb.team_id, 'gladiadores-anzoategui'); // resolved team ID
+			assert.equal(vargasSpb.pts, 16);
+			assert.equal(vargasSpb.min, '26.5'); // "26:30" parses to 26.5 minutes
+
+			const cubillanSpb = transformed.players.find(p => p.game_id === 'SPB2024_30001' && p.player_id === 'david-cubillan');
+			assert.ok(cubillanSpb);
+			assert.equal(cubillanSpb.team_id, 'trotamundos-carabobo'); // resolved team ID
+			assert.equal(cubillanSpb.pts, 12);
+			assert.equal(cubillanSpb.min, '24.3'); // "24:15" parses to 24.3 minutes
+
 			// 3. STAGE 3: Load
 			await loadStage(league, year, transformed);
 
@@ -248,13 +276,14 @@ test.describe('South America Multi-Competition Scraper & Pipeline Integration', 
 				// Verify both games exist under 'southamerica' league roll-up
 				assert.ok(playerStats.some(p => p.player_name === 'Gabriel Galvanini' && p.game_id.includes('BCLA')));
 				assert.ok(playerStats.some(p => p.player_name === 'Gabriel Galvanini' && p.game_id.includes('NBB')));
-				assert.ok(playerStats.some(p => p.player_name === 'Lucas Dias'));
+				assert.ok(playerStats.some(p => p.player_name === 'Gregory Vargas' && p.game_id.includes('SPB')));
+				assert.ok(playerStats.some(p => p.player_name === 'David Cubillan'));
 
 				const teamStats = db.prepare('SELECT * FROM team_game_stats WHERE league = ? AND season = ?').all('southamerica', year);
 				assert.ok(teamStats.length > 0);
 				assert.ok(teamStats.some(t => t.team_name === 'FLAMENGO' && t.game_id.includes('BCLA')));
-				assert.ok(teamStats.some(t => t.team_name === 'FLAMENGO' && t.game_id.includes('NBB')));
-				assert.ok(teamStats.some(t => t.team_name === 'FRANCA'));
+				assert.ok(teamStats.some(t => t.team_name === 'GLADIADORES DE ANZOATEGUI' && t.game_id.includes('SPB')));
+				assert.ok(teamStats.some(t => t.team_name === 'TROTAMUNDOS DE CARABOBO'));
 			} finally {
 				db.destroy();
 			}

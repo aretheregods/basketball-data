@@ -1,7 +1,7 @@
 import { HTTPClient } from '#utils';
 
 /**
- * @description Harvester for South American schedules from Proballers (BCLA, LSB, NBB, LNB, LUB).
+ * @description Harvester for South American schedules from Proballers (BCLA, LSB, NBB, LNB, LUB, SPB).
  * Discovers and collects match IDs across seasons using Playwright.
  */
 export class SouthAmericaHarvester extends HTTPClient {
@@ -16,17 +16,21 @@ export class SouthAmericaHarvester extends HTTPClient {
 		// Map competition keys to their correct Proballers League IDs
 		this.leagueIdMap = {
 			bcla: 100028, // Basketball Champions League Americas (BCLA)
+			lsb: 2686,   // Liga Sudamericana
 			nbb: 100091,  // Novo Basquete Brasil (Brazil NBB)
 			lnb: 188,     // Argentina Liga A (Liga Nacional)
-			lub: 356      // Uruguay Liga
+			lub: 356,     // Uruguay Liga
+			spb: 100107   // Venezuela Superliga Profesional de Baloncesto (SPB)
 		};
 
 		// Map competition keys to their correct Proballers URL slugs
 		this.leagueSlugMap = {
 			bcla: 'basketball-champions-league-americas',
+			lsb: 'liga-sudamericana',
 			nbb: 'brazil-nbb',
 			lnb: 'argentina-liga-a',
-			lub: 'uruguay-liga'
+			lub: 'uruguay-liga',
+			spb: 'venezuela-spb'
 		};
 	}
 
@@ -47,6 +51,11 @@ export class SouthAmericaHarvester extends HTTPClient {
 					allSlugs.push(
 						`flamengo-vs-franca-${compUpper}${year}_20001`,
 						`sao-paulo-vs-minas-${compUpper}${year}_20002`
+					);
+				} else if (comp === 'spb') {
+					allSlugs.push(
+						`gladiadores-de-anzoategui-vs-trotamundos-de-carabobo-${compUpper}${year}_30001`,
+						`cocodrilos-de-caracas-vs-guaiqueries-de-margarita-${compUpper}${year}_30002`
 					);
 				} else {
 					// Default to BCLA/LSB or other continental/domestic mockup format

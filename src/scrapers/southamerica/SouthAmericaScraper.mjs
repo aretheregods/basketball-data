@@ -6,7 +6,7 @@ import { parseSouthAmericaHtml, parseSouthAmericaFibaJson } from './parsers/Sout
 
 /**
  * @class SouthAmericaScraper
- * @description Scraper and Orchestrator for South American basketball competitions (BCLA, LSB, NBB, LNB, LUB).
+ * @description Scraper and Orchestrator for South American basketball competitions (BCLA, LSB, NBB, LNB, LUB, SPB).
  * Fetches, caches, parses, and normalizes game box score statistics.
  */
 export class SouthAmericaScraper extends HTTPClient {
@@ -19,10 +19,10 @@ export class SouthAmericaScraper extends HTTPClient {
 	constructor(options = {}) {
 		super('https://www.proballers.com');
 
-		// Parse competitions list (can be 'all', or comma-separated list like 'bcla,lsb,nbb,lnb,lub')
+		// Parse competitions list (can be 'all', or comma-separated list like 'bcla,lsb,nbb,lnb,lub,spb')
 		const rawComps = options.competitions || 'bcla';
 		if (rawComps === 'all') {
-			this.competitions = ['bcla', 'lsb', 'nbb', 'lnb', 'lub'];
+			this.competitions = ['bcla', 'lsb', 'nbb', 'lnb', 'lub', 'spb'];
 		} else if (Array.isArray(rawComps)) {
 			this.competitions = rawComps;
 		} else {
@@ -68,7 +68,7 @@ export class SouthAmericaScraper extends HTTPClient {
 		const keyPart = parts[0] || 'BCLA2025';
 
 		// Extract competition prefix and season code segment, e.g. "BCLA2025" -> ("BCLA", "2025")
-		const segmentMatch = keyPart.match(/(?:-)?([A-Z]+)(\d{4})$/i);
+		const segmentMatch = keyPart.match(/(?:-)?([A-Z0-9]+)(\d{4})$/i);
 		const competitionId = segmentMatch ? segmentMatch[1].toLowerCase() : 'bcla';
 		const seasonCode = segmentMatch ? segmentMatch[2] : '2025';
 		const yearPrefix = seasonCode;
@@ -287,6 +287,44 @@ export class SouthAmericaScraper extends HTTPClient {
 							statistics: {
 								min: "31:45", pts: 19, fgm: 7, fga: 15, fg3m: 3, fg3a: 7, ftm: 2, fta: 3,
 								oreb: 1, dreb: 5, reb: 6, ast: 2, stl: 1, blk: 1, tov: 1, pf: 2, plus_minus: -8
+							}
+						}
+					]
+				}
+			};
+		}
+
+		if (competitionId === 'spb') {
+			return {
+				gameId,
+				season: yearPrefix,
+				gameDate: `${yearPrefix}-05-15`,
+				homeTeam: {
+					teamId: "GLAD",
+					teamName: "GLADIADORES DE ANZOATEGUI",
+					score: 94,
+					players: [
+						{
+							playerId: "gregory-vargas",
+							playerName: "Gregory Vargas",
+							statistics: {
+								min: "26:30", pts: 16, fgm: 6, fga: 10, fg3m: 2, fg3a: 4, ftm: 2, fta: 2,
+								oreb: 1, dreb: 3, reb: 4, ast: 7, stl: 2, blk: 0, tov: 1, pf: 2, plus_minus: 10
+							}
+						}
+					]
+				},
+				awayTeam: {
+					teamId: "TROT",
+					teamName: "TROTAMUNDOS DE CARABOBO",
+					score: 84,
+					players: [
+						{
+							playerId: "david-cubillan",
+							playerName: "David Cubillan",
+							statistics: {
+								min: "24:15", pts: 12, fgm: 4, fga: 9, fg3m: 2, fg3a: 5, ftm: 2, fta: 2,
+								oreb: 0, dreb: 2, reb: 2, ast: 4, stl: 1, blk: 0, tov: 2, pf: 3, plus_minus: -10
 							}
 						}
 					]
