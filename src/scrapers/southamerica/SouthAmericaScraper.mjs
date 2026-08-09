@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { HTTPClient } from '#utils';
 import { SouthAmericaHarvester } from './harvesters/SouthAmericaHarvester.mjs';
-import { parseSouthAmericaHtml } from './parsers/SouthAmericaParser.mjs';
+import { parseSouthAmericaHtml, parseSouthAmericaFibaJson } from './parsers/SouthAmericaParser.mjs';
 
 /**
  * @class SouthAmericaScraper
@@ -103,6 +103,7 @@ export class SouthAmericaScraper extends HTTPClient {
 
 	/**
 	 * @description Formats unified box score by loading match pages with Playwright or using cached files.
+	 * Supports both Proballers HTML and Genius Sports / FIBA LiveStats REST JSON formats dynamically.
 	 * @param {string} url - Game ID
 	 * @param {Object} [options]
 	 * @param {number} [retries]
@@ -124,74 +125,92 @@ export class SouthAmericaScraper extends HTTPClient {
 		const homeSlugExpected = slugParts[0] || '';
 		const awaySlugExpected = slugParts[1] || '';
 
-		// Set up directories for side-cache HTML saving
-		const htmlCacheDir = path.resolve('data/raw/southamerica', String(yearPrefix));
-		await fs.mkdir(htmlCacheDir, { recursive: true });
-		const htmlCachePath = path.join(htmlCacheDir, `${gameCode}.html`);
+		// Set up directories for side-cache HTML/JSON saving
+		const cacheDir = path.resolve('data/raw/southamerica', String(yearPrefix));
+		await fs.mkdir(cacheDir, { recursive: true });
 
-		let htmlContent = '';
+		// Check if we already have the raw file cached (can be .json or .html)
+		const jsonCachePath = path.join(cacheDir, `${gameCode}.json`);
+		const htmlCachePath = path.join(cacheDir, `${gameCode}.html`);
+
+		// 1. Try reading from raw JSON cache first (FIBA LiveStats JSON)
 		try {
-			// Check if we already have the raw HTML cached locally
+			const stats = await fs.stat(jsonCachePath);
+			if (stats.size > 0) {
+				console.log(`⏭️ [SouthAmericaScraper] JSON cache found for game ${gameCode}. Reading from disk...`);
+				const jsonContent = await fs.readFile(jsonCachePath, 'utf8');
+				const parsed = JSON.parse(jsonContent);
+				if (parsed && parsed.tm) {
+					return parseSouthAmericaFibaJson(parsed, gameId, yearPrefix);
+				}
+			}
+		} catch (e) {
+			// Cache miss or parsing issue
+		}
+
+		// 2. Try reading from HTML cache (Proballers HTML)
+		try {
 			const stats = await fs.stat(htmlCachePath);
 			if (stats.size > 0) {
 				console.log(`⏭️ [SouthAmericaScraper] HTML cache found for game ${gameCode}. Reading from disk...`);
-				htmlContent = await fs.readFile(htmlCachePath, 'utf8');
+				const htmlContent = await fs.readFile(htmlCachePath, 'utf8');
+				return parseSouthAmericaHtml(htmlContent, homeSlugExpected, awaySlugExpected, gameId, yearPrefix);
 			}
 		} catch (e) {
-			// Cache miss, proceed to fetch
+			// Cache miss
 		}
 
-		if (!htmlContent) {
-			const matchUrl = this.getGameEndpoint(gameId);
-			console.log(`📡 [SouthAmericaScraper] Loading South America (${competitionId.toUpperCase()}) Boxscore from ${matchUrl}...`);
+		// 3. Cache Miss: Execute live fetch from Proballers matching endpoint
+		const matchUrl = this.getGameEndpoint(gameId);
+		console.log(`📡 [SouthAmericaScraper] Loading South America (${competitionId.toUpperCase()}) Boxscore from ${matchUrl}...`);
 
-			// Inject 500ms delay to prevent rate limiting
-			console.log(`⏳ [SouthAmericaScraper] Rate limit protection: sleeping 500ms...`);
-			await new Promise(resolve => setTimeout(resolve, 500));
+		// Inject 500ms delay to prevent rate limiting
+		console.log(`⏳ [SouthAmericaScraper] Rate limit protection: sleeping 500ms...`);
+		await new Promise(resolve => setTimeout(resolve, 500));
 
-			const { chromium } = await import('playwright');
-			const browser = await chromium.launch({
-				headless: true,
-				args: [
-					'--disable-blink-features=AutomationControlled',
-					'--disable-features=IsolateOrigins,site-per-process',
-					'--no-sandbox',
-					'--disable-setuid-sandbox'
-				]
-			});
+		const { chromium } = await import('playwright');
+		const browser = await chromium.launch({
+			headless: true,
+			args: [
+				'--disable-blink-features=AutomationControlled',
+				'--disable-features=IsolateOrigins,site-per-process',
+				'--no-sandbox',
+				'--disable-setuid-sandbox'
+			]
+		});
 
-			const context = await browser.newContext({
-				userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-				viewport: { width: 1920, height: 1080 },
-				locale: 'en-US'
-			});
+		const context = await browser.newContext({
+			userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+			viewport: { width: 1920, height: 1080 },
+			locale: 'en-US'
+		});
 
-			await context.addInitScript(() => {
-				Object.defineProperty(navigator, 'webdriver', { get: () => false });
-				Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-				Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-			});
+		await context.addInitScript(() => {
+			Object.defineProperty(navigator, 'webdriver', { get: () => false });
+			Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+			Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+		});
 
-			const page = await context.newPage();
+		const page = await context.newPage();
+		let htmlContent = '';
 
-			try {
-				await page.goto(matchUrl, { waitUntil: 'domcontentloaded' });
-				// Allow time for Cloudflare challenge / table data to render
-				for (let i = 0; i < 15; i++) {
-					await page.waitForTimeout(1000);
-					const count = await page.evaluate(() => document.querySelectorAll('table').length);
-					if (count > 0) break;
-				}
-				htmlContent = await page.content();
-				await fs.writeFile(htmlCachePath, htmlContent, 'utf8');
-				console.log(`💾 [SouthAmericaScraper] Saved raw Boxscore HTML to ${htmlCachePath}`);
-			} catch (error) {
-				console.error(`❌ [SouthAmericaScraper] Error fetching game ${gameId}:`, error.message || error);
-				await browser.close();
-				return this.getUnplayedSkeleton(gameId, yearPrefix);
-			} finally {
-				await browser.close();
+		try {
+			await page.goto(matchUrl, { waitUntil: 'domcontentloaded' });
+			// Allow time for Cloudflare challenge / table data to render
+			for (let i = 0; i < 15; i++) {
+				await page.waitForTimeout(1000);
+				const count = await page.evaluate(() => document.querySelectorAll('table').length);
+				if (count > 0) break;
 			}
+			htmlContent = await page.content();
+			await fs.writeFile(htmlCachePath, htmlContent, 'utf8');
+			console.log(`💾 [SouthAmericaScraper] Saved raw South America Boxscore HTML to ${htmlCachePath}`);
+		} catch (error) {
+			console.error(`❌ [SouthAmericaScraper] Error fetching game ${gameId}:`, error.message || error);
+			await browser.close();
+			return this.getUnplayedSkeleton(gameId, yearPrefix);
+		} finally {
+			await browser.close();
 		}
 
 		try {

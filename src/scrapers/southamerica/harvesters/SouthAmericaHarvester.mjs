@@ -21,6 +21,15 @@ export class SouthAmericaHarvester extends HTTPClient {
 			lnb: 153,   // Liga Nacional de Básquet (Argentina)
 			lub: 283    // Liga Uruguaya de Básquet
 		};
+
+		// Map competition keys to their correct Proballers URL slugs
+		this.leagueSlugMap = {
+			bcla: 'basketball-champions-league-americas',
+			lsb: 'liga-sudamericana',
+			nbb: 'brazil-nbb',
+			lnb: 'argentina-liga-nacional',
+			lub: 'uruguay-liga-uruguaya'
+		};
 	}
 
 	/**
@@ -61,7 +70,8 @@ export class SouthAmericaHarvester extends HTTPClient {
 			}
 
 			const compUpper = comp.toUpperCase();
-			const scheduleUrl = `https://www.proballers.com/basketball/league/${leagueId}/southamerica-${comp}/schedule/${year}`;
+			const leagueSlug = this.leagueSlugMap[comp] || `southamerica-${comp}`;
+			const scheduleUrl = `https://www.proballers.com/basketball/league/${leagueId}/${leagueSlug}/schedule/${year}`;
 			console.log(`📡 [SouthAmericaHarvester] Harvesting ${compUpper} season ${year} from ${scheduleUrl}...`);
 
 			// Import Playwright dynamically to prevent worker serialization errors
