@@ -15,7 +15,7 @@ import { loadStage, initDatabase } from '../src/stages/3-load.mjs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-test.describe('South America BCLA Scraper & Pipeline Integration', () => {
+test.describe('South America Multi-Competition Scraper & Pipeline Integration', () => {
 	const league = 'southamerica_test';
 	const year = '2024'; // Unique test year to isolate test runs
 
@@ -29,35 +29,43 @@ test.describe('South America BCLA Scraper & Pipeline Integration', () => {
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
 	});
 
-	test('SouthAmericaHarvester should return mock slugs in test mode', async () => {
-		const harvester = new SouthAmericaHarvester();
-		harvester.scraper = { bypassNetwork: true };
+	test('SouthAmericaHarvester should return mock slugs for active competitions in test mode', async () => {
+		// Test with BCLA and NBB
+		const scraper = new SouthAmericaScraper({ competitions: 'bcla,nbb' });
+		const harvester = scraper.harvester;
 		const slugs = await harvester.getSeasonGameSlugs('2024');
 
 		assert.ok(slugs.length > 0, 'Should return some slugs');
-		assert.ok(slugs[0].includes('-SA2024_'), 'Slugs must contain SA segment');
-		const sampleGameId = slugs[0].split('-').pop();
-		assert.match(sampleGameId, /^SA2024_\d+$/, 'gameId Segment must match South America pattern');
+
+		// Should have BCLA slugs
+		const bclaSlug = slugs.find(s => s.includes('-BCLA2024_'));
+		assert.ok(bclaSlug, 'Must contain BCLA segment');
+		const bclaGameId = bclaSlug.split('-').pop();
+		assert.match(bclaGameId, /^BCLA2024_\d+$/, 'gameId Segment must match BCLA pattern');
+
+		// Should have NBB slugs
+		const nbbSlug = slugs.find(s => s.includes('-NBB2024_'));
+		assert.ok(nbbSlug, 'Must contain NBB segment');
+		const nbbGameId = nbbSlug.split('-').pop();
+		assert.match(nbbGameId, /^NBB2024_\d+$/, 'gameId Segment must match NBB pattern');
 	});
 
-	test('SouthAmericaScraper should return correct unified schema mock data', async () => {
-		const scraper = new SouthAmericaScraper();
-		const boxscore = await scraper.request('flamengo-vs-quimsa-SA2024_10001');
+	test('SouthAmericaScraper should return correct unified schema mock data for different competitions', async () => {
+		const scraper = new SouthAmericaScraper({ competitions: 'bcla,nbb' });
 
-		assert.equal(boxscore.gameId, 'flamengo-vs-quimsa-SA2024_10001');
-		assert.equal(boxscore.season, '2024');
+		// BCLA check
+		const bclaBox = await scraper.request('flamengo-vs-quimsa-BCLA2024_10001');
+		assert.equal(bclaBox.gameId, 'flamengo-vs-quimsa-BCLA2024_10001');
+		assert.equal(bclaBox.homeTeam.teamName, 'FLAMENGO');
+		assert.equal(bclaBox.homeTeam.score, 88);
 
-		// Home team check
-		assert.equal(boxscore.homeTeam.teamName, 'FLAMENGO');
-		assert.equal(boxscore.homeTeam.score, 88);
-		assert.ok(boxscore.homeTeam.players.length > 0);
-
-		// Player stats checks
-		const galvanini = boxscore.homeTeam.players.find(p => p.playerName.includes('Gabriel Galvanini'));
-		assert.ok(galvanini);
-		assert.equal(galvanini.playerId, 'gabriel-galvanini');
-		assert.equal(galvanini.statistics.pts, 18);
-		assert.equal(galvanini.statistics.min, '28:30');
+		// NBB check
+		const nbbBox = await scraper.request('flamengo-vs-franca-NBB2024_20001');
+		assert.equal(nbbBox.gameId, 'flamengo-vs-franca-NBB2024_20001');
+		assert.equal(nbbBox.homeTeam.teamName, 'FLAMENGO');
+		assert.equal(nbbBox.homeTeam.score, 92);
+		assert.equal(nbbBox.awayTeam.teamName, 'FRANCA');
+		assert.equal(nbbBox.awayTeam.score, 84);
 	});
 
 	test('SouthAmericaScraper HTML Parser should correctly parse South America team names, scores, and player statistics from Proballers HTML', async () => {
@@ -169,7 +177,7 @@ test.describe('South America BCLA Scraper & Pipeline Integration', () => {
 			</html>
 		`;
 
-		const boxscore = parseSouthAmericaHtml(sampleHtml, 'flamengo', 'quimsa', 'flamengo-vs-quimsa-SA2024_10001', '2024');
+		const boxscore = parseSouthAmericaHtml(sampleHtml, 'flamengo', 'quimsa', 'flamengo-vs-quimsa-BCLA2024_10001', '2024');
 
 		assert.equal(boxscore.homeTeam.teamName, 'FLAMENGO');
 		assert.equal(boxscore.awayTeam.teamName, 'QUIMSA');
@@ -187,32 +195,46 @@ test.describe('South America BCLA Scraper & Pipeline Integration', () => {
 		assert.equal(robinson.statistics.min, '32:15');
 	});
 
-	test('Full South America Pipeline Integration: Extract -> Transform -> Load', async () => {
+	test('Full South America Multi-Competition Pipeline Integration: Extract -> Transform -> Load', async () => {
 		try {
-			const scraper = new SouthAmericaScraper();
+			const scraper = new SouthAmericaScraper({ competitions: 'bcla,nbb' });
 
 			// 1. STAGE 1: Extract
 			const gameIds = await extractStage(scraper, league, year);
 			assert.ok(gameIds.length > 0);
-			assert.ok(gameIds.includes('SA2024_10001'));
+			assert.ok(gameIds.includes('BCLA2024_10001'));
+			assert.ok(gameIds.includes('NBB2024_20001'));
 
 			// 2. STAGE 2: Transform
 			const transformed = await transformStage(league, year);
 			assert.ok(transformed.players.length > 0);
 			assert.ok(transformed.teams.length > 0);
 
-			// Assert transformed records
-			const galvanini = transformed.players.find(p => p.player_id === 'gabriel-galvanini');
-			assert.ok(galvanini);
-			assert.equal(galvanini.team_id, 'flamengo'); // resolved team ID from config/southamerica_team_mappings.json
-			assert.equal(galvanini.pts, 18);
-			assert.equal(galvanini.min, '28.5'); // "28:30" parses to 28.5 minutes
+			// Assert transformed BCLA records
+			const galvaniniBcla = transformed.players.find(p => p.game_id === 'BCLA2024_10001' && p.player_id === 'gabriel-galvanini');
+			assert.ok(galvaniniBcla);
+			assert.equal(galvaniniBcla.team_id, 'flamengo'); // resolved team ID from config/southamerica_team_mappings.json
+			assert.equal(galvaniniBcla.pts, 18);
+			assert.equal(galvaniniBcla.min, '28.5'); // "28:30" parses to 28.5 minutes
 
-			const robinson = transformed.players.find(p => p.player_id === 'brandon-robinson');
-			assert.ok(robinson);
-			assert.equal(robinson.team_id, 'quimsa'); // resolved team ID
-			assert.equal(robinson.pts, 21);
-			assert.equal(robinson.min, '32.3'); // "32:15" parses to 32.3 minutes
+			const robinsonBcla = transformed.players.find(p => p.game_id === 'BCLA2024_10001' && p.player_id === 'brandon-robinson');
+			assert.ok(robinsonBcla);
+			assert.equal(robinsonBcla.team_id, 'quimsa'); // resolved team ID
+			assert.equal(robinsonBcla.pts, 21);
+			assert.equal(robinsonBcla.min, '32.3'); // "32:15" parses to 32.3 minutes
+
+			// Assert transformed NBB records
+			const galvaniniNbb = transformed.players.find(p => p.game_id === 'NBB2024_20001' && p.player_id === 'gabriel-galvanini');
+			assert.ok(galvaniniNbb);
+			assert.equal(galvaniniNbb.team_id, 'flamengo');
+			assert.equal(galvaniniNbb.pts, 22);
+			assert.equal(galvaniniNbb.min, '30.3'); // "30:15" parses to 30.3 minutes
+
+			const diasNbb = transformed.players.find(p => p.game_id === 'NBB2024_20001' && p.player_id === 'lucas-dias');
+			assert.ok(diasNbb);
+			assert.equal(diasNbb.team_id, 'franca');
+			assert.equal(diasNbb.pts, 19);
+			assert.equal(diasNbb.min, '31.8'); // "31:45" parses to 31.8 minutes
 
 			// 3. STAGE 3: Load
 			await loadStage(league, year, transformed);
@@ -222,11 +244,17 @@ test.describe('South America BCLA Scraper & Pipeline Integration', () => {
 			try {
 				const playerStats = db.prepare('SELECT * FROM player_game_stats WHERE league = ? AND season = ?').all('southamerica', year);
 				assert.ok(playerStats.length > 0);
-				assert.ok(playerStats.some(p => p.player_name === 'Gabriel Galvanini'));
+
+				// Verify both games exist under 'southamerica' league roll-up
+				assert.ok(playerStats.some(p => p.player_name === 'Gabriel Galvanini' && p.game_id.includes('BCLA')));
+				assert.ok(playerStats.some(p => p.player_name === 'Gabriel Galvanini' && p.game_id.includes('NBB')));
+				assert.ok(playerStats.some(p => p.player_name === 'Lucas Dias'));
 
 				const teamStats = db.prepare('SELECT * FROM team_game_stats WHERE league = ? AND season = ?').all('southamerica', year);
 				assert.ok(teamStats.length > 0);
-				assert.ok(teamStats.some(t => t.team_name === 'FLAMENGO'));
+				assert.ok(teamStats.some(t => t.team_name === 'FLAMENGO' && t.game_id.includes('BCLA')));
+				assert.ok(teamStats.some(t => t.team_name === 'FLAMENGO' && t.game_id.includes('NBB')));
+				assert.ok(teamStats.some(t => t.team_name === 'FRANCA'));
 			} finally {
 				db.destroy();
 			}

@@ -1,7 +1,7 @@
 import { HTTPClient } from '#utils';
 
 /**
- * @description Harvester for South American schedules from Proballers (primarily BCLA).
+ * @description Harvester for South American schedules from Proballers (BCLA, LSB, NBB, LNB, LUB).
  * Discovers and collects match IDs across seasons using Playwright.
  */
 export class SouthAmericaHarvester extends HTTPClient {
@@ -12,104 +12,138 @@ export class SouthAmericaHarvester extends HTTPClient {
 	constructor(scraperInstance) {
 		super('https://www.proballers.com');
 		this.scraper = scraperInstance;
+
+		// Map competition keys to their Proballers League IDs
+		this.leagueIdMap = {
+			bcla: 2465, // Basketball Champions League Americas
+			lsb: 2686,  // Liga Sudamericana
+			nbb: 246,   // Novo Basquete Brasil
+			lnb: 153,   // Liga Nacional de Básquet (Argentina)
+			lub: 283    // Liga Uruguaya de Básquet
+		};
 	}
 
 	/**
-	 * @description Fetches all game slugs/IDs for South America for a given season.
-	 * @param {string|number} year - The season start year (e.g., '2025')
+	 * @description Fetches all game slugs/IDs for active South American competitions for a given season.
+	 * @param {string|number} year - The season start year
 	 * @returns {Promise<string[]>} List of game slugs
 	 */
 	async getSeasonGameSlugs(year) {
-		// If in test mode, return mock slugs directly to avoid real network/playwright calls
+		const activeComps = this.scraper?.competitions || ['bcla'];
+		const allSlugs = [];
+
+		// If in test mode, return test-isolated mock slugs directly to bypass Playwright and real network fetches
 		if (process.env.NODE_ENV === 'test' || (this.scraper && this.scraper.bypassNetwork)) {
-			return [
-				`flamengo-vs-quimsa-SA${year}_10001`,
-				`sesi-franca-vs-nacional-SA${year}_10002`
-			];
+			for (const comp of activeComps) {
+				const compUpper = comp.toUpperCase();
+				if (comp === 'nbb') {
+					allSlugs.push(
+						`flamengo-vs-franca-${compUpper}${year}_20001`,
+						`sao-paulo-vs-minas-${compUpper}${year}_20002`
+					);
+				} else {
+					// Default to BCLA or other continental/domestic mockup format
+					allSlugs.push(
+						`flamengo-vs-quimsa-${compUpper}${year}_10001`,
+						`sesi-franca-vs-nacional-${compUpper}${year}_10002`
+					);
+				}
+			}
+			return allSlugs;
 		}
 
-		// Proballers BCLA league ID is 2465
-		const scheduleUrl = `https://www.proballers.com/basketball/league/2465/basketball-champions-league-americas/schedule/${year}`;
-		console.log(`📡 [SouthAmericaHarvester] Harvesting BCLA season ${year} from ${scheduleUrl}...`);
-
-		// Import Playwright dynamically to prevent worker serialization errors
-		const { chromium } = await import('playwright');
-		const browser = await chromium.launch({
-			headless: true,
-			args: [
-				'--disable-blink-features=AutomationControlled',
-				'--disable-features=IsolateOrigins,site-per-process',
-				'--no-sandbox',
-				'--disable-setuid-sandbox'
-			]
-		});
-
-		const context = await browser.newContext({
-			userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-			viewport: { width: 1920, height: 1080 },
-			locale: 'en-US'
-		});
-
-		await context.addInitScript(() => {
-			Object.defineProperty(navigator, 'webdriver', { get: () => false });
-			Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-			Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-		});
-
-		const page = await context.newPage();
-
-		try {
-			await page.goto(scheduleUrl, { waitUntil: 'domcontentloaded' });
-
-			// Wait up to 15 seconds for Cloudflare challenge completion and link rendering
-			for (let i = 0; i < 15; i++) {
-				await page.waitForTimeout(1000);
-				const count = await page.evaluate(() => document.querySelectorAll('a[href*="/basketball/game/"]').length);
-				if (count > 0) break;
+		// Non-test mode: dynamic Playwright scraper
+		for (const comp of activeComps) {
+			const leagueId = this.leagueIdMap[comp];
+			if (!leagueId) {
+				console.warn(`⚠️ [SouthAmericaHarvester] No Proballers league ID registered for competition: "${comp}". Skipping.`);
+				continue;
 			}
 
-			// Collect all match page links from the schedule table
-			const gamePaths = await page.evaluate(() => {
-				const anchors = Array.from(document.querySelectorAll('a[href*="/basketball/game/"]'));
-				return anchors.map(a => a.getAttribute('href')).filter(Boolean);
+			const compUpper = comp.toUpperCase();
+			const scheduleUrl = `https://www.proballers.com/basketball/league/${leagueId}/southamerica-${comp}/schedule/${year}`;
+			console.log(`📡 [SouthAmericaHarvester] Harvesting ${compUpper} season ${year} from ${scheduleUrl}...`);
+
+			// Import Playwright dynamically to prevent worker serialization errors
+			const { chromium } = await import('playwright');
+			const browser = await chromium.launch({
+				headless: true,
+				args: [
+					'--disable-blink-features=AutomationControlled',
+					'--disable-features=IsolateOrigins,site-per-process',
+					'--no-sandbox',
+					'--disable-setuid-sandbox'
+				]
 			});
 
-			await browser.close();
-
-			const uniquePaths = [...new Set(gamePaths)];
-			const slugs = uniquePaths.map(path => {
-				// Path format: /basketball/game/{game_id}/{matchup}
-				const parts = path.split('/').filter(Boolean);
-				const gameCode = parts[2] || '';
-				const matchupRaw = parts[3] || 'matchup';
-				const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
-
-				// Map to standard layout: matchup-SAyear_gameId
-				return `${matchup}-SA${year}_${gameCode}`;
+			const context = await browser.newContext({
+				userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+				viewport: { width: 1920, height: 1080 },
+				locale: 'en-US'
 			});
 
-			// Populate scraper map if scraper exists
-			if (this.scraper && typeof this.scraper.setGameUrl === 'function') {
-				uniquePaths.forEach(path => {
+			await context.addInitScript(() => {
+				Object.defineProperty(navigator, 'webdriver', { get: () => false });
+				Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+				Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+			});
+
+			const page = await context.newPage();
+
+			try {
+				await page.goto(scheduleUrl, { waitUntil: 'domcontentloaded' });
+
+				// Wait up to 15 seconds for Cloudflare challenge completion and link rendering
+				for (let i = 0; i < 15; i++) {
+					await page.waitForTimeout(1000);
+					const count = await page.evaluate(() => document.querySelectorAll('a[href*="/basketball/game/"]').length);
+					if (count > 0) break;
+				}
+
+				// Collect all match page links from the schedule table
+				const gamePaths = await page.evaluate(() => {
+					const anchors = Array.from(document.querySelectorAll('a[href*="/basketball/game/"]'));
+					return anchors.map(a => a.getAttribute('href')).filter(Boolean);
+				});
+
+				await browser.close();
+
+				const uniquePaths = [...new Set(gamePaths)];
+				const slugs = uniquePaths.map(path => {
+					// Path format: /basketball/game/{game_id}/{matchup}
 					const parts = path.split('/').filter(Boolean);
 					const gameCode = parts[2] || '';
 					const matchupRaw = parts[3] || 'matchup';
 					const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
 
-					const fullUrl = path.startsWith('http') ? path : `https://www.proballers.com${path}`;
-					this.scraper.setGameUrl(`SA${year}_${gameCode}`, fullUrl);
-					this.scraper.setGameUrl(gameCode, fullUrl);
-					this.scraper.setGameUrl(`${matchup}-SA${year}_${gameCode}`, fullUrl);
+					// Map to standard layout: matchup-{COMP}year_gameId
+					return `${matchup}-${compUpper}${year}_${gameCode}`;
 				});
-			}
 
-			console.log(`✅ [SouthAmericaHarvester] Successfully harvested ${slugs.length} South America game slugs for season ${year}.`);
-			return slugs;
-		} catch (error) {
-			await browser.close();
-			console.error(`❌ [SouthAmericaHarvester] Failed to harvest South America schedule:`, error.message || error);
-			return [];
+				// Populate scraper map if scraper exists
+				if (this.scraper && typeof this.scraper.setGameUrl === 'function') {
+					uniquePaths.forEach(path => {
+						const parts = path.split('/').filter(Boolean);
+						const gameCode = parts[2] || '';
+						const matchupRaw = parts[3] || 'matchup';
+						const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
+
+						const fullUrl = path.startsWith('http') ? path : `https://www.proballers.com${path}`;
+						this.scraper.setGameUrl(`${compUpper}${year}_${gameCode}`, fullUrl);
+						this.scraper.setGameUrl(gameCode, fullUrl);
+						this.scraper.setGameUrl(`${matchup}-${compUpper}${year}_${gameCode}`, fullUrl);
+					});
+				}
+
+				console.log(`✅ [SouthAmericaHarvester] Successfully harvested ${slugs.length} slugs for competition ${compUpper}.`);
+				allSlugs.push(...slugs);
+			} catch (error) {
+				await browser.close();
+				console.error(`❌ [SouthAmericaHarvester] Failed to harvest schedule for ${compUpper}:`, error.message || error);
+			}
 		}
+
+		return [...new Set(allSlugs)];
 	}
 }
 

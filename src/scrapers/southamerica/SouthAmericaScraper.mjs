@@ -6,16 +6,29 @@ import { parseSouthAmericaHtml } from './parsers/SouthAmericaParser.mjs';
 
 /**
  * @class SouthAmericaScraper
- * @description Scraper for South American basketball competitions (primarily BCLA).
- * Fetches, caches, parses, and normalizes South American game box score statistics.
+ * @description Scraper and Orchestrator for South American basketball competitions (BCLA, LSB, NBB, LNB, LUB).
+ * Fetches, caches, parses, and normalizes game box score statistics.
  */
 export class SouthAmericaScraper extends HTTPClient {
 	/**
 	 * @constructor
 	 * @param {Object} [options={}] - Scraper options
+	 * @param {string|string[]} [options.competitions='bcla'] - Comma-separated list or array of target competitions
+	 * @param {string} [options.boxscoreType='traditional'] - Box score metric type
 	 */
 	constructor(options = {}) {
 		super('https://www.proballers.com');
+
+		// Parse competitions list (can be 'all', or comma-separated list like 'bcla,lsb,nbb,lnb,lub')
+		const rawComps = options.competitions || 'bcla';
+		if (rawComps === 'all') {
+			this.competitions = ['bcla', 'lsb', 'nbb', 'lnb', 'lub'];
+		} else if (Array.isArray(rawComps)) {
+			this.competitions = rawComps;
+		} else {
+			this.competitions = rawComps.split(',').map(c => c.trim().toLowerCase());
+		}
+
 		this.harvester = new SouthAmericaHarvester(this);
 		this.gameSlugs = [];
 		this.gameUrlMap = new Map();
@@ -32,7 +45,7 @@ export class SouthAmericaScraper extends HTTPClient {
 	}
 
 	/**
-	 * @description Fetches all game slugs/IDs for South America for a given season.
+	 * @description Fetches all game slugs/IDs for active South American competitions for a given season.
 	 * @param {string|number} year - The season year
 	 * @returns {Promise<string[]>} List of game slugs
 	 */
@@ -44,7 +57,7 @@ export class SouthAmericaScraper extends HTTPClient {
 
 	/**
 	 * @description Parses the competition, season, and gamecode from a South America gameId.
-	 * Game ID is formatted as matchup-SA{season}_{gameCode}, e.g. flamengo-vs-quimsa-SA2025_10001.
+	 * Game ID is formatted as matchup-{COMP}{season}_{gameCode}, e.g. flamengo-vs-quimsa-BCLA2025_10001.
 	 * @param {string} gameId
 	 * @returns {{ competitionId: string, seasonCode: string, gameCode: string, yearPrefix: string }}
 	 */
@@ -52,15 +65,16 @@ export class SouthAmericaScraper extends HTTPClient {
 		const clean = String(gameId || '').trim();
 		const parts = clean.split('_');
 		const gameCode = parts[1] || '1';
-		const keyPart = parts[0] || 'SA2025';
+		const keyPart = parts[0] || 'BCLA2025';
 
-		// Extract season code segment from keyPart, e.g. "SA2025" -> "2025" or "matchup-SA2025" -> "2025"
-		const segmentMatch = keyPart.match(/(?:-)?SA(\d{4})$/i);
-		const seasonCode = segmentMatch ? segmentMatch[1] : '2025';
+		// Extract competition prefix and season code segment, e.g. "BCLA2025" -> ("BCLA", "2025")
+		const segmentMatch = keyPart.match(/(?:-)?([A-Z]+)(\d{4})$/i);
+		const competitionId = segmentMatch ? segmentMatch[1].toLowerCase() : 'bcla';
+		const seasonCode = segmentMatch ? segmentMatch[2] : '2025';
 		const yearPrefix = seasonCode;
 
 		return {
-			competitionId: 'bcla',
+			competitionId,
 			seasonCode,
 			gameCode,
 			yearPrefix
@@ -73,8 +87,8 @@ export class SouthAmericaScraper extends HTTPClient {
 	 * @returns {string} Game page URL
 	 */
 	getGameEndpoint(gameId) {
-		const { gameCode, seasonCode } = this.parseGameId(gameId);
-		const key = `SA${seasonCode}_${gameCode}`;
+		const { gameCode, seasonCode, competitionId } = this.parseGameId(gameId);
+		const key = `${competitionId.toUpperCase()}${seasonCode}_${gameCode}`;
 		return this.gameUrlMap.get(key) || this.gameUrlMap.get(gameId) || this.gameUrlMap.get(gameCode) || `https://www.proballers.com/basketball/game/${gameCode}/matchup`;
 	}
 
@@ -88,7 +102,7 @@ export class SouthAmericaScraper extends HTTPClient {
 	}
 
 	/**
-	 * @description Formats unified box score by loading South American match pages with Playwright or using cached files.
+	 * @description Formats unified box score by loading match pages with Playwright or using cached files.
 	 * @param {string} url - Game ID
 	 * @param {Object} [options]
 	 * @param {number} [retries]
@@ -97,7 +111,7 @@ export class SouthAmericaScraper extends HTTPClient {
 	 */
 	async request(url, options = {}, retries = 3, delay = 1000) {
 		const gameId = url;
-		const { yearPrefix, gameCode } = this.parseGameId(gameId);
+		const { yearPrefix, gameCode, competitionId } = this.parseGameId(gameId);
 
 		// If in test mode, bypass real network calls and return mock data
 		if (this.bypassNetwork) {
@@ -105,7 +119,8 @@ export class SouthAmericaScraper extends HTTPClient {
 		}
 
 		// Parse matchup team names from the gameId slug for mapping
-		const slugParts = gameId.split('-SA')[0].split('-vs-');
+		const splitPrefix = `-${competitionId.toUpperCase()}`;
+		const slugParts = gameId.split(splitPrefix)[0].split('-vs-');
 		const homeSlugExpected = slugParts[0] || '';
 		const awaySlugExpected = slugParts[1] || '';
 
@@ -128,7 +143,7 @@ export class SouthAmericaScraper extends HTTPClient {
 
 		if (!htmlContent) {
 			const matchUrl = this.getGameEndpoint(gameId);
-			console.log(`📡 [SouthAmericaScraper] Loading South America Boxscore from ${matchUrl}...`);
+			console.log(`📡 [SouthAmericaScraper] Loading South America (${competitionId.toUpperCase()}) Boxscore from ${matchUrl}...`);
 
 			// Inject 500ms delay to prevent rate limiting
 			console.log(`⏳ [SouthAmericaScraper] Rate limit protection: sleeping 500ms...`);
@@ -169,7 +184,7 @@ export class SouthAmericaScraper extends HTTPClient {
 				}
 				htmlContent = await page.content();
 				await fs.writeFile(htmlCachePath, htmlContent, 'utf8');
-				console.log(`💾 [SouthAmericaScraper] Saved raw South America Boxscore HTML to ${htmlCachePath}`);
+				console.log(`💾 [SouthAmericaScraper] Saved raw Boxscore HTML to ${htmlCachePath}`);
 			} catch (error) {
 				console.error(`❌ [SouthAmericaScraper] Error fetching game ${gameId}:`, error.message || error);
 				await browser.close();
@@ -219,7 +234,48 @@ export class SouthAmericaScraper extends HTTPClient {
 	 * @returns {Object}
 	 */
 	getMockUnifiedBoxScore(gameId) {
-		const { yearPrefix } = this.parseGameId(gameId);
+		const { yearPrefix, competitionId } = this.parseGameId(gameId);
+
+		// Supply varying mock data based on the targeted competition
+		if (competitionId === 'nbb') {
+			return {
+				gameId,
+				season: yearPrefix,
+				gameDate: `${yearPrefix}-03-15`,
+				homeTeam: {
+					teamId: "FLA",
+					teamName: "FLAMENGO",
+					score: 92,
+					players: [
+						{
+							playerId: "gabriel-galvanini",
+							playerName: "Gabriel Galvanini",
+							statistics: {
+								min: "30:15", pts: 22, fgm: 8, fga: 13, fg3m: 2, fg3a: 3, ftm: 4, fta: 5,
+								oreb: 2, dreb: 7, reb: 9, ast: 3, stl: 2, blk: 1, tov: 2, pf: 1, plus_minus: 8
+							}
+						}
+					]
+				},
+				awayTeam: {
+					teamId: "FRA",
+					teamName: "FRANCA",
+					score: 84,
+					players: [
+						{
+							playerId: "lucas-dias",
+							playerName: "Lucas Dias",
+							statistics: {
+								min: "31:45", pts: 19, fgm: 7, fga: 15, fg3m: 3, fg3a: 7, ftm: 2, fta: 3,
+								oreb: 1, dreb: 5, reb: 6, ast: 2, stl: 1, blk: 1, tov: 1, pf: 2, plus_minus: -8
+							}
+						}
+					]
+				}
+			};
+		}
+
+		// Default BCLA mock
 		return {
 			gameId,
 			season: yearPrefix,
