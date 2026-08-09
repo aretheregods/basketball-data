@@ -52,7 +52,8 @@ node run.js [options]
 
 | Flag | Format | Default | Description |
 |---|---|---|---|
-| `--league` | `--league=wnba` or `--league=wnba,nba` | `wnba` | Comma-separated list of target leagues to process. |
+| `--league` | `--league=wnba` or `--league=southamerica` | `wnba` | Comma-separated list of target leagues to process. Supported: `nba`, `wnba`, `europe`, `mexico`, `canada`, `puertorico`, `southamerica`. |
+| `--competitions` | `--competitions=bcla,nbb` | `euroleague` (Europe), `bcla` (South America) | Comma-separated list of target competitions/leagues within Europe or South America to run. Supported for South America: `bcla`, `lsb`, `nbb`, `lnb`, `lub` (or `all`). |
 | `--years` | `--years=2023` or `--years=2022,2023` | Current Year | Comma-separated list of target season years to process. |
 | `--step` | `--step=extract,transform` | `extract,transform,load,sync` | Comma-separated list of pipeline stages to run. Useful for isolated stage execution. |
 | `--database` | `--database=my_d1_db` | `likelyhigh_db` | Name of the target Cloudflare D1 database for the `sync` stage. |
@@ -414,6 +415,19 @@ Request advanced stats endpoints instead of traditional ones using the type flag
 node run.js --league=wnba --years=2023 --boxscore-type=advanced
 ```
 *Can also use `--type=advanced` shortcut.*
+
+### 8. Running the South America ETL (Multi-Competition)
+South American basketball is split into various domestic leagues and continental tournaments. This pipeline enables running specific competitions or running all of them at once, saving the consolidated records to the single staging database `SOUTHAMERICA.sqlite` for clean, unified cross-competition aggregation.
+
+To execute the ETL for all active South American competitions (BCLA, LSB, NBB, LNB, LUB):
+```bash
+node run.js --league=southamerica --competitions=all --years=2024
+```
+
+To run the ETL for only specific competitions (e.g. BCLA and NBB Brazil):
+```bash
+node run.js --league=southamerica --competitions=bcla,nbb --years=2024
+```
 
 ---
 
