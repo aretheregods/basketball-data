@@ -83,38 +83,75 @@ export class AsiaHarvester extends HTTPClient {
 					continue;
 				}
 
-				// Curated high-fidelity FIBA LiveStats game IDs for BCL Asia and historical FIBA Asia Champions Cup
-				let fibaIds = [];
-				if (yearNum === 2024) {
-					for (let i = 2485530; i <= 2485545; i++) fibaIds.push(String(i));
-				} else if (yearNum === 2019) {
-					for (let i = 1646270; i <= 1646285; i++) fibaIds.push(String(i));
-				} else if (yearNum === 2018) {
-					for (let i = 1381980; i <= 1381995; i++) fibaIds.push(String(i));
-				} else if (yearNum === 2017) {
-					for (let i = 1102910; i <= 1102939; i++) fibaIds.push(String(i));
-				}
+				const BCL_ASIA_EVENT_IDS = {
+					'2024': '208849',
+					'2019': '208104',
+					'2018': '208053',
+					'2017': '6336',
+					'2016': '10021'
+				};
 
-				if (fibaIds.length > 0) {
-					const labelName = yearNum < 2024 ? 'FIBA Asia Champions Cup' : 'BCL Asia';
-					console.log(`📡 [AsiaHarvester] Mapped ${fibaIds.length} historical game IDs directly from FIBA LiveStats for ${labelName} season ${year}...`);
-					const slugs = fibaIds.map(id => `matchup-BCL_ASIA${year}_${id}`);
-					if (this.scraper && typeof this.scraper.setGameUrl === 'function') {
-						fibaIds.forEach(id => {
-							const fullUrl = `https://fibalivestats.dcd.shared.geniussports.com/data/${id}/data.json`;
-							this.scraper.setGameUrl(`BCL_ASIA${year}_${id}`, fullUrl);
-							this.scraper.setGameUrl(id, fullUrl);
-							this.scraper.setGameUrl(`matchup-BCL_ASIA${year}_${id}`, fullUrl);
-						});
-					}
-					allSlugs.push(...slugs);
+				const eventId = BCL_ASIA_EVENT_IDS[String(year)];
+				if (!eventId) {
+					console.log(`⚠️ [AsiaHarvester] No historical FIBA event ID mapped for BCL Asia in year ${year}. Skipping.`);
 					continue;
 				}
 
-				console.log(`ℹ️ [AsiaHarvester] BCL Asia is a FIBA-governed tournament. If the schedule is empty or not yet tracked on Proballers:`);
-				console.log(`   Obtain the 7-digit FIBA LiveStats ID and place the raw Genius Sports JSON payload directly in:`);
-				console.log(`   data/raw/asia/${year}/BCL_ASIA${year}_{fibaId}.json`);
-				console.log(`   Then execute the offline pipeline: node run.js --league=asia --years=${year} --step=transform,load`);
+				const scheduleUrl = `https://www.fiba.basketball/en/history/111-basketball-champions-league-asia/${eventId}/games`;
+				console.log(`📡 [AsiaHarvester] Harvesting BCL Asia / FIBA Asia Champions Cup season ${year} from official FIBA page: ${scheduleUrl}...`);
+
+				const { chromium } = await import('playwright');
+				const browser = await chromium.launch({
+					headless: true,
+					args: ['--no-sandbox', '--disable-setuid-sandbox']
+				});
+				const context = await browser.newContext({
+					userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+				});
+				const page = await context.newPage();
+
+				try {
+					await page.goto(scheduleUrl, { waitUntil: 'domcontentloaded' });
+					await page.waitForTimeout(5000);
+
+					const gamePaths = await page.evaluate(() => {
+						const anchors = Array.from(document.querySelectorAll('a'));
+						return anchors
+							.map(a => a.getAttribute('href'))
+							.filter(href => href && href.includes('/games/') && href.match(/\/games\/\d+/));
+					});
+
+					await browser.close();
+
+					const uniquePaths = [...new Set(gamePaths)];
+					const slugs = uniquePaths.map(path => {
+						const parts = path.split('/').filter(Boolean);
+						const lastPart = parts[parts.length - 1]; // e.g. "122757-DRA-PJB"
+						const numericId = lastPart.split('-')[0]; // e.g. "122757"
+						return `matchup-BCL_ASIA${year}_${numericId}`;
+					});
+
+					if (this.scraper && typeof this.scraper.setGameUrl === 'function') {
+						uniquePaths.forEach(path => {
+							const parts = path.split('/').filter(Boolean);
+							const lastPart = parts[parts.length - 1]; // e.g. "122757-DRA-PJB"
+							const numericId = lastPart.split('-')[0]; // e.g. "122757"
+							const fullUrl = path.startsWith('http') ? path : `https://www.fiba.basketball${path}`;
+
+							this.scraper.setGameUrl(`BCL_ASIA${year}_${numericId}`, fullUrl);
+							this.scraper.setGameUrl(numericId, fullUrl);
+							this.scraper.setGameUrl(`matchup-BCL_ASIA${year}_${numericId}`, fullUrl);
+						});
+					}
+
+					console.log(`✅ [AsiaHarvester] Successfully harvested ${slugs.length} official BCL Asia / FIBA Asia Champions Cup game slugs for season ${year}.`);
+					allSlugs.push(...slugs);
+					continue;
+				} catch (error) {
+					await browser.close();
+					console.error(`❌ [AsiaHarvester] Failed to harvest official FIBA BCL Asia schedule:`, error.message || error);
+					continue;
+				}
 			}
 
 			const leagueId = this.leagueIdMap[comp];

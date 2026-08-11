@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { HTTPClient } from '#utils';
 import { AsiaHarvester } from './harvesters/AsiaHarvester.mjs';
-import { parseAsiaHtml, parseAsiaFibaJson } from './parsers/AsiaParser.mjs';
+import { parseAsiaHtml, parseAsiaFibaJson, parseFibaRscHtml } from './parsers/AsiaParser.mjs';
 
 /**
  * @class AsiaScraper
@@ -63,9 +63,9 @@ export class AsiaScraper extends HTTPClient {
 	 */
 	parseGameId(gameId) {
 		const clean = String(gameId || '').trim();
-		const parts = clean.split('_');
-		const gameCode = parts[1] || '1';
-		const keyPart = parts[0] || 'EASL2025';
+		const idx = clean.lastIndexOf('_');
+		const keyPart = idx !== -1 ? clean.substring(0, idx) : 'EASL2025';
+		const gameCode = idx !== -1 ? clean.substring(idx + 1) : '1';
 
 		// Extract competition prefix and season code segment, e.g. "EASL2025" -> ("EASL", "2025")
 		const segmentMatch = keyPart.match(/(?:-)?([A-Z0-9_]+)(\d{4})$/i);
@@ -170,6 +170,28 @@ export class AsiaScraper extends HTTPClient {
 			await fs.writeFile(jsonCachePath, JSON.stringify(jsonData, null, 2), 'utf8');
 			console.log(`💾 [AsiaScraper] Saved raw Asia Boxscore JSON to ${jsonCachePath}`);
 			return parseAsiaFibaJson(jsonData, gameId, yearPrefix);
+		}
+
+		if (matchUrl.includes('fiba.basketball')) {
+			console.log(`📡 [AsiaScraper] Fetching BCL Asia official FIBA page with Next.js RSC from ${matchUrl}...`);
+			const rscConfig = {
+				...options,
+				headers: {
+					'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+					'RSC': '1',
+					...options.headers
+				}
+			};
+			const response = await fetch(matchUrl, rscConfig);
+			if (!response.ok) {
+				throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
+			}
+			const text = await response.text();
+			const parsed = parseFibaRscHtml(text, gameId, yearPrefix);
+			// Save the parsed JSON to cache path so subsequent stages can read it offline
+			await fs.writeFile(jsonCachePath, JSON.stringify(parsed, null, 2), 'utf8');
+			console.log(`💾 [AsiaScraper] Saved parsed official BCL Asia Boxscore to ${jsonCachePath}`);
+			return parsed;
 		}
 
 		console.log(`📡 [AsiaScraper] Loading Asia (${competitionId.toUpperCase()}) Boxscore from ${matchUrl}...`);

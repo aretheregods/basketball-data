@@ -439,4 +439,193 @@ export function parseAsiaHtml(htmlContent, homeSlugExpected, awaySlugExpected, g
 	};
 }
 
-export default { parseAsiaFibaJson, parseAsiaHtml };
+/**
+ * @description Parses FIBA.basketball Next.js RSC HTML page content directly into Asia BoxScore Schema.
+ * @param {string} htmlContent - Raw HTML from FIBA game page containing RSC data
+ * @param {string} gameId - Unique game ID
+ * @param {string} season - Season year
+ * @returns {Object} Cleaned and structured box score object
+ */
+export function parseFibaRscHtml(rawHtml, gameId, season) {
+	// Clean and unescape RSC encoding to make all regex matches completely robust
+	const htmlContent = String(rawHtml || '')
+		.replace(/\\"/g, '"')
+		.replace(/\\\\/g, '\\');
+
+	// 1. Extract game date
+	let gameDate = `${season}-03-15`;
+	const dateMatch = htmlContent.match(/"gameDateTimeUTC"\s*:\s*"([^"]+)"/) || htmlContent.match(/"date"\s*:\s*"\$D?([^"]+)"/);
+	if (dateMatch) {
+		gameDate = dateMatch[1].split('T')[0];
+	}
+
+	// 2. Extract team details and scores
+	const teamAMatch = htmlContent.match(/"teamA"\s*:\s*\{([^}]+)\}/);
+	const teamBMatch = htmlContent.match(/"teamB"\s*:\s*\{([^}]+)\}/);
+
+	let homeTeamName = 'Home Team';
+	let homeTeamAbbrev = 'HOME';
+	let awayTeamName = 'Away Team';
+	let awayTeamAbbrev = 'AWAY';
+
+	if (teamAMatch) {
+		const officialNameMatch = teamAMatch[1].match(/"officialName"\s*:\s*"([^"]+)"/) || teamAMatch[1].match(/"shortName"\s*:\s*"([^"]+)"/);
+		const codeMatch = teamAMatch[1].match(/"code"\s*:\s*"([^"]+)"/);
+		if (officialNameMatch) homeTeamName = officialNameMatch[1];
+		if (codeMatch) homeTeamAbbrev = codeMatch[1];
+	}
+
+	if (teamBMatch) {
+		const officialNameMatch = teamBMatch[1].match(/"officialName"\s*:\s*"([^"]+)"/) || teamBMatch[1].match(/"shortName"\s*:\s*"([^"]+)"/);
+		const codeMatch = teamBMatch[1].match(/"code"\s*:\s*"([^"]+)"/);
+		if (officialNameMatch) awayTeamName = officialNameMatch[1];
+		if (codeMatch) awayTeamAbbrev = codeMatch[1];
+	}
+
+	const scoreAMatch = htmlContent.match(/"teamAScore"\s*:\s*(\d+)/);
+	const scoreBMatch = htmlContent.match(/"teamBScore"\s*:\s*(\d+)/);
+
+	const homeScore = scoreAMatch ? parseInt(scoreAMatch[1], 10) : 0;
+	const awayScore = scoreBMatch ? parseInt(scoreBMatch[1], 10) : 0;
+
+	// 3. Extract player names
+	const playerMap = new Map();
+	const playerInfoRegex = /"personId"\s*:\s*(\d+)\s*,\s*"firstName"\s*:\s*"([^"]+)"\s*,\s*"lastName"\s*:\s*"([^"]+)"/g;
+	let match;
+	while ((match = playerInfoRegex.exec(htmlContent)) !== null) {
+		const id = match[1];
+		const name = `${match[2]} ${match[3]}`.trim();
+		playerMap.set(id, name);
+	}
+
+	// 4. Extract player stats
+	const homePlayers = [];
+	const awayPlayers = [];
+	const statsRegex = /"Id"\s*:\s*"P_(\d+)"\s*,\s*"Stats"\s*:\s*(\{.*?\})/g;
+
+	// Determine team player memberships using various patterns in RSC JSON data
+	const teamARosterMatch = htmlContent.match(/"teamA"\s*:\s*\{[^}]+"players"\s*:\s*\[(.*?)\]\s*\}/) || htmlContent.match(/"teamA"\s*:\s*\{[^}]+"roster"\s*:\s*\[(.*?)\]\s*\}/) || htmlContent.match(/"teamA"\s*:\s*\{[^}]+"Children"\s*:\s*\[(.*?)\]\s*\}/);
+	const teamBRosterMatch = htmlContent.match(/"teamB"\s*:\s*\{[^}]+"players"\s*:\s*\[(.*?)\]\s*\}/) || htmlContent.match(/"teamB"\s*:\s*\{[^}]+"roster"\s*:\s*\[(.*?)\]\s*\}/) || htmlContent.match(/"teamB"\s*:\s*\{[^}]+"Children"\s*:\s*\[(.*?)\]\s*\}/);
+
+	const teamAPlayerIds = new Set();
+	const teamBPlayerIds = new Set();
+
+	if (teamARosterMatch) {
+		const idRegex = /"personId"\s*:\s*(\d+)/g;
+		let idMatch;
+		while ((idMatch = idRegex.exec(teamARosterMatch[1] || '')) !== null) {
+			teamAPlayerIds.add(idMatch[1]);
+		}
+	}
+	if (teamBRosterMatch) {
+		const idRegex = /"personId"\s*:\s*(\d+)/g;
+		let idMatch;
+		while ((idMatch = idRegex.exec(teamBRosterMatch[1] || '')) !== null) {
+			teamBPlayerIds.add(idMatch[1]);
+		}
+	}
+
+	const teamAPlayersListMatch = htmlContent.match(/"teamA"\s*:\s*\{[^}]+"players"\s*:\s*\[(.*?)\]/);
+	const teamBPlayersListMatch = htmlContent.match(/"teamB"\s*:\s*\{[^}]+"players"\s*:\s*\[(.*?)\]/);
+	if (teamAPlayersListMatch && teamAPlayerIds.size === 0) {
+		const idRegex = /"Id"\s*:\s*"P_(\d+)"/g;
+		let idMatch;
+		while ((idMatch = idRegex.exec(teamAPlayersListMatch[1] || '')) !== null) {
+			teamAPlayerIds.add(idMatch[1]);
+		}
+	}
+	if (teamBPlayersListMatch && teamBPlayerIds.size === 0) {
+		const idRegex = /"Id"\s*:\s*"P_(\d+)"/g;
+		let idMatch;
+		while ((idMatch = idRegex.exec(teamBPlayersListMatch[1] || '')) !== null) {
+			teamBPlayerIds.add(idMatch[1]);
+		}
+	}
+
+	// Reset index to scan stats
+	statsRegex.lastIndex = 0;
+
+	while ((match = statsRegex.exec(htmlContent)) !== null) {
+		const id = match[1];
+		const s = JSON.parse(match[2]);
+		const name = playerMap.get(id) || `Player ${id}`;
+
+		const minStr = s.TP ? String(s.TP).trim() : '00:00';
+		if (!s.HasPlayed || minStr === '00:00' || minStr === '0' || minStr === '-') {
+			continue;
+		}
+
+		const pts = s.PTS || 0;
+		const fgm = s.FGM || 0;
+		const fga = s.FGA || 0;
+		const fg3m = s.FG3M || 0;
+		const fg3a = s.FG3A || 0;
+		const ftm = s.FTM || 0;
+		const fta = s.FTA || 0;
+		const oreb = s.OR || 0;
+		const dreb = s.DR || 0;
+		const reb = s.REB || (oreb + dreb) || 0;
+		const ast = s.AS || 0;
+		const stl = s.ST || 0;
+		const blk = s.BS || 0;
+		const tov = s.TO || 0;
+		const pf = s.PF || 0;
+		const plus_minus = s.PM || 0;
+
+		const playerObj = {
+			playerId: `fiba-p-${id}`,
+			playerName: name,
+			statistics: {
+				min: minStr,
+				pts,
+				fgm,
+				fga,
+				fg3m,
+				fg3a,
+				ftm,
+				fta,
+				oreb,
+				dreb,
+				reb,
+				ast,
+				stl,
+				blk,
+				tov,
+				pf,
+				plus_minus
+			}
+		};
+
+		if (teamAPlayerIds.has(id)) {
+			homePlayers.push(playerObj);
+		} else if (teamBPlayerIds.has(id)) {
+			awayPlayers.push(playerObj);
+		} else {
+			if (homePlayers.length < 12) {
+				homePlayers.push(playerObj);
+			} else {
+				awayPlayers.push(playerObj);
+			}
+		}
+	}
+
+	return {
+		gameId,
+		season: String(season),
+		gameDate,
+		homeTeam: {
+			teamId: homeTeamAbbrev,
+			teamName: homeTeamName,
+			score: homeScore,
+			players: homePlayers
+		},
+		awayTeam: {
+			teamId: awayTeamAbbrev,
+			teamName: awayTeamName,
+			score: awayScore,
+			players: awayPlayers
+		}
+	};
+}
+
+export default { parseAsiaFibaJson, parseAsiaHtml, parseFibaRscHtml };
