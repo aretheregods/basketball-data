@@ -78,14 +78,16 @@ export class AsiaHarvester extends HTTPClient {
 
 			if (comp === 'bcl_asia') {
 				const yearNum = parseInt(year, 10);
-				if (yearNum < 2024) {
-					console.log(`⚠️ [AsiaHarvester] Basketball Champions League Asia (BCL Asia) did not exist in ${year} (rebranded from FIBA Asia Champions Cup in 2024).`);
-					continue;
+				if (yearNum >= 2020 && yearNum <= 2023) {
+					console.log(`⚠️ [AsiaHarvester] Basketball Champions League Asia / FIBA Asia Champions Cup was cancelled from 2020 to 2023 due to the COVID-19 pandemic.`);
+				} else if (yearNum < 2024) {
+					console.log(`ℹ️ [AsiaHarvester] Harvesting historical "FIBA Asia Champions Cup" (predecessor of BCL Asia) for season ${year} under unified bcl_asia competition.`);
+				} else {
+					console.log(`ℹ️ [AsiaHarvester] BCL Asia is a FIBA-governed tournament. If the schedule is empty or not yet tracked on Proballers:`);
+					console.log(`   Obtain the 7-digit FIBA LiveStats ID and place the raw Genius Sports JSON payload directly in:`);
+					console.log(`   data/raw/asia/${year}/BCL_ASIA${year}_{fibaId}.json`);
+					console.log(`   Then execute the offline pipeline: node run.js --league=asia --years=${year} --step=transform,load`);
 				}
-				console.log(`ℹ️ [AsiaHarvester] BCL Asia is a FIBA-governed tournament. If the schedule is empty or not yet tracked on Proballers:`);
-				console.log(`   Obtain the 7-digit FIBA LiveStats ID and place the raw Genius Sports JSON payload directly in:`);
-				console.log(`   data/raw/asia/${year}/BCL_ASIA${year}_{fibaId}.json`);
-				console.log(`   Then execute the offline pipeline: node run.js --league=asia --years=${year} --step=transform,load`);
 			}
 
 			const leagueId = this.leagueIdMap[comp];
