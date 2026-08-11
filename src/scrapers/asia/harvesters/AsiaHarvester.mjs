@@ -75,6 +75,19 @@ export class AsiaHarvester extends HTTPClient {
 		// Non-test mode: dynamic Playwright scraper
 		for (const comp of activeComps) {
 			const compUpper = comp.toUpperCase();
+
+			if (comp === 'bcl_asia') {
+				const yearNum = parseInt(year, 10);
+				if (yearNum < 2024) {
+					console.log(`⚠️ [AsiaHarvester] Basketball Champions League Asia (BCL Asia) did not exist in ${year} (rebranded from FIBA Asia Champions Cup in 2024).`);
+					continue;
+				}
+				console.log(`ℹ️ [AsiaHarvester] BCL Asia is a FIBA-governed tournament. If the schedule is empty or not yet tracked on Proballers:`);
+				console.log(`   Obtain the 7-digit FIBA LiveStats ID and place the raw Genius Sports JSON payload directly in:`);
+				console.log(`   data/raw/asia/${year}/BCL_ASIA${year}_{fibaId}.json`);
+				console.log(`   Then execute the offline pipeline: node run.js --league=asia --years=${year} --step=transform,load`);
+			}
+
 			const leagueId = this.leagueIdMap[comp];
 			if (!leagueId) {
 				console.warn(`⚠️ [AsiaHarvester] No Proballers league ID registered for competition: "${comp}". Skipping.`);
