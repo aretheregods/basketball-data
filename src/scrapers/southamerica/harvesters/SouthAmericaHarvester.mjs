@@ -125,13 +125,13 @@ export class SouthAmericaHarvester extends HTTPClient {
 				// Wait up to 15 seconds for Cloudflare challenge completion and link rendering
 				for (let i = 0; i < 15; i++) {
 					await page.waitForTimeout(1000);
-					const count = await page.evaluate(() => document.querySelectorAll('a[href*="/basketball/game/"]').length);
+					const count = await page.evaluate(() => document.querySelectorAll('table a[href*="/basketball/game/"], .table a[href*="/basketball/game/"], .schedule a[href*="/basketball/game/"]').length);
 					if (count > 0) break;
 				}
 
-				// Collect all match page links from the schedule table
+				// Collect all match page links from the schedule table, ignoring trending/historical footer links
 				const gamePaths = await page.evaluate(() => {
-					const anchors = Array.from(document.querySelectorAll('a[href*="/basketball/game/"]'));
+					const anchors = Array.from(document.querySelectorAll('table a[href*="/basketball/game/"], .table a[href*="/basketball/game/"], .schedule a[href*="/basketball/game/"]'));
 					return anchors.map(a => a.getAttribute('href')).filter(Boolean);
 				});
 
