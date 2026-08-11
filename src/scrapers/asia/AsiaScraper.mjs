@@ -161,8 +161,17 @@ export class AsiaScraper extends HTTPClient {
 			// Cache miss
 		}
 
-		// 3. Cache Miss: Execute live fetch from Proballers matching endpoint
+		// 3. Cache Miss: Execute live fetch from Proballers matching endpoint or FIBA JSON CDN directly
 		const matchUrl = this.getGameEndpoint(gameId);
+
+		if (matchUrl.endsWith('.json') || matchUrl.includes('fibalivestats')) {
+			console.log(`📡 [AsiaScraper] Fetching Asia FIBA LiveStats JSON directly from ${matchUrl}...`);
+			const jsonData = await super.request(matchUrl, options, retries, delay);
+			await fs.writeFile(jsonCachePath, JSON.stringify(jsonData, null, 2), 'utf8');
+			console.log(`💾 [AsiaScraper] Saved raw Asia Boxscore JSON to ${jsonCachePath}`);
+			return parseAsiaFibaJson(jsonData, gameId, yearPrefix);
+		}
+
 		console.log(`📡 [AsiaScraper] Loading Asia (${competitionId.toUpperCase()}) Boxscore from ${matchUrl}...`);
 
 		// Inject 500ms delay to prevent rate limiting

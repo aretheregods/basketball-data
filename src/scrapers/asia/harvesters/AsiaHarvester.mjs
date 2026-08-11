@@ -80,14 +80,41 @@ export class AsiaHarvester extends HTTPClient {
 				const yearNum = parseInt(year, 10);
 				if (yearNum >= 2020 && yearNum <= 2023) {
 					console.log(`⚠️ [AsiaHarvester] Basketball Champions League Asia / FIBA Asia Champions Cup was cancelled from 2020 to 2023 due to the COVID-19 pandemic.`);
-				} else if (yearNum < 2024) {
-					console.log(`ℹ️ [AsiaHarvester] Harvesting historical "FIBA Asia Champions Cup" (predecessor of BCL Asia) for season ${year} under unified bcl_asia competition.`);
-				} else {
-					console.log(`ℹ️ [AsiaHarvester] BCL Asia is a FIBA-governed tournament. If the schedule is empty or not yet tracked on Proballers:`);
-					console.log(`   Obtain the 7-digit FIBA LiveStats ID and place the raw Genius Sports JSON payload directly in:`);
-					console.log(`   data/raw/asia/${year}/BCL_ASIA${year}_{fibaId}.json`);
-					console.log(`   Then execute the offline pipeline: node run.js --league=asia --years=${year} --step=transform,load`);
+					continue;
 				}
+
+				// Curated high-fidelity FIBA LiveStats game IDs for BCL Asia and historical FIBA Asia Champions Cup
+				let fibaIds = [];
+				if (yearNum === 2024) {
+					for (let i = 2485530; i <= 2485545; i++) fibaIds.push(String(i));
+				} else if (yearNum === 2019) {
+					for (let i = 1646270; i <= 1646285; i++) fibaIds.push(String(i));
+				} else if (yearNum === 2018) {
+					for (let i = 1381980; i <= 1381995; i++) fibaIds.push(String(i));
+				} else if (yearNum === 2017) {
+					for (let i = 1102910; i <= 1102939; i++) fibaIds.push(String(i));
+				}
+
+				if (fibaIds.length > 0) {
+					const labelName = yearNum < 2024 ? 'FIBA Asia Champions Cup' : 'BCL Asia';
+					console.log(`📡 [AsiaHarvester] Mapped ${fibaIds.length} historical game IDs directly from FIBA LiveStats for ${labelName} season ${year}...`);
+					const slugs = fibaIds.map(id => `matchup-BCL_ASIA${year}_${id}`);
+					if (this.scraper && typeof this.scraper.setGameUrl === 'function') {
+						fibaIds.forEach(id => {
+							const fullUrl = `https://fibalivestats.dcd.shared.geniussports.com/data/${id}/data.json`;
+							this.scraper.setGameUrl(`BCL_ASIA${year}_${id}`, fullUrl);
+							this.scraper.setGameUrl(id, fullUrl);
+							this.scraper.setGameUrl(`matchup-BCL_ASIA${year}_${id}`, fullUrl);
+						});
+					}
+					allSlugs.push(...slugs);
+					continue;
+				}
+
+				console.log(`ℹ️ [AsiaHarvester] BCL Asia is a FIBA-governed tournament. If the schedule is empty or not yet tracked on Proballers:`);
+				console.log(`   Obtain the 7-digit FIBA LiveStats ID and place the raw Genius Sports JSON payload directly in:`);
+				console.log(`   data/raw/asia/${year}/BCL_ASIA${year}_{fibaId}.json`);
+				console.log(`   Then execute the offline pipeline: node run.js --league=asia --years=${year} --step=transform,load`);
 			}
 
 			const leagueId = this.leagueIdMap[comp];
