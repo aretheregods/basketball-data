@@ -15,7 +15,7 @@ export class NblHarvester extends HTTPClient {
 	}
 
 	/**
-	 * @description Fetches all game slugs/IDs for NBL for a given season.
+	 * @description Fetches all game slugs/IDs for NBL for a given season (Regular Season & Playoffs).
 	 * @param {string|number} year - The season start year (e.g., '2024')
 	 * @returns {Promise<string[]>} List of game slugs
 	 */
@@ -28,9 +28,9 @@ export class NblHarvester extends HTTPClient {
 			];
 		}
 
-		// Proballers Oceania NBL league ID is 226
-		const scheduleUrl = `https://www.proballers.com/basketball/league/226/australia-nbl/schedule/${year}`;
-		console.log(`📡 [NblHarvester] Harvesting NBL season ${year} from ${scheduleUrl}...`);
+		// Proballers Oceania NBL has league ID 226 (Regular Season) and ID 239 (Playoffs)
+		const leagueIds = [226, 239];
+		const allSlugs = [];
 
 		// Import Playwright dynamically to prevent worker serialization errors
 		const { chromium } = await import('playwright');
@@ -59,56 +59,65 @@ export class NblHarvester extends HTTPClient {
 		const page = await context.newPage();
 
 		try {
-			await page.goto(scheduleUrl, { waitUntil: 'domcontentloaded' });
+			for (const id of leagueIds) {
+				const scheduleUrl = `https://www.proballers.com/basketball/league/${id}/australia-nbl/schedule/${year}`;
+				console.log(`📡 [NblHarvester] Harvesting NBL league ID ${id} season ${year} from ${scheduleUrl}...`);
 
-			// Wait up to 15 seconds for Cloudflare challenge completion and link rendering
-			for (let i = 0; i < 15; i++) {
-				await page.waitForTimeout(1000);
-				const count = await page.evaluate(() => document.querySelectorAll('a[href*="/basketball/game/"]').length);
-				if (count > 0) break;
-			}
+				await page.goto(scheduleUrl, { waitUntil: 'domcontentloaded' });
 
-			// Collect all match page links from the schedule table
-			const gamePaths = await page.evaluate(() => {
-				const anchors = Array.from(document.querySelectorAll('a[href*="/basketball/game/"]'));
-				return anchors.map(a => a.getAttribute('href')).filter(Boolean);
-			});
+				// Wait up to 10 seconds for Cloudflare challenge completion and link rendering
+				for (let i = 0; i < 10; i++) {
+					await page.waitForTimeout(1000);
+					const count = await page.evaluate(() => document.querySelectorAll('a[href*="/basketball/game/"]').length);
+					if (count > 0) break;
+				}
 
-			await browser.close();
+				// Collect all match page links from the schedule table
+				const gamePaths = await page.evaluate(() => {
+					const anchors = Array.from(document.querySelectorAll('a[href*="/basketball/game/"]'));
+					return anchors.map(a => a.getAttribute('href')).filter(Boolean);
+				});
 
-			const uniquePaths = [...new Set(gamePaths)];
-			const slugs = uniquePaths.map(path => {
-				// Path format: /basketball/game/{game_id}/{matchup}
-				const parts = path.split('/').filter(Boolean);
-				const gameCode = parts[2] || '';
-				const matchupRaw = parts[3] || 'matchup';
-				const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
-
-				// Map to standard layout: matchup-Oyear_gameId
-				return `${matchup}-O${year}_${gameCode}`;
-			});
-
-			// Populate scraper map if scraper exists
-			if (this.scraper && typeof this.scraper.setGameUrl === 'function') {
-				uniquePaths.forEach(path => {
+				const uniquePaths = [...new Set(gamePaths)];
+				const slugs = uniquePaths.map(path => {
+					// Path format: /basketball/game/{game_id}/{matchup}
 					const parts = path.split('/').filter(Boolean);
 					const gameCode = parts[2] || '';
 					const matchupRaw = parts[3] || 'matchup';
 					const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
 
-					const fullUrl = path.startsWith('http') ? path : `https://www.proballers.com${path}`;
-					this.scraper.setGameUrl(`O${year}_${gameCode}`, fullUrl);
-					this.scraper.setGameUrl(gameCode, fullUrl);
-					this.scraper.setGameUrl(`${matchup}-O${year}_${gameCode}`, fullUrl);
+					// Map to standard layout: matchup-Oyear_gameId
+					return `${matchup}-O${year}_${gameCode}`;
 				});
+
+				// Populate scraper map if scraper exists
+				if (this.scraper && typeof this.scraper.setGameUrl === 'function') {
+					uniquePaths.forEach(path => {
+						const parts = path.split('/').filter(Boolean);
+						const gameCode = parts[2] || '';
+						const matchupRaw = parts[3] || 'matchup';
+						const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
+
+						const fullUrl = path.startsWith('http') ? path : `https://www.proballers.com${path}`;
+						this.scraper.setGameUrl(`O${year}_${gameCode}`, fullUrl);
+						this.scraper.setGameUrl(gameCode, fullUrl);
+						this.scraper.setGameUrl(`${matchup}-O${year}_${gameCode}`, fullUrl);
+					});
+				}
+
+				allSlugs.push(...slugs);
+				console.log(`✅ [NblHarvester] Harvested ${slugs.length} game slugs for league ID ${id} season ${year}.`);
 			}
 
-			console.log(`✅ [NblHarvester] Successfully harvested ${slugs.length} NBL game slugs for season ${year}.`);
-			return slugs;
+			await browser.close();
+
+			const uniqueAllSlugs = [...new Set(allSlugs)];
+			console.log(`✅ [NblHarvester] Successfully harvested ${uniqueAllSlugs.length} total NBL game slugs for season ${year}.`);
+			return uniqueAllSlugs;
 		} catch (error) {
 			await browser.close();
 			console.error(`❌ [NblHarvester] Failed to harvest NBL schedule:`, error.message || error);
-			return [];
+			return [...new Set(allSlugs)];
 		}
 	}
 }
