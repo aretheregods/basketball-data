@@ -28,8 +28,11 @@ export class NblHarvester extends HTTPClient {
 			];
 		}
 
-		// Proballers Oceania NBL has league ID 226 (Regular Season) and ID 239 (Playoffs)
-		const leagueIds = [226, 239];
+		// Proballers Oceania NBL has league ID 226 (Regular Season) and ID 239 (Playoffs) with specific slug mappings
+		const leagues = [
+			{ id: 226, slug: 'australia-nbl' },
+			{ id: 239, slug: 'australia-nbl-playoffs' }
+		];
 		const allSlugs = [];
 
 		// Import Playwright dynamically to prevent worker serialization errors
@@ -59,9 +62,9 @@ export class NblHarvester extends HTTPClient {
 		const page = await context.newPage();
 
 		try {
-			for (const id of leagueIds) {
-				const scheduleUrl = `https://www.proballers.com/basketball/league/${id}/australia-nbl/schedule/${year}`;
-				console.log(`📡 [NblHarvester] Harvesting NBL league ID ${id} season ${year} from ${scheduleUrl}...`);
+			for (const { id, slug } of leagues) {
+				const scheduleUrl = `https://www.proballers.com/basketball/league/${id}/${slug}/schedule/${year}`;
+				console.log(`📡 [NblHarvester] Harvesting NBL league ID ${id} (${slug}) season ${year} from ${scheduleUrl}...`);
 
 				await page.goto(scheduleUrl, { waitUntil: 'domcontentloaded' });
 
@@ -106,7 +109,7 @@ export class NblHarvester extends HTTPClient {
 				}
 
 				allSlugs.push(...slugs);
-				console.log(`✅ [NblHarvester] Harvested ${slugs.length} game slugs for league ID ${id} season ${year}.`);
+				console.log(`✅ [NblHarvester] Harvested ${slugs.length} game slugs for league ID ${id} (${slug}) season ${year}.`);
 			}
 
 			await browser.close();
