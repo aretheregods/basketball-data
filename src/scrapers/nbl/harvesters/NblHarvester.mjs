@@ -28,8 +28,8 @@ export class NblHarvester extends HTTPClient {
 			];
 		}
 
-		// Proballers Oceania NBL league ID is 201
-		const scheduleUrl = `https://www.proballers.com/basketball/league/201/australia-nbl/schedule/${year}`;
+		// Proballers Oceania NBL league ID is 226
+		const scheduleUrl = `https://www.proballers.com/basketball/league/226/australia-nbl/schedule/${year}`;
 		console.log(`📡 [NblHarvester] Harvesting NBL season ${year} from ${scheduleUrl}...`);
 
 		// Import Playwright dynamically to prevent worker serialization errors
