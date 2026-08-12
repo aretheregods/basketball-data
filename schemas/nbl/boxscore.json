@@ -1,0 +1,98 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NblBoxScore",
+  "description": "Schema for Oceania NBL Box Score data",
+  "type": "object",
+  "properties": {
+    "gameId": { "type": "string" },
+    "season": { "type": "string" },
+    "gameDate": { "type": "string" },
+    "homeTeam": {
+      "type": "object",
+      "properties": {
+        "teamId": { "type": "string" },
+        "teamName": { "type": "string" },
+        "score": { "type": "integer" },
+        "players": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "playerId": { "type": "string" },
+              "playerName": { "type": "string" },
+              "statistics": {
+                "type": "object",
+                "properties": {
+                  "min": { "type": "string" },
+                  "pts": { "type": "integer" },
+                  "fgm": { "type": "integer" },
+                  "fga": { "type": "integer" },
+                  "fg3m": { "type": "integer" },
+                  "fg3a": { "type": "integer" },
+                  "ftm": { "type": "integer" },
+                  "fta": { "type": "integer" },
+                  "oreb": { "type": "integer" },
+                  "dreb": { "type": "integer" },
+                  "reb": { "type": "integer" },
+                  "ast": { "type": "integer" },
+                  "stl": { "type": "integer" },
+                  "blk": { "type": "integer" },
+                  "tov": { "type": "integer" },
+                  "pf": { "type": "integer" },
+                  "plus_minus": { "type": "integer" }
+                },
+                "required": ["min", "pts", "fgm", "fga", "fg3m", "fg3a", "ftm", "fta", "oreb", "dreb", "reb", "ast", "stl", "blk", "tov", "pf"]
+              }
+            },
+            "required": ["playerId", "playerName", "statistics"]
+          }
+        }
+      },
+      "required": ["teamId", "teamName", "score", "players"]
+    },
+    "awayTeam": {
+      "type": "object",
+      "properties": {
+        "teamId": { "type": "string" },
+        "teamName": { "type": "string" },
+        "score": { "type": "integer" },
+        "players": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "playerId": { "type": "string" },
+              "playerName": { "type": "string" },
+              "statistics": {
+                "type": "object",
+                "properties": {
+                  "min": { "type": "string" },
+                  "pts": { "type": "integer" },
+                  "fgm": { "type": "integer" },
+                  "fga": { "type": "integer" },
+                  "fg3m": { "type": "integer" },
+                  "fg3a": { "type": "integer" },
+                  "ftm": { "type": "integer" },
+                  "fta": { "type": "integer" },
+                  "oreb": { "type": "integer" },
+                  "dreb": { "type": "integer" },
+                  "reb": { "type": "integer" },
+                  "ast": { "type": "integer" },
+                  "stl": { "type": "integer" },
+                  "blk": { "type": "integer" },
+                  "tov": { "type": "integer" },
+                  "pf": { "type": "integer" },
+                  "plus_minus": { "type": "integer" }
+                },
+                "required": ["min", "pts", "fgm", "fga", "fg3m", "fg3a", "ftm", "fta", "oreb", "dreb", "reb", "ast", "stl", "blk", "tov", "pf"]
+              }
+            },
+            "required": ["playerId", "playerName", "statistics"]
+          }
+        }
+      },
+      "required": ["teamId", "teamName", "score", "players"]
+    }
+  },
+  "required": ["gameId", "season", "homeTeam", "awayTeam"]
+}
