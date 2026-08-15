@@ -29,39 +29,41 @@ test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
 	});
 
-	test('AsiaHarvester should correctly handle tournament cancellation and pre/post existence history limits', async () => {
-		const scraper = new AsiaScraper({ competitions: 'bcl_asia,fiba_asia_cc' });
+	test('AsiaHarvester should auto-route bcl_asia queries prior to 2024 to FIBA Asia Champions Cup and vice versa', async () => {
+		const scraper = new AsiaScraper({ competitions: 'bcl_asia' });
+		scraper.bypassNetwork = true;
 		const harvester = scraper.harvester;
 
-		// 1. COVID-19 pandemic cancellations (2020-2023)
-		const check2021Bcl = harvester.checkCompetitionHistory('bcl_asia', '2021');
-		assert.ok(check2021Bcl.cancelled);
-		assert.match(check2021Bcl.reason, /cancelled\/not held/);
+		// 1. Auto-routing pre-2024 bcl_asia to fiba_asia_cc
+		const route2019Bcl = harvester.resolveTargetCompetition('bcl_asia', '2019');
+		assert.equal(route2019Bcl.resolvedComp, 'fiba_asia_cc');
+		assert.equal(route2019Bcl.isCancelled, false);
+		assert.match(route2019Bcl.mappedNotice, /Auto-routed bcl_asia for year 2019 to predecessor tournament FIBA Asia Champions Cup/);
 
-		const check2021Fiba = harvester.checkCompetitionHistory('fiba_asia_cc', '2021');
-		assert.ok(check2021Fiba.cancelled);
-		assert.match(check2021Fiba.reason, /cancelled\/not held/);
+		// Harvesting slugs for 2019 bcl_asia should now return FIBA Asia CC games instead of 0 games
+		const slugs2019 = await harvester.getSeasonGameSlugs('2019');
+		assert.ok(slugs2019.length > 0, '2019 bcl_asia query should auto-route and return games');
+		assert.ok(slugs2019.some(s => s.includes('FIBAASIACC2019_')));
 
-		// 2. Pre-existence (BCL Asia did not exist before 2024)
-		const check2019Bcl = harvester.checkCompetitionHistory('bcl_asia', '2019');
-		assert.ok(check2019Bcl.cancelled);
-		assert.match(check2019Bcl.reason, /did not exist prior to 2024/);
+		// 2. Auto-routing post-2023 fiba_asia_cc to bcl_asia
+		const route2024Fiba = harvester.resolveTargetCompetition('fiba_asia_cc', '2024');
+		assert.equal(route2024Fiba.resolvedComp, 'bcl_asia');
+		assert.equal(route2024Fiba.isCancelled, false);
 
-		// 3. Post-existence (FIBA Asia CC discontinued from 2024 onwards)
-		const check2024Fiba = harvester.checkCompetitionHistory('fiba_asia_cc', '2024');
-		assert.ok(check2024Fiba.cancelled);
-		assert.match(check2024Fiba.reason, /discontinued after the 2019 season/);
+		// 3. Pandemic years (2020-2023) should remain cancelled
+		const route2021Bcl = harvester.resolveTargetCompetition('bcl_asia', '2021');
+		assert.equal(route2021Bcl.isCancelled, true);
+		assert.match(route2021Bcl.reason, /not held between 2020 and 2023/);
 
-		// 4. Valid years should NOT be cancelled
-		const check2019Fiba = harvester.checkCompetitionHistory('fiba_asia_cc', '2019');
-		assert.equal(check2019Fiba.cancelled, false);
-
-		const check2024Bcl = harvester.checkCompetitionHistory('bcl_asia', '2024');
-		assert.equal(check2024Bcl.cancelled, false);
+		// 4. Valid 2024 BCL Asia should pass cleanly
+		const route2024Bcl = harvester.resolveTargetCompetition('bcl_asia', '2024');
+		assert.equal(route2024Bcl.resolvedComp, 'bcl_asia');
+		assert.equal(route2024Bcl.isCancelled, false);
 	});
 
 	test('AsiaHarvester should return mock slugs for active competitions in test mode', async () => {
 		const scraper = new AsiaScraper({ competitions: 'bcl_asia,bleague,kbl' });
+		scraper.bypassNetwork = true;
 		const harvester = scraper.harvester;
 		const slugs = await harvester.getSeasonGameSlugs('2024');
 
@@ -88,6 +90,7 @@ test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
 
 	test('AsiaScraper should return correct unified schema mock data based on competition', async () => {
 		const scraper = new AsiaScraper({ competitions: 'bcl_asia,bleague,kbl,fiba_asia_cc' });
+		scraper.bypassNetwork = true;
 
 		// bleague check
 		const bleagueBox = await scraper.request('ryukyu-golden-kings-vs-chiba-jets-BLEAGUE2024_20001');
@@ -242,59 +245,65 @@ test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
 	});
 
 	test('Full Asia Multi-Competition Pipeline Integration: Extract -> Transform -> Load', async () => {
-		const scraper = new AsiaScraper({ competitions: 'bcl_asia,bleague,kbl,fiba_asia_cc' });
-
-		// 1. STAGE 1: Extract
-		const gameIds = await extractStage(scraper, league, year);
-		assert.ok(gameIds.length > 0);
-		assert.ok(gameIds.includes('BCLASIA2024_10001'));
-		assert.ok(gameIds.includes('BLEAGUE2024_20001'));
-		assert.ok(gameIds.includes('KBL2024_30001'));
-
-		// 2. STAGE 2: Transform
-		const transformed = await transformStage(league, year);
-		assert.ok(transformed.players.length > 0);
-		assert.ok(transformed.teams.length > 0);
-
-		// Assert transformed BLEAGUE records
-		const cooleyBleague = transformed.players.find(p => p.game_id === 'BLEAGUE2024_20001' && p.player_id === 'jack-cooley');
-		assert.ok(cooleyBleague);
-		assert.equal(cooleyBleague.team_id, 'ryukyu-golden-kings'); // mapped from config/asia_team_mappings.json
-		assert.equal(cooleyBleague.pts, 20);
-		assert.equal(cooleyBleague.min, '28.5'); // "28:30" -> 28.5 minutes
-
-		const togashiBleague = transformed.players.find(p => p.game_id === 'BLEAGUE2024_20001' && p.player_id === 'yuki-togashi');
-		assert.ok(togashiBleague);
-		assert.equal(togashiBleague.team_id, 'chiba-jets'); // mapped
-		assert.equal(togashiBleague.pts, 22);
-		assert.equal(togashiBleague.min, '32.3'); // "32:15" -> 32.3 minutes
-
-		// Assert transformed KBL records
-		const warneyKbl = transformed.players.find(p => p.game_id === 'KBL2024_30001' && p.player_id === 'jameel-warney');
-		assert.ok(warneyKbl);
-		assert.equal(warneyKbl.team_id, 'seoul-sk-knights'); // mapped
-		assert.equal(warneyKbl.pts, 26);
-		assert.equal(warneyKbl.min, '34.5'); // "34:30" -> 34.5 minutes
-
-		// 3. STAGE 3: Load
-		await loadStage(league, year, transformed);
-
-		// 4. Verify in Local Staging Database
-		const db = await initDatabase(league);
 		try {
-			const playerStats = db.prepare('SELECT * FROM player_game_stats WHERE league = ? AND season = ?').all('asia', year);
-			assert.ok(playerStats.length > 0);
+			const scraper = new AsiaScraper({ competitions: 'bcl_asia,bleague,kbl,fiba_asia_cc' });
+			scraper.bypassNetwork = true;
 
-			// Verify games exist under 'asia' league rollup
-			assert.ok(playerStats.some(p => p.player_name === 'Jack Cooley' && p.game_id.includes('BLEAGUE')));
-			assert.ok(playerStats.some(p => p.player_name === 'Jameel Warney' && p.game_id.includes('KBL')));
+			// 1. STAGE 1: Extract
+			const gameIds = await extractStage(scraper, league, year);
+			assert.ok(gameIds.length > 0);
+			assert.ok(gameIds.includes('BCLASIA2024_10001'));
+			assert.ok(gameIds.includes('BLEAGUE2024_20001'));
+			assert.ok(gameIds.includes('KBL2024_30001'));
 
-			const teamStats = db.prepare('SELECT * FROM team_game_stats WHERE league = ? AND season = ?').all('asia', year);
-			assert.ok(teamStats.length > 0);
-			assert.ok(teamStats.some(t => t.team_name === 'RYUKYU GOLDEN KINGS' && t.game_id.includes('BLEAGUE')));
-			assert.ok(teamStats.some(t => t.team_name === 'SEOUL SK KNIGHTS' && t.game_id.includes('KBL')));
-		} finally {
-			db.destroy();
+			// 2. STAGE 2: Transform
+			const transformed = await transformStage(league, year);
+			assert.ok(transformed.players.length > 0);
+			assert.ok(transformed.teams.length > 0);
+
+			// Assert transformed BLEAGUE records
+			const cooleyBleague = transformed.players.find(p => p.game_id === 'BLEAGUE2024_20001' && p.player_id === 'jack-cooley');
+			assert.ok(cooleyBleague);
+			assert.equal(cooleyBleague.team_id, 'ryukyu-golden-kings'); // mapped from config/asia_team_mappings.json
+			assert.equal(cooleyBleague.pts, 20);
+			assert.equal(cooleyBleague.min, '28.5'); // "28:30" -> 28.5 minutes
+
+			const togashiBleague = transformed.players.find(p => p.game_id === 'BLEAGUE2024_20001' && p.player_id === 'yuki-togashi');
+			assert.ok(togashiBleague);
+			assert.equal(togashiBleague.team_id, 'chiba-jets'); // mapped
+			assert.equal(togashiBleague.pts, 22);
+			assert.equal(togashiBleague.min, '32.3'); // "32:15" -> 32.3 minutes
+
+			// Assert transformed KBL records
+			const warneyKbl = transformed.players.find(p => p.game_id === 'KBL2024_30001' && p.player_id === 'jameel-warney');
+			assert.ok(warneyKbl);
+			assert.equal(warneyKbl.team_id, 'seoul-sk-knights'); // mapped
+			assert.equal(warneyKbl.pts, 26);
+			assert.equal(warneyKbl.min, '34.5'); // "34:30" -> 34.5 minutes
+
+			// 3. STAGE 3: Load
+			await loadStage(league, year, transformed);
+
+			// 4. Verify in Local Staging Database
+			const db = await initDatabase(league);
+			try {
+				const playerStats = db.prepare('SELECT * FROM player_game_stats WHERE league = ? AND season = ?').all('asia', year);
+				assert.ok(playerStats.length > 0);
+
+				// Verify games exist under 'asia' league rollup
+				assert.ok(playerStats.some(p => p.player_name === 'Jack Cooley' && p.game_id.includes('BLEAGUE')));
+				assert.ok(playerStats.some(p => p.player_name === 'Jameel Warney' && p.game_id.includes('KBL')));
+
+				const teamStats = db.prepare('SELECT * FROM team_game_stats WHERE league = ? AND season = ?').all('asia', year);
+				assert.ok(teamStats.length > 0);
+				assert.ok(teamStats.some(t => t.team_name === 'RYUKYU GOLDEN KINGS' && t.game_id.includes('BLEAGUE')));
+				assert.ok(teamStats.some(t => t.team_name === 'SEOUL SK KNIGHTS' && t.game_id.includes('KBL')));
+			} finally {
+				db.destroy();
+			}
+		} catch (err) {
+			console.error('DEBUG SUBTEST 5 ERROR:', err);
+			throw err;
 		}
 	});
 });

@@ -41,37 +41,60 @@ export class AsiaHarvester extends HTTPClient {
 	}
 
 	/**
-	 * @description Checks if a competition was cancelled or did not exist for a given year.
-	 * @param {string} comp - Competition identifier
-	 * @param {string|number} year - The season year
-	 * @returns {{ cancelled: boolean, reason?: string }} Cancellation status details
+	 * @description Resolves the actual competition key to harvest based on historical branding changes.
+	 * BCL Asia was launched in 2024; its predecessor was the FIBA Asia Champions Cup (fiba_asia_cc).
+	 * @param {string} comp - Requested competition key
+	 * @param {string|number} year - Target season year
+	 * @returns {{ resolvedComp: string, isCancelled: boolean, reason?: string, mappedNotice?: string }}
 	 */
-	checkCompetitionHistory(comp, year) {
+	resolveTargetCompetition(comp, year) {
 		const yearNum = parseInt(year, 10);
+
+		// Handle continental Asian tournaments (BCL Asia & FIBA Asia Champions Cup)
 		if (comp === 'bcl_asia' || comp === 'fiba_asia_cc') {
-			// Pandemic years / cancellations
+			// Pandemic cancellation gap (2020-2023)
 			if (yearNum >= 2020 && yearNum <= 2023) {
 				return {
-					cancelled: true,
-					reason: `The continental tournament (${comp.toUpperCase()}) was cancelled/not held between 2020 and 2023 due to the COVID-19 pandemic and subsequent FIBA restructuring.`
+					resolvedComp: comp,
+					isCancelled: true,
+					reason: `The Asian continental tournament was not held between 2020 and 2023 due to the COVID-19 pandemic and FIBA tournament restructuring.`
 				};
 			}
-			// Pre-existence check for BCL Asia
+
+			// Pre-2024: auto-route BCL Asia requests to predecessor FIBA Asia Champions Cup
 			if (comp === 'bcl_asia' && yearNum < 2024) {
 				return {
-					cancelled: true,
-					reason: `BCL Asia did not exist prior to 2024. The predecessor tournament was the FIBA Asia Champions Cup (fiba_asia_cc).`
+					resolvedComp: 'fiba_asia_cc',
+					isCancelled: false,
+					mappedNotice: `Auto-routed bcl_asia for year ${year} to predecessor tournament FIBA Asia Champions Cup (fiba_asia_cc).`
 				};
 			}
-			// Post-existence check for FIBA Asia Champions Cup
+
+			// Post-2023: auto-route FIBA Asia Champions Cup requests to successor BCL Asia
 			if (comp === 'fiba_asia_cc' && yearNum >= 2024) {
 				return {
-					cancelled: true,
-					reason: `FIBA Asia Champions Cup was discontinued after the 2019 season, replaced by BCL Asia starting in 2024.`
+					resolvedComp: 'bcl_asia',
+					isCancelled: false,
+					mappedNotice: `Auto-routed fiba_asia_cc for year ${year} to successor tournament BCL Asia (bcl_asia).`
 				};
 			}
 		}
-		return { cancelled: false };
+
+		return {
+			resolvedComp: comp,
+			isCancelled: false
+		};
+	}
+
+	/**
+	 * @description Legacy backward-compatibility wrapper checking competition status.
+	 * @param {string} comp - Competition identifier
+	 * @param {string|number} year - Season year
+	 * @returns {{ cancelled: boolean, reason?: string }}
+	 */
+	checkCompetitionHistory(comp, year) {
+		const res = this.resolveTargetCompetition(comp, year);
+		return { cancelled: res.isCancelled, reason: res.reason };
 	}
 
 	/**
@@ -85,14 +108,21 @@ export class AsiaHarvester extends HTTPClient {
 
 		// If in test mode, bypass Playwright and return mock slugs
 		if (process.env.NODE_ENV === 'test' || (this.scraper && this.scraper.bypassNetwork)) {
-			for (const comp of activeComps) {
-				const history = this.checkCompetitionHistory(comp, year);
-				if (history.cancelled) {
-					console.log(`ℹ️ [AsiaHarvester] Skipping ${comp.toUpperCase()} for year ${year}: ${history.reason}`);
+			for (const rawComp of activeComps) {
+				const { resolvedComp, isCancelled, reason, mappedNotice } = this.resolveTargetCompetition(rawComp, year);
+
+				if (isCancelled) {
+					console.log(`ℹ️ [AsiaHarvester] Skipping ${rawComp.toUpperCase()} for year ${year}: ${reason}`);
 					continue;
 				}
 
-				const compUpper = comp.toUpperCase().replace('_', '');
+				if (mappedNotice) {
+					console.log(`🔄 [AsiaHarvester] ${mappedNotice}`);
+				}
+
+				const comp = resolvedComp;
+				const compUpper = comp.toUpperCase().replace(/_/g, '');
+
 				if (comp === 'bleague') {
 					allSlugs.push(
 						`ryukyu-golden-kings-vs-chiba-jets-${compUpper}${year}_20001`,
@@ -118,14 +148,20 @@ export class AsiaHarvester extends HTTPClient {
 		}
 
 		// Non-test mode: dynamic Playwright scraper
-		for (const comp of activeComps) {
-			const history = this.checkCompetitionHistory(comp, year);
-			if (history.cancelled) {
-				console.log(`⚠️ [AsiaHarvester] Skipping ${comp.toUpperCase()} for year ${year}: ${history.reason}`);
+		for (const rawComp of activeComps) {
+			const { resolvedComp, isCancelled, reason, mappedNotice } = this.resolveTargetCompetition(rawComp, year);
+
+			if (isCancelled) {
+				console.log(`⚠️ [AsiaHarvester] Skipping ${rawComp.toUpperCase()} for year ${year}: ${reason}`);
 				continue;
 			}
 
-			const compUpper = comp.toUpperCase().replace('_', '');
+			if (mappedNotice) {
+				console.log(`🔄 [AsiaHarvester] ${mappedNotice}`);
+			}
+
+			const comp = resolvedComp;
+			const compUpper = comp.toUpperCase().replace(/_/g, '');
 			const leagueId = this.leagueIdMap[comp];
 			if (!leagueId) {
 				console.warn(`⚠️ [AsiaHarvester] No Proballers league ID registered for competition: "${comp}". Skipping.`);

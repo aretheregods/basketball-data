@@ -74,7 +74,7 @@ export class AsiaScraper extends HTTPClient {
 		const yearPrefix = seasonCode;
 
 		// Clean underscores for standard comparisons
-		if (competitionId === 'bcl' || competitionId === 'bcl_asia') {
+		if (competitionId === 'bcl' || competitionId === 'bcl_asia' || competitionId === 'bclasia') {
 			competitionId = 'bcl_asia';
 		} else if (competitionId === 'fibaasiacc') {
 			competitionId = 'fiba_asia_cc';
@@ -216,7 +216,6 @@ export class AsiaScraper extends HTTPClient {
 			console.log(`💾 [AsiaScraper] Saved raw Asia Boxscore HTML to ${htmlCachePath}`);
 		} catch (error) {
 			console.error(`❌ [AsiaScraper] Error fetching game ${gameId}:`, error.message || error);
-			await browser.close();
 			return this.getUnplayedSkeleton(gameId, yearPrefix);
 		} finally {
 			await browser.close();
@@ -352,7 +351,7 @@ export class AsiaScraper extends HTTPClient {
 					score: 95,
 					players: [
 						{
-							playerId: "wائل-عرقجي",
+							playerId: "wael-arakji",
 							playerName: "Wael Arakji",
 							statistics: {
 								min: "29:45", pts: 21, fgm: 8, fga: 13, fg3m: 2, fg3a: 4, ftm: 3, fta: 4,
