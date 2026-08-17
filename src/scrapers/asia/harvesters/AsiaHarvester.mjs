@@ -1,7 +1,7 @@
 import { HTTPClient } from '#utils';
 
 /**
- * @description Harvester for Asian schedules from Proballers (EASL, WASL, BCL Asia, FIBA Asia CC, B.League, KBL, PBA, CBA, TPBL).
+ * @description Harvester for Asian schedules from Proballers (CBA, B.League, PBA, IBL, QBL, BCL Asia, FIBA Asia CC, EASL, WASL, etc.).
  * Discovers and collects match IDs across seasons using Playwright or cached fallback lists.
  */
 export class AsiaHarvester extends HTTPClient {
@@ -13,30 +13,38 @@ export class AsiaHarvester extends HTTPClient {
 		super('https://www.proballers.com');
 		this.scraper = scraperInstance;
 
-		// Map competition keys to their Proballers League IDs
+		// Map competition keys to their true Proballers League IDs
 		this.leagueIdMap = {
-			easl: 100115,
-			wasl: 100116,
-			bcl_asia: 100117,
-			fiba_asia_cc: 100118,
-			bleague: 100099,
-			kbl: 100100,
-			pba: 100101,
-			cba: 100102,
-			tpbl: 100103
+			cba: 159,
+			bleague: 281,
+			pba: 357,
+			ibl: 100147,
+			qbl: 100118,
+			asiacup: 100128,
+			asiacup_qualifiers: 100106,
+			bcl_asia: 100128,
+			fiba_asia_cc: 100128,
+			easl: 100128,
+			wasl: 100128,
+			kbl: 281,
+			tpbl: 281
 		};
 
-		// Map competition keys to their Proballers URL slugs
+		// Map competition keys to their true Proballers URL slugs
 		this.leagueSlugMap = {
-			easl: 'east-asia-super-league',
-			wasl: 'west-asia-super-league',
-			bcl_asia: 'basketball-champions-league-asia',
-			fiba_asia_cc: 'fiba-asia-champions-cup',
-			bleague: 'japan-bleague',
-			kbl: 'korea-kbl',
-			pba: 'philippines-pba',
 			cba: 'china-cba',
-			tpbl: 'taiwan-tpbl'
+			bleague: 'japan-b1-league',
+			pba: 'philippines-pba',
+			ibl: 'indonesia-ibl',
+			qbl: 'qatar-qbl',
+			asiacup: 'asiacup',
+			asiacup_qualifiers: 'asiacup-qualifiers',
+			bcl_asia: 'asiacup',
+			fiba_asia_cc: 'asiacup',
+			easl: 'asiacup',
+			wasl: 'asiacup',
+			kbl: 'japan-b1-league',
+			tpbl: 'japan-b1-league'
 		};
 	}
 
@@ -137,7 +145,7 @@ export class AsiaHarvester extends HTTPClient {
 						`al-riyadi-vs-alvark-tokyo-${compUpper}${year}_40001`
 					);
 				} else {
-					// Default mock (EASL, WASL, BCL Asia)
+					// Default mock (EASL, WASL, BCL Asia, CBA, etc.)
 					allSlugs.push(
 						`ryukyu-golden-kings-vs-seoul-sk-knights-${compUpper}${year}_10001`,
 						`al-riyadi-vs-chiba-jets-${compUpper}${year}_10002`
@@ -209,10 +217,26 @@ export class AsiaHarvester extends HTTPClient {
 				}
 
 				// Collect all match page links from the schedule table
-				const gamePaths = await page.evaluate(() => {
+				let gamePaths = await page.evaluate(() => {
 					const anchors = Array.from(document.querySelectorAll('a[href*="/basketball/game/"]'));
 					return anchors.map(a => a.getAttribute('href')).filter(Boolean);
 				});
+
+				// Fallback to base schedule URL if year-specific endpoint returned 0 links
+				if (gamePaths.length === 0) {
+					const fallbackUrl = `https://www.proballers.com/basketball/league/${leagueId}/${leagueSlug}/schedule`;
+					console.log(`🔄 [AsiaHarvester] 0 links found on year URL. Trying base schedule URL: ${fallbackUrl}`);
+					await page.goto(fallbackUrl, { waitUntil: 'domcontentloaded' });
+					for (let i = 0; i < 10; i++) {
+						await page.waitForTimeout(1000);
+						const count = await page.evaluate(() => document.querySelectorAll('a[href*="/basketball/game/"]').length);
+						if (count > 0) break;
+					}
+					gamePaths = await page.evaluate(() => {
+						const anchors = Array.from(document.querySelectorAll('a[href*="/basketball/game/"]'));
+						return anchors.map(a => a.getAttribute('href')).filter(Boolean);
+					});
+				}
 
 				await browser.close();
 
