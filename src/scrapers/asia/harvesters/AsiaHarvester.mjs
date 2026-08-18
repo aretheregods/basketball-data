@@ -3,6 +3,7 @@ import { HTTPClient } from '#utils';
 /**
  * @description Harvester for Asian schedules from Proballers (CBA, B.League, PBA, IBL, QBL, BCL Asia, FIBA Asia CC, EASL, WASL, etc.).
  * Discovers and collects match IDs across seasons using Playwright or cached fallback lists.
+ * Supports harvesting both Regular Season and Playoff games automatically.
  */
 export class AsiaHarvester extends HTTPClient {
 	/**
@@ -13,38 +14,45 @@ export class AsiaHarvester extends HTTPClient {
 		super('https://www.proballers.com');
 		this.scraper = scraperInstance;
 
-		// Map competition keys to their true Proballers League IDs
-		this.leagueIdMap = {
-			cba: 159,
-			bleague: 281,
-			pba: 357,
-			ibl: 100147,
-			qbl: 100118,
-			asiacup: 100128,
-			asiacup_qualifiers: 100106,
-			bcl_asia: 100128,
-			fiba_asia_cc: 100128,
-			easl: 100128,
-			wasl: 100128,
-			kbl: 281,
-			tpbl: 281
-		};
-
-		// Map competition keys to their true Proballers URL slugs
-		this.leagueSlugMap = {
-			cba: 'china-cba',
-			bleague: 'japan-b1-league',
-			pba: 'philippines-pba',
-			ibl: 'indonesia-ibl',
-			qbl: 'qatar-qbl',
-			asiacup: 'asiacup',
-			asiacup_qualifiers: 'asiacup-qualifiers',
-			bcl_asia: 'asiacup',
-			fiba_asia_cc: 'asiacup',
-			easl: 'asiacup',
-			wasl: 'asiacup',
-			kbl: 'japan-b1-league',
-			tpbl: 'japan-b1-league'
+		// Map competition keys to their primary and playoff Proballers League endpoints
+		this.leagueEndpointsMap = {
+			cba: [
+				{ id: 159, slug: 'china-cba' },
+				{ id: 158, slug: 'china-cba-playoffs' }
+			],
+			bleague: [
+				{ id: 281, slug: 'japan-b1-league' },
+				{ id: 155, slug: 'japan-b1-league-playoffs' }
+			],
+			pba: [
+				{ id: 357, slug: 'philippines-pba' },
+				{ id: 362, slug: 'philippines-pba-playoffs' }
+			],
+			ibl: [
+				{ id: 100147, slug: 'indonesia-ibl' },
+				{ id: 100148, slug: 'indonesia-ibl-playoffs' }
+			],
+			qbl: [
+				{ id: 100118, slug: 'qatar-qbl' },
+				{ id: 100140, slug: 'qatar-qbl-playoffs' }
+			],
+			asiacup: [
+				{ id: 100128, slug: 'asiacup' },
+				{ id: 100106, slug: 'asiacup-qualifiers' }
+			],
+			asiacup_qualifiers: [{ id: 100106, slug: 'asiacup-qualifiers' }],
+			bcl_asia: [{ id: 100128, slug: 'asiacup' }],
+			fiba_asia_cc: [{ id: 100128, slug: 'asiacup' }],
+			easl: [{ id: 100128, slug: 'asiacup' }],
+			wasl: [{ id: 100128, slug: 'asiacup' }],
+			kbl: [
+				{ id: 281, slug: 'japan-b1-league' },
+				{ id: 155, slug: 'japan-b1-league-playoffs' }
+			],
+			tpbl: [
+				{ id: 281, slug: 'japan-b1-league' },
+				{ id: 155, slug: 'japan-b1-league-playoffs' }
+			]
 		};
 	}
 
@@ -170,108 +178,107 @@ export class AsiaHarvester extends HTTPClient {
 
 			const comp = resolvedComp;
 			const compUpper = comp.toUpperCase().replace(/_/g, '');
-			const leagueId = this.leagueIdMap[comp];
-			if (!leagueId) {
-				console.warn(`⚠️ [AsiaHarvester] No Proballers league ID registered for competition: "${comp}". Skipping.`);
-				continue;
-			}
+			const endpoints = this.leagueEndpointsMap[comp] || [{ id: 159, slug: `china-cba` }];
 
-			const leagueSlug = this.leagueSlugMap[comp] || `asia-${comp}`;
-			const scheduleUrl = `https://www.proballers.com/basketball/league/${leagueId}/${leagueSlug}/schedule/${year}`;
-			console.log(`📡 [AsiaHarvester] Harvesting ${compUpper} season ${year} from ${scheduleUrl}...`);
+			for (const ep of endpoints) {
+				const leagueId = ep.id;
+				const leagueSlug = ep.slug;
+				const scheduleUrl = `https://www.proballers.com/basketball/league/${leagueId}/${leagueSlug}/schedule/${year}`;
+				console.log(`📡 [AsiaHarvester] Harvesting ${compUpper} (${leagueSlug}) season ${year} from ${scheduleUrl}...`);
 
-			// Import Playwright dynamically
-			const { chromium } = await import('playwright');
-			const browser = await chromium.launch({
-				headless: true,
-				args: [
-					'--disable-blink-features=AutomationControlled',
-					'--disable-features=IsolateOrigins,site-per-process',
-					'--no-sandbox',
-					'--disable-setuid-sandbox'
-				]
-			});
-
-			const context = await browser.newContext({
-				userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-				viewport: { width: 1920, height: 1080 },
-				locale: 'en-US'
-			});
-
-			await context.addInitScript(() => {
-				Object.defineProperty(navigator, 'webdriver', { get: () => false });
-				Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-				Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-			});
-
-			const page = await context.newPage();
-
-			try {
-				await page.goto(scheduleUrl, { waitUntil: 'domcontentloaded' });
-
-				// Wait up to 15 seconds for Cloudflare challenge completion and link rendering
-				for (let i = 0; i < 15; i++) {
-					await page.waitForTimeout(1000);
-					const count = await page.evaluate(() => document.querySelectorAll('a[href*="/basketball/game/"]').length);
-					if (count > 0) break;
-				}
-
-				// Collect all match page links from the schedule table
-				let gamePaths = await page.evaluate(() => {
-					const anchors = Array.from(document.querySelectorAll('a[href*="/basketball/game/"]'));
-					return anchors.map(a => a.getAttribute('href')).filter(Boolean);
+				// Import Playwright dynamically
+				const { chromium } = await import('playwright');
+				const browser = await chromium.launch({
+					headless: true,
+					args: [
+						'--disable-blink-features=AutomationControlled',
+						'--disable-features=IsolateOrigins,site-per-process',
+						'--no-sandbox',
+						'--disable-setuid-sandbox'
+					]
 				});
 
-				// Fallback to base schedule URL if year-specific endpoint returned 0 links
-				if (gamePaths.length === 0) {
-					const fallbackUrl = `https://www.proballers.com/basketball/league/${leagueId}/${leagueSlug}/schedule`;
-					console.log(`🔄 [AsiaHarvester] 0 links found on year URL. Trying base schedule URL: ${fallbackUrl}`);
-					await page.goto(fallbackUrl, { waitUntil: 'domcontentloaded' });
-					for (let i = 0; i < 10; i++) {
+				const context = await browser.newContext({
+					userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+					viewport: { width: 1920, height: 1080 },
+					locale: 'en-US'
+				});
+
+				await context.addInitScript(() => {
+					Object.defineProperty(navigator, 'webdriver', { get: () => false });
+					Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+					Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+				});
+
+				const page = await context.newPage();
+
+				try {
+					await page.goto(scheduleUrl, { waitUntil: 'domcontentloaded' });
+
+					// Wait up to 15 seconds for Cloudflare challenge completion and link rendering
+					for (let i = 0; i < 15; i++) {
 						await page.waitForTimeout(1000);
 						const count = await page.evaluate(() => document.querySelectorAll('a[href*="/basketball/game/"]').length);
 						if (count > 0) break;
 					}
-					gamePaths = await page.evaluate(() => {
+
+					// Collect all match page links from the schedule table
+					let gamePaths = await page.evaluate(() => {
 						const anchors = Array.from(document.querySelectorAll('a[href*="/basketball/game/"]'));
 						return anchors.map(a => a.getAttribute('href')).filter(Boolean);
 					});
-				}
 
-				await browser.close();
+					// Fallback to base schedule URL if year-specific endpoint returned 0 links
+					if (gamePaths.length === 0) {
+						const fallbackUrl = `https://www.proballers.com/basketball/league/${leagueId}/${leagueSlug}/schedule`;
+						console.log(`🔄 [AsiaHarvester] 0 links found on year URL. Trying base schedule URL: ${fallbackUrl}`);
+						await page.goto(fallbackUrl, { waitUntil: 'domcontentloaded' });
+						for (let i = 0; i < 10; i++) {
+							await page.waitForTimeout(1000);
+							const count = await page.evaluate(() => document.querySelectorAll('a[href*="/basketball/game/"]').length);
+							if (count > 0) break;
+						}
+						gamePaths = await page.evaluate(() => {
+							const anchors = Array.from(document.querySelectorAll('a[href*="/basketball/game/"]'));
+							return anchors.map(a => a.getAttribute('href')).filter(Boolean);
+						});
+					}
 
-				const uniquePaths = [...new Set(gamePaths)];
-				const slugs = uniquePaths.map(path => {
-					// Path format: /basketball/game/{game_id}/{matchup}
-					const parts = path.split('/').filter(Boolean);
-					const gameCode = parts[2] || '';
-					const matchupRaw = parts[3] || 'matchup';
-					const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
+					await browser.close();
 
-					// Map to standard layout: matchup-{COMP}year_gameId
-					return `${matchup}-${compUpper}${year}_${gameCode}`;
-				});
-
-				// Populate scraper map if scraper exists
-				if (this.scraper && typeof this.scraper.setGameUrl === 'function') {
-					uniquePaths.forEach(path => {
+					const uniquePaths = [...new Set(gamePaths)];
+					const slugs = uniquePaths.map(path => {
+						// Path format: /basketball/game/{game_id}/{matchup}
 						const parts = path.split('/').filter(Boolean);
 						const gameCode = parts[2] || '';
 						const matchupRaw = parts[3] || 'matchup';
 						const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
 
-						const fullUrl = path.startsWith('http') ? path : `https://www.proballers.com${path}`;
-						this.scraper.setGameUrl(`${compUpper}${year}_${gameCode}`, fullUrl);
-						this.scraper.setGameUrl(gameCode, fullUrl);
-						this.scraper.setGameUrl(`${matchup}-${compUpper}${year}_${gameCode}`, fullUrl);
+						// Map to standard layout: matchup-{COMP}year_gameId
+						return `${matchup}-${compUpper}${year}_${gameCode}`;
 					});
-				}
 
-				console.log(`✅ [AsiaHarvester] Successfully harvested ${slugs.length} slugs for competition ${compUpper}.`);
-				allSlugs.push(...slugs);
-			} catch (error) {
-				await browser.close();
-				console.error(`❌ [AsiaHarvester] Failed to harvest schedule for ${compUpper}:`, error.message || error);
+					// Populate scraper map if scraper exists
+					if (this.scraper && typeof this.scraper.setGameUrl === 'function') {
+						uniquePaths.forEach(path => {
+							const parts = path.split('/').filter(Boolean);
+							const gameCode = parts[2] || '';
+							const matchupRaw = parts[3] || 'matchup';
+							const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
+
+							const fullUrl = path.startsWith('http') ? path : `https://www.proballers.com${path}`;
+							this.scraper.setGameUrl(`${compUpper}${year}_${gameCode}`, fullUrl);
+							this.scraper.setGameUrl(gameCode, fullUrl);
+							this.scraper.setGameUrl(`${matchup}-${compUpper}${year}_${gameCode}`, fullUrl);
+						});
+					}
+
+					console.log(`✅ [AsiaHarvester] Successfully harvested ${slugs.length} slugs for endpoint ${leagueSlug}.`);
+					allSlugs.push(...slugs);
+				} catch (error) {
+					await browser.close();
+					console.error(`❌ [AsiaHarvester] Failed to harvest schedule for ${compUpper} (${leagueSlug}):`, error.message || error);
+				}
 			}
 		}
 
