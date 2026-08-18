@@ -65,6 +65,7 @@ export function parseAsiaFibaJson(rawJson, gameId, season) {
 		const playersMap = teamObj.pl || {};
 		const roster = Object.values(playersMap);
 
+		const seenJsonIds = new Map();
 		const players = roster.map(p => {
 			const minStr = String(p.sMinutes || '00:00').trim();
 			const pts = parseInt(p.sPoints || p.sPts || 0, 10);
@@ -77,6 +78,22 @@ export function parseAsiaFibaJson(rawJson, gameId, season) {
 			const firstName = p.internationalFirstName || p.sFirstName || p.sFirstNameInitial || p.firstName || '';
 			const lastName = p.internationalLastName || p.sLastName || p.sName || p.familyName || '';
 			const fullName = `${firstName} ${lastName}`.trim() || p.sShortName || p.name || 'Unknown Player';
+			const rawPersonId = p.personId || p.personID || p.id || p.sPersonId || '';
+
+			let baseSlug = slugify(fullName);
+			if (rawPersonId) {
+				baseSlug = `${baseSlug}-${rawPersonId}`;
+			} else if (p.shirtNumber || p.sShirtNumber) {
+				baseSlug = `${baseSlug}-${p.shirtNumber || p.sShirtNumber}`;
+			}
+
+			let finalId = baseSlug;
+			const count = seenJsonIds.get(baseSlug) || 0;
+			if (count > 0) {
+				finalId = `${baseSlug}-${count + 1}`;
+			}
+			seenJsonIds.set(baseSlug, count + 1);
+
 			const fgm = parseInt(p.sFieldGoalsMade || p.sFgm || 0, 10);
 			const fga = parseInt(p.sFieldGoalsAttempted || p.sFga || 0, 10);
 			const fg3m = parseInt(p.sThreePointersMade || p.sFg3m || 0, 10);
@@ -94,7 +111,7 @@ export function parseAsiaFibaJson(rawJson, gameId, season) {
 			const plus_minus = parseInt(p.sPlusMinus || p.sPlusMinusPoints || 0, 10);
 
 			return {
-				playerId: slugify(fullName),
+				playerId: finalId,
 				playerName: fullName,
 				statistics: {
 					min: minStr,
@@ -271,11 +288,15 @@ export function parseAsiaHtml(htmlContent, homeSlugExpected, awaySlugExpected, g
 
 		// Parse player rows (everything after the header row)
 		for (let i = headerRowIndex + 1; i < rowsHtml.length; i++) {
-			const cells = getCells(rowsHtml[i]);
+			const rowHtml = rowsHtml[i];
+			const cells = getCells(rowHtml);
 			if (cells.length < 4) continue;
 
 			const rawName = cells[colMap.player !== -1 ? colMap.player : 0];
 			if (!rawName || rawName.toUpperCase() === 'PLAYER' || rawName.includes('Player Name')) continue;
+
+			const hrefMatch = rowHtml.match(/href="[^"]*\/player\/(\d+)\/[^"]*"/i) || rowHtml.match(/href="[^"]*\/game\/[^"]*\/(\d+)"/i);
+			const numericId = hrefMatch ? hrefMatch[1] : '';
 
 			const isTotals = rawName.toUpperCase().includes('TOTAL') || rawName.toUpperCase().includes('TEAM') || rawName.toUpperCase().includes('TOTALS');
 
@@ -315,6 +336,7 @@ export function parseAsiaHtml(htmlContent, homeSlugExpected, awaySlugExpected, g
 			const rowData = {
 				rawName,
 				rawMin,
+				numericId,
 				pts,
 				fgm,
 				fga,
@@ -396,29 +418,42 @@ export function parseAsiaHtml(htmlContent, homeSlugExpected, awaySlugExpected, g
 	}
 
 	const mapPlayersList = (players) => {
-		return players.map(p => ({
-			playerId: slugify(p.rawName),
-			playerName: p.rawName,
-			statistics: {
-				min: p.rawMin,
-				pts: p.pts,
-				fgm: p.fgm,
-				fga: p.fga,
-				fg3m: p.fg3m,
-				fg3a: p.fg3a,
-				ftm: p.ftm,
-				fta: p.fta,
-				oreb: p.oreb,
-				dreb: p.dreb,
-				reb: p.reb,
-				ast: p.ast,
-				stl: p.stl,
-				blk: p.blk,
-				tov: p.tov,
-				pf: p.pf,
-				plus_minus: p.plus_minus
+		const seenIds = new Map();
+		return players.map(p => {
+			let baseId = p.numericId ? `${slugify(p.rawName)}-${p.numericId}` : slugify(p.rawName);
+			if (!baseId) baseId = 'unknown-player';
+
+			let finalId = baseId;
+			const count = seenIds.get(baseId) || 0;
+			if (count > 0) {
+				finalId = `${baseId}-${count + 1}`;
 			}
-		}));
+			seenIds.set(baseId, count + 1);
+
+			return {
+				playerId: finalId,
+				playerName: p.rawName,
+				statistics: {
+					min: p.rawMin,
+					pts: p.pts,
+					fgm: p.fgm,
+					fga: p.fga,
+					fg3m: p.fg3m,
+					fg3a: p.fg3a,
+					ftm: p.ftm,
+					fta: p.fta,
+					oreb: p.oreb,
+					dreb: p.dreb,
+					reb: p.reb,
+					ast: p.ast,
+					stl: p.stl,
+					blk: p.blk,
+					tov: p.tov,
+					pf: p.pf,
+					plus_minus: p.plus_minus
+				}
+			};
+		});
 	};
 
 	return {

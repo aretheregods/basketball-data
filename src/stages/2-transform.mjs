@@ -827,11 +827,23 @@ export async function transformStage(league, year) {
 					});
 
 					let playerPtsSum = 0;
+					const seenPlayerIds = new Map();
 					for (const p of players) {
 						const pStats = p.statistics || {};
 						const rawPlayerName = p.playerName || '';
 						const pPts = Number(pStats.pts ?? 0);
 						playerPtsSum += pPts;
+
+						let basePlayerId = p.playerId || BaseNormalizer.normalizeName(rawPlayerName).toLowerCase().replace(/\s+/g, '-');
+						if (!basePlayerId) basePlayerId = 'unknown-player';
+
+						let finalPlayerId = basePlayerId;
+						const count = seenPlayerIds.get(basePlayerId) || 0;
+						if (count > 0) {
+							finalPlayerId = `${basePlayerId}-${count + 1}`;
+						}
+						seenPlayerIds.set(basePlayerId, count + 1);
+
 						const pFgm = Number(pStats.fgm ?? 0);
 						const pFga = Number(pStats.fga ?? 0);
 						const pFg3m = Number(pStats.fg3m ?? 0);
@@ -849,7 +861,7 @@ export async function transformStage(league, year) {
 
 						allPlayers.push({
 							game_id: gameId,
-							player_id: p.playerId || BaseNormalizer.normalizeName(rawPlayerName).toLowerCase().replace(/\s+/g, '-'),
+							player_id: finalPlayerId,
 							player_name: BaseNormalizer.cleanString(rawPlayerName),
 							normalized_name: BaseNormalizer.normalizeName(rawPlayerName),
 							team_id: canonicalTeamId,

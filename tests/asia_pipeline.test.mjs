@@ -244,6 +244,70 @@ test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
 		assert.equal(togashi.statistics.min, '32:15');
 	});
 
+	test('AsiaParser and Stage 2 Transform should disambiguate anglicized player name collisions on the same team', async () => {
+		const sampleCollisionHtml = `
+			<html>
+			<body>
+				<div class="header">
+					<span>ZHEJIANG LIONS</span>
+					<div class="score">100 vs 90</div>
+					<span>SHANXI BRAVE</span>
+				</div>
+
+				<div class="stats-section">
+					<h2>ZHEJIANG LIONS</h2>
+					<table>
+						<thead>
+							<tr><th>Player</th><th>Min</th><th>FGM</th><th>FGA</th><th>3PM</th><th>3PA</th><th>FTM</th><th>FTA</th><th>OR</th><th>DR</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TO</th><th>PF</th><th>PTS</th></tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><a href="/basketball/player/10001/wei-liu">Wei Liu</a></td>
+								<td>25:00</td><td>5</td><td>10</td><td>2</td><td>4</td><td>4</td><td>4</td><td>1</td><td>3</td><td>4</td><td>3</td><td>1</td><td>0</td><td>2</td><td>2</td><td>16</td>
+							</tr>
+							<tr>
+								<td><a href="/basketball/player/10002/wei-liu">Wei Liu</a></td>
+								<td>20:00</td><td>6</td><td>8</td><td>1</td><td>2</td><td>2</td><td>2</td><td>2</td><td>4</td><td>6</td><td>1</td><td>0</td><td>1</td><td>1</td><td>3</td><td>15</td>
+							</tr>
+							<tr class="total">
+								<td>Total</td>
+								<td>200:00</td><td>35</td><td>70</td><td>8</td><td>20</td><td>22</td><td>26</td><td>10</td><td>25</td><td>35</td><td>18</td><td>6</td><td>2</td><td>12</td><td>18</td><td>100</td>
+							</tr>
+						</tbody>
+					</table>
+
+					<h2>SHANXI BRAVE</h2>
+					<table>
+						<thead>
+							<tr><th>Player</th><th>Min</th><th>FGM</th><th>FGA</th><th>3PM</th><th>3PA</th><th>FTM</th><th>FTA</th><th>OR</th><th>DR</th><th>REB</th><th>AST</th><th>STL</th><th>BLK</th><th>TO</th><th>PF</th><th>PTS</th></tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td><a href="/basketball/player/20001/yuan-shuai">Yuan Shuai</a></td>
+								<td>30:00</td><td>7</td><td>14</td><td>4</td><td>8</td><td>2</td><td>2</td><td>0</td><td>2</td><td>2</td><td>2</td><td>1</td><td>0</td><td>1</td><td>2</td><td>20</td>
+							</tr>
+							<tr class="total">
+								<td>Total</td>
+								<td>200:00</td><td>30</td><td>65</td><td>10</td><td>25</td><td>20</td><td>24</td><td>8</td><td>22</td><td>30</td><td>14</td><td>5</td><td>1</td><td>10</td><td>20</td><td>90</td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+			</body>
+			</html>
+		`;
+
+		const boxscore = parseAsiaHtml(sampleCollisionHtml, 'zhejiang-lions', 'shanxi-brave', 'zhejiang-lions-vs-shanxi-brave-CBA2024_99999', '2024');
+
+		const zhejiangPlayers = boxscore.homeTeam.players;
+		assert.equal(zhejiangPlayers.length, 2, 'Should preserve both players named Wei Liu');
+
+		// Assert unique player IDs were assigned via numeric ID / index disambiguation
+		assert.notEqual(zhejiangPlayers[0].playerId, zhejiangPlayers[1].playerId, 'Player IDs must be unique');
+		assert.equal(zhejiangPlayers[0].playerId, 'wei-liu-10001');
+		assert.equal(zhejiangPlayers[1].playerId, 'wei-liu-10002');
+	});
+
 	test('Full Asia Multi-Competition Pipeline Integration: Extract -> Transform -> Load', async () => {
 		try {
 			const scraper = new AsiaScraper({ competitions: 'bcl_asia,bleague,kbl,fiba_asia_cc' });
