@@ -46,12 +46,12 @@ export class AsiaHarvester extends HTTPClient {
 			easl: [{ id: 100128, slug: 'asiacup' }],
 			wasl: [{ id: 100128, slug: 'asiacup' }],
 			kbl: [
-				{ id: 281, slug: 'japan-b1-league' },
-				{ id: 155, slug: 'japan-b1-league-playoffs' }
+				{ id: 227, slug: 'south-korea-kbl' },
+				{ id: 100139, slug: 'south-korea-kbl-playoffs' }
 			],
 			tpbl: [
-				{ id: 281, slug: 'japan-b1-league' },
-				{ id: 155, slug: 'japan-b1-league-playoffs' }
+				{ id: 100141, slug: 'taiwan-tpbl' },
+				{ id: 100142, slug: 'taiwan-tpbl-playoffs' }
 			]
 		};
 	}
