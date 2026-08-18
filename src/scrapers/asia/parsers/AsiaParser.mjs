@@ -67,16 +67,16 @@ export function parseAsiaFibaJson(rawJson, gameId, season) {
 
 		const players = roster.map(p => {
 			const minStr = String(p.sMinutes || '00:00').trim();
-			// Ignore players who did not enter the game
-			if (!minStr || minStr === '00:00' || minStr === '0' || minStr === '00' || minStr === '-') {
+			const pts = parseInt(p.sPoints || p.sPts || 0, 10);
+
+			// Ignore players who did not enter the game (0 points and 0 minutes)
+			if (pts === 0 && (!minStr || minStr === '00:00' || minStr === '0' || minStr === '00' || minStr === '-')) {
 				return null;
 			}
 
 			const firstName = p.internationalFirstName || p.sFirstName || p.sFirstNameInitial || p.firstName || '';
 			const lastName = p.internationalLastName || p.sLastName || p.sName || p.familyName || '';
 			const fullName = `${firstName} ${lastName}`.trim() || p.sShortName || p.name || 'Unknown Player';
-
-			const pts = parseInt(p.sPoints || p.sPts || 0, 10);
 			const fgm = parseInt(p.sFieldGoalsMade || p.sFgm || 0, 10);
 			const fga = parseInt(p.sFieldGoalsAttempted || p.sFga || 0, 10);
 			const fg3m = parseInt(p.sThreePointersMade || p.sFg3m || 0, 10);
@@ -285,7 +285,7 @@ export function parseAsiaHtml(htmlContent, homeSlugExpected, awaySlugExpected, g
 			};
 
 			const rawMin = colMap.min !== -1 ? cells[colMap.min] : '0:00';
-			if (!isTotals && (!rawMin || rawMin === '0' || rawMin === '0:00' || rawMin === '00:00' || rawMin === '-')) {
+			if (!isTotals && pts === 0 && (!rawMin || rawMin === '0' || rawMin === '0:00' || rawMin === '00:00' || rawMin === '-')) {
 				continue;
 			}
 

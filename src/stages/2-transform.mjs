@@ -266,12 +266,10 @@ export async function transformStage(league, year) {
 						synced: 0
 					});
 
-					let playerPtsSum = 0;
 					for (const p of players) {
 						const pStats = p.statistics || {};
 						const rawPlayerName = p.playerName || '';
 						const pPts = Number(pStats.pts ?? 0);
-						playerPtsSum += pPts;
 						const pFgm = Number(pStats.fgm ?? 0);
 						const pFga = Number(pStats.fga ?? 0);
 						const pFg3m = Number(pStats.fg3m ?? 0);
@@ -324,48 +322,6 @@ export async function transformStage(league, year) {
 							),
 							season: String(year),
 							league: 'mexico',
-							synced: 0
-						});
-					}
-
-					// Points Reconciliation: Check for variance between team total score and player point sums
-					const variance = pts - playerPtsSum;
-					if (variance !== 0 && pts > 0) {
-						allPlayers.push({
-							game_id: gameId,
-							player_id: `${canonicalTeamId}_team`,
-							player_name: 'Team/Bench',
-							normalized_name: 'Team/Bench',
-							team_id: canonicalTeamId,
-							team_abbreviation: teamObj.teamId || canonicalTeamId.substring(0, 4).toUpperCase(),
-							team_city: BaseNormalizer.cleanString(rawTeamName).split(' ')[0] || '',
-							start_position: '',
-							comment: 'Points Variance Reconciliation',
-							min: '0.0',
-							fgm: 0,
-							fga: 0,
-							fg_pct: 0.0,
-							fg3m: 0,
-							fg3a: 0,
-							fg3_pct: 0.0,
-							ftm: 0,
-							fta: 0,
-							ft_pct: 0.0,
-							oreb: 0,
-							dreb: 0,
-							reb: 0,
-							ast: 0,
-							stl: 0,
-							blk: 0,
-							tov: 0,
-							pf: 0,
-							pts: variance,
-							plus_minus: 0.0,
-							ts_pct: 0.0,
-							efg_pct: 0.0,
-							game_score: variance,
-							season: String(year),
-							league: 'asia',
 							synced: 0
 						});
 					}
@@ -450,12 +406,10 @@ export async function transformStage(league, year) {
 						synced: 0
 					});
 
-					let playerPtsSum = 0;
 					for (const p of players) {
 						const pStats = p.statistics || {};
 						const rawPlayerName = p.playerName || '';
 						const pPts = Number(pStats.pts ?? 0);
-						playerPtsSum += pPts;
 						const pFgm = Number(pStats.fgm ?? 0);
 						const pFga = Number(pStats.fga ?? 0);
 						const pFg3m = Number(pStats.fg3m ?? 0);
@@ -872,10 +826,12 @@ export async function transformStage(league, year) {
 						synced: 0
 					});
 
+					let playerPtsSum = 0;
 					for (const p of players) {
 						const pStats = p.statistics || {};
 						const rawPlayerName = p.playerName || '';
 						const pPts = Number(pStats.pts ?? 0);
+						playerPtsSum += pPts;
 						const pFgm = Number(pStats.fgm ?? 0);
 						const pFga = Number(pStats.fga ?? 0);
 						const pFg3m = Number(pStats.fg3m ?? 0);
@@ -926,6 +882,48 @@ export async function transformStage(league, year) {
 							game_score: BaseNormalizer.calculateGameScore(
 								pPts, pFgm, pFga, pFta, pFtm, pOreb, pDreb, pStl, pAst, pBlk, pPf, pTov
 							),
+							season: String(year),
+							league: 'asia',
+							synced: 0
+						});
+					}
+
+					// Points Reconciliation: Check for variance between team total score and player point sums
+					const variance = pts - playerPtsSum;
+					if (variance !== 0 && pts > 0) {
+						allPlayers.push({
+							game_id: gameId,
+							player_id: `${canonicalTeamId}_team`,
+							player_name: 'Team/Bench',
+							normalized_name: 'Team/Bench',
+							team_id: canonicalTeamId,
+							team_abbreviation: teamObj.teamId || canonicalTeamId.substring(0, 4).toUpperCase(),
+							team_city: BaseNormalizer.cleanString(rawTeamName).split(' ')[0] || '',
+							start_position: '',
+							comment: 'Points Variance Reconciliation',
+							min: '0.0',
+							fgm: 0,
+							fga: 0,
+							fg_pct: 0.0,
+							fg3m: 0,
+							fg3a: 0,
+							fg3_pct: 0.0,
+							ftm: 0,
+							fta: 0,
+							ft_pct: 0.0,
+							oreb: 0,
+							dreb: 0,
+							reb: 0,
+							ast: 0,
+							stl: 0,
+							blk: 0,
+							tov: 0,
+							pf: 0,
+							pts: variance,
+							plus_minus: 0.0,
+							ts_pct: 0.0,
+							efg_pct: 0.0,
+							game_score: variance,
 							season: String(year),
 							league: 'asia',
 							synced: 0
