@@ -86,6 +86,8 @@ export async function extractStage(scraper, league, year) {
 				schemaFolder = 'southamerica';
 			} else if (league.toLowerCase().startsWith('nbl')) {
 				schemaFolder = 'nbl';
+			} else if (league.toLowerCase().startsWith('asia')) {
+				schemaFolder = 'asia';
 			}
 			validateSchema(`${schemaFolder}/boxscore.json`, rawData);
 
