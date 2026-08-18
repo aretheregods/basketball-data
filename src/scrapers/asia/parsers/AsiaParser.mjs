@@ -284,11 +284,6 @@ export function parseAsiaHtml(htmlContent, homeSlugExpected, awaySlugExpected, g
 				return parseInt(cells[colIdx], 10) || 0;
 			};
 
-			const rawMin = colMap.min !== -1 ? cells[colMap.min] : '0:00';
-			if (!isTotals && pts === 0 && (!rawMin || rawMin === '0' || rawMin === '0:00' || rawMin === '00:00' || rawMin === '-')) {
-				continue;
-			}
-
 			let [fg2m, fg2a] = colMap.fg2Combined !== -1 ? parseCombined(cells[colMap.fg2Combined]) : [0, 0];
 			let [fg3m, fg3a] = colMap.fg3Combined !== -1 ? parseCombined(cells[colMap.fg3Combined]) : [0, 0];
 			let [ftm, fta] = colMap.ftCombined !== -1 ? parseCombined(cells[colMap.ftCombined]) : [0, 0];
@@ -300,6 +295,13 @@ export function parseAsiaHtml(htmlContent, homeSlugExpected, awaySlugExpected, g
 			if (colMap.ftm !== -1) ftm = valOf(colMap.ftm);
 			if (colMap.fta !== -1) fta = valOf(colMap.fta);
 
+			const pts = colMap.pts !== -1 ? valOf(colMap.pts) : (fg2m * 2 + fg3m * 3 + ftm);
+
+			const rawMin = colMap.min !== -1 ? cells[colMap.min] : '0:00';
+			if (!isTotals && pts === 0 && (!rawMin || rawMin === '0' || rawMin === '0:00' || rawMin === '00:00' || rawMin === '-')) {
+				continue;
+			}
+
 			const oreb = valOf(colMap.oreb);
 			const dreb = valOf(colMap.dreb);
 			const reb = colMap.reb !== -1 ? valOf(colMap.reb) : (oreb + dreb);
@@ -308,7 +310,6 @@ export function parseAsiaHtml(htmlContent, homeSlugExpected, awaySlugExpected, g
 			const blk = valOf(colMap.blk);
 			const tov = valOf(colMap.tov);
 			const pf = valOf(colMap.pf);
-			const pts = colMap.pts !== -1 ? valOf(colMap.pts) : (fg2m * 2 + fg3m * 3 + ftm);
 			const plus_minus = colMap.plusMinus !== -1 ? (parseInt(cells[colMap.plusMinus], 10) || 0) : 0;
 
 			const rowData = {
