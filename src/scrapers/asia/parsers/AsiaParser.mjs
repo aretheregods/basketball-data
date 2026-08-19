@@ -475,4 +475,213 @@ export function parseAsiaHtml(htmlContent, homeSlugExpected, awaySlugExpected, g
 	};
 }
 
-export default { parseAsiaFibaJson, parseAsiaHtml };
+/**
+ * @description Parses raw RealGM HTML content for KBL into clean JSON matching Asia BoxScore Schema.
+ * @param {string} htmlContent - Raw HTML from RealGM boxscore page
+ * @param {string} gameId - Unique game ID
+ * @param {string|number} season - Season year
+ * @returns {Object} Cleaned and structured box score object
+ */
+export function parseAsiaRealGmHtml(htmlContent, gameId, season) {
+	let gameDate = '';
+	let awayTeamName = 'Away Team';
+	let homeTeamName = 'Home Team';
+	let awayScore = 0;
+	let homeScore = 0;
+
+	const titleMatch = htmlContent.match(/<title>([^<]+)<\/title>/i);
+	const titleText = titleMatch ? titleMatch[1].trim() : '';
+
+	const monthNames = {
+		jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+		jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
+	};
+
+	const titleRegex = /([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})\s*-\s*(.+?)\s+(\d+)\s+at\s+(.+?)\s+(\d+)/i;
+	const m = titleText.match(titleRegex);
+
+	if (m) {
+		const mon = monthNames[m[1].toLowerCase().substring(0, 3)] || '01';
+		const day = String(m[2]).padStart(2, '0');
+		const yr = m[3];
+		gameDate = `${yr}-${mon}-${day}`;
+		awayTeamName = m[4].trim();
+		awayScore = parseInt(m[5], 10) || 0;
+		homeTeamName = m[6].trim();
+		homeScore = parseInt(m[7], 10) || 0;
+	} else {
+		const dateMatch = htmlContent.match(/([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})/);
+		if (dateMatch) {
+			const mon = monthNames[dateMatch[1].toLowerCase().substring(0, 3)] || '01';
+			const day = String(dateMatch[2]).padStart(2, '0');
+			const yr = dateMatch[3];
+			gameDate = `${yr}-${mon}-${day}`;
+		} else {
+			gameDate = `${season}-03-15`;
+		}
+	}
+
+	const getCells = (rowHtml) => {
+		const tdRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+		let cellMatch;
+		const cells = [];
+		while ((cellMatch = tdRegex.exec(rowHtml)) !== null) {
+			cells.push(cellMatch[1].replace(/<[^>]+>/g, '').trim());
+		}
+		return cells;
+	};
+
+	const parseCombined = (val) => {
+		if (!val || typeof val !== 'string' || !val.includes('-')) return [0, 0];
+		const parts = val.split('-').map(v => parseInt(v.trim(), 10) || 0);
+		return [parts[0] || 0, parts[1] || 0];
+	};
+
+	const tableRegex = /<table[^>]*>([\s\S]*?)<\/table>/gi;
+	let tMatch;
+	const statsTables = [];
+
+	while ((tMatch = tableRegex.exec(htmlContent)) !== null) {
+		const tHtml = tMatch[1];
+		const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+		let rMatch;
+		const rowsHtml = [];
+		while ((rMatch = rowRegex.exec(tHtml)) !== null) {
+			rowsHtml.push(rMatch[1]);
+		}
+
+		if (rowsHtml.length < 2) continue;
+
+		const headerCells = getCells(rowsHtml[0]).map(c => c.toUpperCase().trim());
+		if (!headerCells.includes('PLAYER') || !headerCells.includes('MIN') || !headerCells.includes('PTS')) {
+			continue;
+		}
+
+		const colMap = {
+			player: headerCells.findIndex(h => h === 'PLAYER'),
+			min: headerCells.findIndex(h => h === 'MIN'),
+			fgCombined: headerCells.findIndex(h => h === 'FGM-A'),
+			fg3Combined: headerCells.findIndex(h => h === '3PM-A'),
+			ftCombined: headerCells.findIndex(h => h === 'FTM-A'),
+			oreb: headerCells.findIndex(h => h === 'OFF' || h === 'OREB'),
+			dreb: headerCells.findIndex(h => h === 'DEF' || h === 'DREB'),
+			reb: headerCells.findIndex(h => h === 'REB'),
+			ast: headerCells.findIndex(h => h === 'AST'),
+			pf: headerCells.findIndex(h => h === 'PF'),
+			stl: headerCells.findIndex(h => h === 'STL'),
+			tov: headerCells.findIndex(h => h === 'TO' || h === 'TOV'),
+			blk: headerCells.findIndex(h => h === 'BLK'),
+			pts: headerCells.findIndex(h => h === 'PTS')
+		};
+
+		const parsedRows = [];
+		const seenIds = new Map();
+
+		for (let i = 1; i < rowsHtml.length; i++) {
+			const rowHtml = rowsHtml[i];
+			const cells = getCells(rowHtml);
+			if (cells.length < 5) continue;
+
+			const rawName = cells[colMap.player !== -1 ? colMap.player : 1];
+			if (!rawName || rawName.toUpperCase() === 'PLAYER' || rawName.toUpperCase().includes('TEAM') || rawName.toUpperCase().includes('TOTAL')) {
+				continue;
+			}
+
+			const playerHrefMatch = rowHtml.match(/href="[^"]*\/player\/[^"]*\/Summary\/(\d+)"/i);
+			const numericId = playerHrefMatch ? playerHrefMatch[1] : '';
+
+			const rawMin = colMap.min !== -1 ? cells[colMap.min] : '0:00';
+
+			const valOf = (colIdx) => {
+				if (colIdx === -1 || colIdx >= cells.length) return 0;
+				return parseInt(cells[colIdx], 10) || 0;
+			};
+
+			let [fgm, fga] = colMap.fgCombined !== -1 ? parseCombined(cells[colMap.fgCombined]) : [0, 0];
+			let [fg3m, fg3a] = colMap.fg3Combined !== -1 ? parseCombined(cells[colMap.fg3Combined]) : [0, 0];
+			let [ftm, fta] = colMap.ftCombined !== -1 ? parseCombined(cells[colMap.ftCombined]) : [0, 0];
+
+			const oreb = valOf(colMap.oreb);
+			const dreb = valOf(colMap.dreb);
+			const reb = colMap.reb !== -1 ? valOf(colMap.reb) : (oreb + dreb);
+			const ast = valOf(colMap.ast);
+			const pf = valOf(colMap.pf);
+			const stl = valOf(colMap.stl);
+			const tov = valOf(colMap.tov);
+			const blk = valOf(colMap.blk);
+			const pts = colMap.pts !== -1 ? valOf(colMap.pts) : (fgm * 2 + fg3m + ftm);
+
+			if (pts === 0 && (!rawMin || rawMin === '0' || rawMin === '0:00' || rawMin === '00:00' || rawMin === '-')) {
+				continue;
+			}
+
+			let baseId = numericId ? `${slugify(rawName)}-${numericId}` : slugify(rawName);
+			if (!baseId) baseId = 'unknown-player';
+
+			let finalId = baseId;
+			const count = seenIds.get(baseId) || 0;
+			if (count > 0) {
+				finalId = `${baseId}-${count + 1}`;
+			}
+			seenIds.set(baseId, count + 1);
+
+			parsedRows.push({
+				playerId: finalId,
+				playerName: rawName,
+				statistics: {
+					min: rawMin,
+					pts,
+					fgm,
+					fga,
+					fg3m,
+					fg3a,
+					ftm,
+					fta,
+					oreb,
+					dreb,
+					reb,
+					ast,
+					stl,
+					blk,
+					tov,
+					pf,
+					plus_minus: 0
+				}
+			});
+		}
+
+		if (parsedRows.length > 0) {
+			statsTables.push(parsedRows);
+		}
+	}
+
+	if (statsTables.length < 2) {
+		throw new Error(`[RealGM Error] Found fewer than 2 player statistics tables for game ${gameId}.`);
+	}
+
+	const awayPlayers = statsTables[0] || [];
+	const homePlayers = statsTables[1] || [];
+
+	const computedAwayScore = awayPlayers.reduce((sum, p) => sum + p.statistics.pts, 0);
+	const computedHomeScore = homePlayers.reduce((sum, p) => sum + p.statistics.pts, 0);
+
+	return {
+		gameId,
+		season: String(season),
+		gameDate,
+		homeTeam: {
+			teamId: homeTeamName.toUpperCase().substring(0, 4),
+			teamName: homeTeamName,
+			score: homeScore || computedHomeScore,
+			players: homePlayers
+		},
+		awayTeam: {
+			teamId: awayTeamName.toUpperCase().substring(0, 4),
+			teamName: awayTeamName,
+			score: awayScore || computedAwayScore,
+			players: awayPlayers
+		}
+	};
+}
+
+export default { parseAsiaFibaJson, parseAsiaHtml, parseAsiaRealGmHtml, slugify };

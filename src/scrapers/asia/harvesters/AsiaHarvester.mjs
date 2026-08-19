@@ -46,8 +46,7 @@ export class AsiaHarvester extends HTTPClient {
 			easl: [{ id: 100128, slug: 'asiacup' }],
 			wasl: [{ id: 100128, slug: 'asiacup' }],
 			kbl: [
-				{ id: 227, slug: 'south-korea-kbl' },
-				{ id: 100139, slug: 'south-korea-kbl-playoffs' }
+				{ id: 63, slug: 'South-Korean-KBL' }
 			],
 			tpbl: [
 				{ id: 100141, slug: 'taiwan-tpbl' },
@@ -178,6 +177,100 @@ export class AsiaHarvester extends HTTPClient {
 
 			const comp = resolvedComp;
 			const compUpper = comp.toUpperCase().replace(/_/g, '');
+
+			if (comp === 'kbl') {
+				// South Korean KBL is harvested from RealGM (League ID 63)
+				const kblTeams = [
+					{ id: 426, slug: 'Anyang-Kwan-Jang' },
+					{ id: 1119, slug: 'Changwon-LG-Sakers' },
+					{ id: 992, slug: 'Goyang-Sono-Skygunners' },
+					{ id: 1118, slug: 'Jeonju-KCC-Egis' },
+					{ id: 1120, slug: 'Korea-Gas-Corporation' },
+					{ id: 425, slug: 'Seoul-Samsung-Thunders' },
+					{ id: 151, slug: 'Seoul-SK' },
+					{ id: 580, slug: 'Suwon-KT-Sonicboom' },
+					{ id: 579, slug: 'Ulsan-Mobis-Phoebus' },
+					{ id: 581, slug: 'Wonju-Dongbu-Promy' }
+				];
+
+				console.log(`📡 [AsiaHarvester] Harvesting KBL (RealGM League 63) season ${year}...`);
+
+				const { chromium } = await import('playwright');
+				const browser = await chromium.launch({
+					headless: true,
+					args: [
+						'--disable-blink-features=AutomationControlled',
+						'--disable-features=IsolateOrigins,site-per-process',
+						'--no-sandbox',
+						'--disable-setuid-sandbox'
+					]
+				});
+
+				const context = await browser.newContext({
+					userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+					viewport: { width: 1920, height: 1080 },
+					locale: 'en-US'
+				});
+
+				await context.addInitScript(() => {
+					Object.defineProperty(navigator, 'webdriver', { get: () => false });
+					Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+					Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+				});
+
+				const page = await context.newPage();
+				const kblPaths = new Set();
+
+				try {
+					for (const team of kblTeams) {
+						const teamScheduleUrl = `https://basketball.realgm.com/international/league/63/South-Korean-KBL/team/${team.id}/${team.slug}/schedule/${year}`;
+						await page.goto(teamScheduleUrl, { waitUntil: 'domcontentloaded' });
+						await page.waitForTimeout(1000);
+
+						const links = await page.evaluate(() => {
+							const anchors = Array.from(document.querySelectorAll('a[href*="/boxscore/"]'));
+							return anchors.map(a => a.getAttribute('href')).filter(Boolean);
+						});
+						links.forEach(l => kblPaths.add(l));
+					}
+
+					await browser.close();
+
+					const uniqueKblPaths = Array.from(kblPaths);
+					const kblSlugs = uniqueKblPaths.map(path => {
+						// Path format: /international/boxscore/YYYY-MM-DD/Away-Team-at-Home-Team/gameCode
+						const parts = path.split('/').filter(Boolean);
+						const gameCode = parts[parts.length - 1] || '';
+						const matchupRaw = parts[parts.length - 2] || 'matchup';
+						const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
+
+						return `${matchup}-${compUpper}${year}_${gameCode}`;
+					});
+
+					if (this.scraper && typeof this.scraper.setGameUrl === 'function') {
+						uniqueKblPaths.forEach(path => {
+							const parts = path.split('/').filter(Boolean);
+							const gameCode = parts[parts.length - 1] || '';
+							const matchupRaw = parts[parts.length - 2] || 'matchup';
+							const matchup = matchupRaw.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
+
+							const fullUrl = path.startsWith('http') ? path : `https://basketball.realgm.com${path}`;
+							this.scraper.setGameUrl(`${compUpper}${year}_${gameCode}`, fullUrl);
+							this.scraper.setGameUrl(gameCode, fullUrl);
+							this.scraper.setGameUrl(`${matchup}-${compUpper}${year}_${gameCode}`, fullUrl);
+						});
+					}
+
+					console.log(`✅ [AsiaHarvester] Successfully harvested ${kblSlugs.length} KBL slugs from RealGM.`);
+					allSlugs.push(...kblSlugs);
+				} catch (error) {
+					await browser.close();
+					console.error(`❌ [AsiaHarvester] Failed to harvest KBL schedule from RealGM:`, error.message || error);
+				}
+
+				continue;
+			}
+
 			const endpoints = this.leagueEndpointsMap[comp] || [{ id: 159, slug: `china-cba` }];
 
 			for (const ep of endpoints) {

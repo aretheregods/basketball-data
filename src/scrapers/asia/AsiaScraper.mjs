@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { HTTPClient } from '#utils';
 import { AsiaHarvester } from './harvesters/AsiaHarvester.mjs';
-import { parseAsiaHtml, parseAsiaFibaJson } from './parsers/AsiaParser.mjs';
+import { parseAsiaHtml, parseAsiaFibaJson, parseAsiaRealGmHtml } from './parsers/AsiaParser.mjs';
 
 /**
  * @class AsiaScraper
@@ -97,7 +97,13 @@ export class AsiaScraper extends HTTPClient {
 		const { gameCode, seasonCode, competitionId } = this.parseGameId(gameId);
 		const compKey = competitionId.toUpperCase().replace('_', '');
 		const key = `${compKey}${seasonCode}_${gameCode}`;
-		return this.gameUrlMap.get(key) || this.gameUrlMap.get(gameId) || this.gameUrlMap.get(gameCode) || `https://www.proballers.com/basketball/game/${gameCode}/matchup`;
+		const mapped = this.gameUrlMap.get(key) || this.gameUrlMap.get(gameId) || this.gameUrlMap.get(gameCode);
+		if (mapped) return mapped;
+
+		if (competitionId === 'kbl') {
+			return `https://basketball.realgm.com/international/boxscore/game/${gameCode}`;
+		}
+		return `https://www.proballers.com/basketball/game/${gameCode}/matchup`;
 	}
 
 	/**
@@ -157,12 +163,15 @@ export class AsiaScraper extends HTTPClient {
 			// Cache miss or parsing issue
 		}
 
-		// 2. Try reading from HTML cache (Proballers HTML)
+		// 2. Try reading from HTML cache (Proballers or RealGM HTML)
 		try {
 			const stats = await fs.stat(htmlCachePath);
 			if (stats.size > 0) {
 				console.log(`⏭️ [AsiaScraper] HTML cache found for game ${gameCode}. Reading from disk...`);
 				const htmlContent = await fs.readFile(htmlCachePath, 'utf8');
+				if (competitionId === 'kbl' || htmlContent.includes('RealGM')) {
+					return parseAsiaRealGmHtml(htmlContent, gameId, yearPrefix);
+				}
 				return parseAsiaHtml(htmlContent, homeSlugExpected, awaySlugExpected, gameId, yearPrefix);
 			}
 		} catch (e) {
@@ -222,6 +231,9 @@ export class AsiaScraper extends HTTPClient {
 		}
 
 		try {
+			if (competitionId === 'kbl' || htmlContent.includes('RealGM')) {
+				return parseAsiaRealGmHtml(htmlContent, gameId, yearPrefix);
+			}
 			return parseAsiaHtml(htmlContent, homeSlugExpected, awaySlugExpected, gameId, yearPrefix);
 		} catch (error) {
 			console.error(`❌ [AsiaScraper] Error parsing game HTML ${gameId}:`, error.message || error);

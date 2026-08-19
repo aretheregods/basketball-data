@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { AsiaScraper } from '../src/scrapers/asia/AsiaScraper.mjs';
 import { AsiaHarvester } from '../src/scrapers/asia/harvesters/AsiaHarvester.mjs';
-import { parseAsiaHtml } from '../src/scrapers/asia/parsers/AsiaParser.mjs';
+import { parseAsiaHtml, parseAsiaRealGmHtml } from '../src/scrapers/asia/parsers/AsiaParser.mjs';
 import { extractStage } from '../src/stages/1-extract.mjs';
 import { transformStage } from '../src/stages/2-transform.mjs';
 import { loadStage, initDatabase } from '../src/stages/3-load.mjs';
@@ -22,11 +22,13 @@ test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
 	test.before(async () => {
 		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/SQL/ASIA_TEST.sqlite'), { force: true });
 	});
 
 	test.after(async () => {
 		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/SQL/ASIA_TEST.sqlite'), { force: true });
 	});
 
 	test('AsiaHarvester should auto-route bcl_asia queries prior to 2024 to FIBA Asia Champions Cup and vice versa', async () => {
@@ -242,6 +244,123 @@ test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
 		assert.ok(togashi);
 		assert.equal(togashi.statistics.pts, 22);
 		assert.equal(togashi.statistics.min, '32:15');
+	});
+
+	test('AsiaParser parseAsiaRealGmHtml should correctly parse RealGM KBL HTML boxscore tables', async () => {
+		const sampleRealGmHtml = `
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Oct 21, 2023 - Seoul SK 89 at Anyang Kwan Jang 74 - RealGM International Box Score</title>
+			</head>
+			<body>
+				<h2>Seoul SK Knights 89, Anyang Kwan Jang 74</h2>
+
+				<h3>Seoul SK Knights</h3>
+				<table>
+					<thead>
+						<tr><th>#</th><th>Player</th><th>Status</th><th>Pos</th><th>Min</th><th>FGM-A</th><th>3PM-A</th><th>FTM-A</th><th>FIC</th><th>Off</th><th>Def</th><th>Reb</th><th>Ast</th><th>PF</th><th>STL</th><th>TO</th><th>BLK</th><th>PTS</th></tr>
+					</thead>
+					<tbody>
+						<tr>
+							<td>5</td>
+							<td><a href="/player/Sun-Hyung-Kim/Summary/24928">Sun-Hyung Kim</a></td>
+							<td>Starter</td>
+							<td>SG</td>
+							<td>24:20</td>
+							<td>3-9</td>
+							<td>1-3</td>
+							<td>0-0</td>
+							<td>7.8</td>
+							<td>2</td>
+							<td>2</td>
+							<td>4</td>
+							<td>6</td>
+							<td>4</td>
+							<td>1</td>
+							<td>1</td>
+							<td>0</td>
+							<td>7</td>
+						</tr>
+						<tr>
+							<td>34</td>
+							<td><a href="/player/Jameel-Warney/Summary/28292">Jameel Warney</a></td>
+							<td>Starter</td>
+							<td>C</td>
+							<td>34:45</td>
+							<td>22-34</td>
+							<td>2-4</td>
+							<td>0-4</td>
+							<td>29.5</td>
+							<td>3</td>
+							<td>8</td>
+							<td>11</td>
+							<td>0</td>
+							<td>1</td>
+							<td>3</td>
+							<td>1</td>
+							<td>0</td>
+							<td>46</td>
+						</tr>
+					</tbody>
+				</table>
+
+				<h3>Anyang Kwan Jang</h3>
+				<table>
+					<thead>
+						<tr><th>#</th><th>Player</th><th>Status</th><th>Pos</th><th>Min</th><th>FGM-A</th><th>3PM-A</th><th>FTM-A</th><th>FIC</th><th>Off</th><th>Def</th><th>Reb</th><th>Ast</th><th>PF</th><th>STL</th><th>TO</th><th>BLK</th><th>PTS</th></tr>
+					</thead>
+					<tbody>
+						<tr>
+							<td>86</td>
+							<td><a href="/player/Darryl-Monroe/Summary/18595">Darryl Monroe</a></td>
+							<td>Starter</td>
+							<td>PF</td>
+							<td>25:05</td>
+							<td>9-14</td>
+							<td>1-2</td>
+							<td>2-2</td>
+							<td>17.5</td>
+							<td>1</td>
+							<td>5</td>
+							<td>6</td>
+							<td>2</td>
+							<td>0</td>
+							<td>1</td>
+							<td>0</td>
+							<td>0</td>
+							<td>21</td>
+						</tr>
+					</tbody>
+				</table>
+			</body>
+			</html>
+		`;
+
+		const boxscore = parseAsiaRealGmHtml(sampleRealGmHtml, 'seoul-sk-vs-anyang-KBL2024_446825', '2024');
+
+		assert.equal(boxscore.gameDate, '2023-10-21');
+		assert.equal(boxscore.awayTeam.teamName, 'Seoul SK');
+		assert.equal(boxscore.awayTeam.score, 89);
+		assert.equal(boxscore.homeTeam.teamName, 'Anyang Kwan Jang');
+		assert.equal(boxscore.homeTeam.score, 74);
+
+		const warney = boxscore.awayTeam.players.find(p => p.playerName === 'Jameel Warney');
+		assert.ok(warney);
+		assert.equal(warney.playerId, 'jameel-warney-28292');
+		assert.equal(warney.statistics.pts, 46);
+		assert.equal(warney.statistics.fgm, 22);
+		assert.equal(warney.statistics.fga, 34);
+		assert.equal(warney.statistics.fg3m, 2);
+		assert.equal(warney.statistics.fg3a, 4);
+		assert.equal(warney.statistics.ftm, 0);
+		assert.equal(warney.statistics.fta, 4);
+		assert.equal(warney.statistics.reb, 11);
+
+		const monroe = boxscore.homeTeam.players.find(p => p.playerName === 'Darryl Monroe');
+		assert.ok(monroe);
+		assert.equal(monroe.playerId, 'darryl-monroe-18595');
+		assert.equal(monroe.statistics.pts, 21);
 	});
 
 	test('AsiaParser and Stage 2 Transform should disambiguate anglicized player name collisions on the same team', async () => {
