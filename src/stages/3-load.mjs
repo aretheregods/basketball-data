@@ -39,11 +39,79 @@ export async function initDatabase(league = 'wnba') {
  * @returns {Promise<void>}
  * @throws {Error} - If database initialization or loading fails
  */
-export async function loadStage(league, year, cleanedGamesArray) {
-	console.log(`📥 Starting Stage 3 [LOAD] for ${league.toUpperCase()} - ${year}`);
+export async function loadStage(league, year, cleanedGamesArray, options = {}) {
+	const isPbp = options.boxscoreType === 'pbp' || options.type === 'pbp';
+	console.log(`📥 Starting Stage 3 [LOAD] for ${league.toUpperCase()} - ${year}${isPbp ? ' (PBP)' : ''}`);
 
 	let data = cleanedGamesArray;
 	let hasDirectData = false;
+
+	if (isPbp) {
+		if (data && (Array.isArray(data.events) || Array.isArray(data.stints))) {
+			if ((data.events && data.events.length > 0) || (data.stints && data.stints.length > 0)) {
+				hasDirectData = true;
+			}
+		}
+		if (!hasDirectData) {
+			const cachePath = path.resolve('data/transformed', league, 'pbp', String(year), 'transformed.json');
+			try {
+				console.log(`📂 No direct memory PBP data passed. Loading transformed PBP data from cache file: ${cachePath}`);
+				const cacheContent = await fs.readFile(cachePath, 'utf8');
+				data = JSON.parse(cacheContent);
+			} catch (error) {
+				console.error(`❌ Transformed PBP data cache file not found or failed to read at ${cachePath}.`);
+				throw new Error(`Failed to load PBP data for ${league.toUpperCase()} - ${year}. No direct data passed and fallback cache file not found or unreadable.`);
+			}
+		}
+
+		const events = (data && data.events) || [];
+		const stints = (data && data.stints) || [];
+
+		if (events.length === 0 && stints.length === 0) {
+			const msg = `❌ No PBP event or stint records to load for ${league.toUpperCase()} - ${year}.`;
+			console.error(msg);
+			throw new Error(msg);
+		}
+
+		console.log(`💾 Connecting to SQLite local staging database [data/SQL/${league.toUpperCase()}.sqlite]...`);
+		const db = await initDatabase(league);
+
+		try {
+			db.exec('BEGIN TRANSACTION');
+
+			if (events.length > 0) {
+				console.log(`📥 Inserting ${events.length} PBP event rows into 'game_play_by_play'...`);
+				const keys = Object.keys(events[0]);
+				const placeholders = keys.map(() => '?').join(', ');
+				const insertStmt = db.prepare(`INSERT OR REPLACE INTO game_play_by_play (${keys.join(', ')}) VALUES (${placeholders})`);
+				for (const event of events) {
+					const values = keys.map(k => event[k]);
+					insertStmt.run(...values);
+				}
+			}
+
+			if (stints.length > 0) {
+				console.log(`📥 Inserting ${stints.length} PBP stint rows into 'game_stints'...`);
+				const keys = Object.keys(stints[0]);
+				const placeholders = keys.map(() => '?').join(', ');
+				const insertStmt = db.prepare(`INSERT OR REPLACE INTO game_stints (${keys.join(', ')}) VALUES (${placeholders})`);
+				for (const stint of stints) {
+					const values = keys.map(k => stint[k]);
+					insertStmt.run(...values);
+				}
+			}
+
+			db.exec('COMMIT');
+			console.log(`✅ Stage 3 [LOAD] complete. Successfully saved PBP records to local staging database.`);
+		} catch (error) {
+			db.exec('ROLLBACK');
+			console.error(`❌ Database PBP TRANSACTION failure:`, error);
+			throw error;
+		} finally {
+			db.destroy();
+		}
+		return;
+	}
 
 	if (data && (Array.isArray(data.players) || Array.isArray(data.teams))) {
 		const playersCount = Array.isArray(data.players) ? data.players.length : 0;

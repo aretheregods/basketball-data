@@ -34,10 +34,67 @@ function mapResultSet(resultSet) {
  * @returns {Promise<{ players: Record<string, any>[], teams: Record<string, any>[] }>} - The transformed collections
  * @throws {Error} - If reading files or transformation fails
  */
-export async function transformStage(league, year) {
-	console.log(`⚙️ Starting Stage 2 [TRANSFORM] for ${league.toUpperCase()} - ${year}`);
+export async function transformStage(league, year, options = {}) {
+	const isPbp = options.boxscoreType === 'pbp' || options.type === 'pbp';
+	console.log(`⚙️ Starting Stage 2 [TRANSFORM] for ${league.toUpperCase()} - ${year}${isPbp ? ' (PBP)' : ''}`);
 
-	const rawDir = path.resolve('data/raw', league, String(year));
+	const rawDir = isPbp
+		? path.resolve('data/raw', league, 'pbp', String(year))
+		: path.resolve('data/raw', league, String(year));
+
+	if (isPbp) {
+		let files = [];
+		try {
+			files = await fs.readdir(rawDir);
+		} catch (error) {
+			console.warn(`⚠️ Raw PBP data directory does not exist or cannot be read: ${rawDir}`);
+			return { events: [], stints: [] };
+		}
+		const jsonFiles = files.filter(f => f.endsWith('.json'));
+		console.log(`📂 Found ${jsonFiles.length} raw PBP JSON files to transform.`);
+
+		const allEvents = [];
+		const allStints = [];
+
+		let transformFn;
+		if (league.toLowerCase().startsWith('wnba')) {
+			const { transformWnbaPbp } = await import('../scrapers/wnba/pbp/WnbaPbpTransformer.mjs');
+			transformFn = transformWnbaPbp;
+		} else {
+			throw new Error(`PBP transformation not implemented for league: ${league}`);
+		}
+
+		for (const fileName of jsonFiles) {
+			const filePath = path.join(rawDir, fileName);
+			try {
+				const content = await fs.readFile(filePath, 'utf8');
+				const rawData = JSON.parse(content);
+				if (!rawData) continue;
+				const gameId = fileName.replace('.json', '');
+				const result = transformFn(gameId, rawData);
+				if (result && Array.isArray(result.events)) {
+					allEvents.push(...result.events);
+				}
+				if (result && Array.isArray(result.stints)) {
+					allStints.push(...result.stints);
+				}
+			} catch (err) {
+				console.error(`❌ Failed to transform PBP file ${filePath}:`, err);
+				throw err;
+			}
+		}
+
+		const pbpResult = { events: allEvents, stints: allStints };
+		const cacheDir = path.resolve('data/transformed', league, 'pbp', String(year));
+		await fs.mkdir(cacheDir, { recursive: true });
+		const cachePath = path.join(cacheDir, 'transformed.json');
+		await fs.writeFile(cachePath, JSON.stringify(pbpResult, null, 2), 'utf8');
+
+		console.log(`💾 Transformed PBP output cached to ${cachePath}`);
+		console.log(`✅ Stage 2 [TRANSFORM] complete. Produced ${allEvents.length} event rows and ${allStints.length} stint rows.\n`);
+
+		return pbpResult;
+	}
 
 	if (league.toLowerCase().startsWith('europe')) {
 		const result = await transformEurope(rawDir, year);

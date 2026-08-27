@@ -18,11 +18,14 @@ import { validateSchema } from '#utils';
  * @returns {Promise<string[]>} - Array of scraped game IDs
  * @throws {Error} - If extraction or file operations fail
  */
-export async function extractStage(scraper, league, year) {
-	console.log(`📥 Starting Stage 1 [EXTRACT] for ${league.toUpperCase()} - ${year}`);
+export async function extractStage(scraper, league, year, options = {}) {
+	const isPbp = options.boxscoreType === 'pbp' || options.type === 'pbp';
+	console.log(`📥 Starting Stage 1 [EXTRACT] for ${league.toUpperCase()} - ${year}${isPbp ? ' (PBP)' : ''}`);
 
 	// Ensure output directory exists
-	const outputDir = path.resolve('data/raw', league, String(year));
+	const outputDir = isPbp
+		? path.resolve('data/raw', league, 'pbp', String(year))
+		: path.resolve('data/raw', league, String(year));
 	await fs.mkdir(outputDir, { recursive: true });
 
 	// 1. Fetch game slugs/keys for the given season
@@ -65,31 +68,48 @@ export async function extractStage(scraper, league, year) {
 			// File does not exist, proceed with extraction
 		}
 
-		const endpoint = scraper.getGameEndpoint(gameId);
-		const url = scraper.getGameUrl(gameId);
-
 		try {
-			console.log(`🛰️ Fetching raw boxscore for Game ID: ${gameId}...`);
-			const rawData = await scraper.request(url, {}, 3, 5000);
+			let rawData;
+			if (isPbp) {
+				console.log(`🛰️ Fetching raw PBP for Game ID: ${gameId}...`);
+				if (typeof scraper.fetchPbp === 'function') {
+					rawData = await scraper.fetchPbp(gameId, year);
+				} else {
+					const url = typeof scraper.getPbpUrl === 'function' ? scraper.getPbpUrl(gameId) : scraper.getGameUrl(gameId);
+					rawData = await scraper.request(url, {}, 3, 5000);
+				}
+				let schemaFolder = league.toLowerCase();
+				if (schemaFolder.startsWith('wnba')) {
+					schemaFolder = 'wnba';
+				} else if (schemaFolder.includes('_test')) {
+					schemaFolder = schemaFolder.split('_test')[0];
+				}
+				validateSchema(`${schemaFolder}/pbp.json`, rawData);
+			} else {
+				const endpoint = scraper.getGameEndpoint(gameId);
+				const url = scraper.getGameUrl(gameId);
+				console.log(`🛰️ Fetching raw boxscore for Game ID: ${gameId}...`);
+				rawData = await scraper.request(url, {}, 3, 5000);
 
-			// Validate response against schema
-			let schemaFolder = league;
-			if (league.toLowerCase().startsWith('europe')) {
-				schemaFolder = 'europe';
-			} else if (league.toLowerCase().startsWith('mexico')) {
-				schemaFolder = 'mexico';
-			} else if (league.toLowerCase().startsWith('canada')) {
-				schemaFolder = 'canada';
-			} else if (league.toLowerCase().startsWith('puertorico')) {
-				schemaFolder = 'puertorico';
-			} else if (league.toLowerCase().startsWith('southamerica')) {
-				schemaFolder = 'southamerica';
-			} else if (league.toLowerCase().startsWith('nbl')) {
-				schemaFolder = 'nbl';
-			} else if (league.toLowerCase().startsWith('asia')) {
-				schemaFolder = 'asia';
+				// Validate response against schema
+				let schemaFolder = league;
+				if (league.toLowerCase().startsWith('europe')) {
+					schemaFolder = 'europe';
+				} else if (league.toLowerCase().startsWith('mexico')) {
+					schemaFolder = 'mexico';
+				} else if (league.toLowerCase().startsWith('canada')) {
+					schemaFolder = 'canada';
+				} else if (league.toLowerCase().startsWith('puertorico')) {
+					schemaFolder = 'puertorico';
+				} else if (league.toLowerCase().startsWith('southamerica')) {
+					schemaFolder = 'southamerica';
+				} else if (league.toLowerCase().startsWith('nbl')) {
+					schemaFolder = 'nbl';
+				} else if (league.toLowerCase().startsWith('asia')) {
+					schemaFolder = 'asia';
+				}
+				validateSchema(`${schemaFolder}/boxscore.json`, rawData);
 			}
-			validateSchema(`${schemaFolder}/boxscore.json`, rawData);
 
 			await fs.writeFile(filePath, JSON.stringify(rawData, null, 2), 'utf8');
 			console.log(`💾 Saved raw data to ${filePath}`);

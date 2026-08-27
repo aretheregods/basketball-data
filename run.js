@@ -207,14 +207,14 @@ async function main() {
 		}
 
 		for (const year of targetYears) {
-			console.log(`\n=== Processing [ ${lowerLeague.toUpperCase()} - ${year} ] ===`);
+			console.log(`\n=== Processing [ ${lowerLeague.toUpperCase()} - ${year} (${boxscoreType}) ] ===`);
 
 			// ------------------------------------------------------------
 			// STAGE 1: EXTRACT (Network Request -> Raw Local Disk JSON)
 			// ------------------------------------------------------------
 			if (activeSteps.includes('extract')) {
 				try {
-					await extractStage(scraper, lowerLeague, year);
+					await extractStage(scraper, lowerLeague, year, { boxscoreType });
 				} catch (err) {
 					console.error(`❌ Stage 1 [EXTRACT] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
 					if (activeSteps.length === 1) throw err; // rethrow if executing only this step
@@ -227,7 +227,7 @@ async function main() {
 			let cleanedGamesArray = { players: [], teams: [] };
 			if (activeSteps.includes('transform')) {
 				try {
-					cleanedGamesArray = await transformStage(lowerLeague, year);
+					cleanedGamesArray = await transformStage(lowerLeague, year, { boxscoreType });
 				} catch (err) {
 					console.error(`❌ Stage 2 [TRANSFORM] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
 					if (activeSteps.length === 1) throw err;
@@ -239,7 +239,7 @@ async function main() {
 			// ------------------------------------------------------------
 			if (activeSteps.includes('load')) {
 				try {
-					await loadStage(lowerLeague, year, cleanedGamesArray);
+					await loadStage(lowerLeague, year, cleanedGamesArray, { boxscoreType });
 				} catch (err) {
 					console.error(`❌ Stage 3 [LOAD] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
 					if (activeSteps.length === 1) throw err;
