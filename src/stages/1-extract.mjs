@@ -57,15 +57,19 @@ export async function extractStage(scraper, league, year, options = {}) {
 	for (const gameId of gameIds) {
 		const filePath = path.join(outputDir, `${gameId}.json`);
 
-		// Cache check: skip if the file already exists and is non-empty
+		// Cache check: skip if the file already exists, is non-empty, and contains valid non-empty data
 		try {
 			const stats = await fs.stat(filePath);
 			if (stats.size > 0) {
-				console.log(`⏭️ Game ID: ${gameId} already exists in raw cache. Skipping...`);
-				continue;
+				const content = await fs.readFile(filePath, 'utf8');
+				const parsed = JSON.parse(content);
+				if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+					console.log(`⏭️ Game ID: ${gameId} already exists in raw cache. Skipping...`);
+					continue;
+				}
 			}
 		} catch (e) {
-			// File does not exist, proceed with extraction
+			// File does not exist or is invalid, proceed with extraction
 		}
 
 		try {

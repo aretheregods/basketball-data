@@ -32,7 +32,10 @@ export class WnbaPbpHarvester extends HTTPClient {
 		try {
 			const cached = await fs.readFile(cachePath, 'utf-8');
 			if (cached && cached.trim().length > 0) {
-				return JSON.parse(cached);
+				const parsed = JSON.parse(cached);
+				if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+					return parsed;
+				}
 			}
 		} catch (e) {
 			// Cache miss, proceed to network fetch
