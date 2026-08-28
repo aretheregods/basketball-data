@@ -66,11 +66,11 @@ const LEAGUE_SCRAPERS = {
  * @returns {void}
  */
 function runCliAudit() {
-	console.log(`\n==================================================================================`);
-	console.log(`                     🏀 LIKELYHIGH ETL LOCAL HEALTH REPORT`);
-	console.log(`==================================================================================`);
-	console.log(String().padEnd(16) + ' | ' + 'Season'.padEnd(6) + ' | ' + 'Games'.padStart(6) + ' | ' + 'Mismatches'.padStart(10) + ' | ' + 'Missing'.padStart(8) + ' | ' + 'Low-Min'.padStart(8) + ' | ' + 'Pending'.padStart(8));
-	console.log(`----------------------------------------------------------------------------------`);
+	console.log(`\n====================================================================================================`);
+	console.log(`                             🏀 LIKELYHIGH ETL LOCAL HEALTH REPORT`);
+	console.log(`====================================================================================================`);
+	console.log(String().padEnd(16) + ' | ' + 'Season'.padEnd(6) + ' | ' + 'Games'.padStart(6) + ' | ' + 'PBP Coverage'.padStart(12) + ' | ' + 'Mismatches'.padStart(10) + ' | ' + 'Missing'.padStart(8) + ' | ' + 'Low-Min'.padStart(8) + ' | ' + 'Pending'.padStart(8));
+	console.log(`----------------------------------------------------------------------------------------------------`);
 
 	const dbDir = path.resolve('data/SQL');
 	let totalGamesCount = 0;
@@ -94,10 +94,15 @@ function runCliAudit() {
 					const lowMin = sData.lowMinAnomalies.length;
 					const pending = sData.syncStatus.unsyncedGames;
 
+					const pbpCoverage = (sData.pbpStats && sData.pbpStats.pbpCoveragePct !== undefined)
+						? `${sData.pbpStats.pbpCoveragePct}% (${sData.pbpStats.pbpGamesCount})`
+						: '0%';
+
 					console.log(
 						league.toUpperCase().padEnd(16) + ' | ' +
 						season.padEnd(6) + ' | ' +
 						String(sData.gamesCount).padStart(6) + ' | ' +
+						pbpCoverage.padStart(12) + ' | ' +
 						String(mismatches).padStart(10) + ' | ' +
 						String(missing).padStart(8) + ' | ' +
 						String(lowMin).padStart(8) + ' | ' +
