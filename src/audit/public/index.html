@@ -600,7 +600,8 @@
             const unmappedTeams = data.unmappedEntities?.teams || [];
             const unmappedPlayers = data.unmappedEntities?.players || [];
 
-            document.getElementById('stat-unmapped').textContent = unmappedTeams.length + unmappedPlayers.length;
+            const statUnmappedEl = document.getElementById('stat-unmapped');
+            if (statUnmappedEl) statUnmappedEl.textContent = unmappedTeams.length + unmappedPlayers.length;
             document.getElementById('unmapped-teams-count').textContent = unmappedTeams.length;
             document.getElementById('unmapped-players-count').textContent = unmappedPlayers.length;
 
