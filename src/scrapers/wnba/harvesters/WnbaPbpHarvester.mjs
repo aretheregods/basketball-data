@@ -51,7 +51,10 @@ export class WnbaPbpHarvester extends HTTPClient {
 				}
 			});
 			if (res.ok) {
-				payload = await res.json();
+				const json = await res.json();
+				if (json && typeof json === 'object' && Object.keys(json).length > 0) {
+					payload = json;
+				}
 			}
 		} catch (err) {
 			console.warn(`[WnbaPbp] CDN failed for ${gameId}: ${err.message}. Retrying stats endpoint...`);
@@ -68,13 +71,44 @@ export class WnbaPbpHarvester extends HTTPClient {
 					}
 				});
 				if (res.ok) {
-					payload = await res.json();
-				} else {
-					throw new Error(`HTTP ${res.status} ${res.statusText}`);
+					const json = await res.json();
+					if (json && typeof json === 'object' && Object.keys(json).length > 0) {
+						payload = json;
+					}
 				}
 			} catch (err) {
-				throw new Error(`HTTP Error on both CDN and Stats API for ${gameId}: ${err.message}`);
+				// Fall through to HTML webpage extraction
 			}
+		}
+
+		// Webpage fallback: fetch game page HTML and parse __NEXT_DATA__
+		if (!payload) {
+			const gameUrl = `https://www.wnba.com/game/${normalizedGameId}`;
+			try {
+				const res = await fetch(gameUrl, {
+					headers: {
+						'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+						'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+					}
+				});
+				if (res.ok) {
+					const html = await res.text();
+					const match = html.match(/<script id=\"__NEXT_DATA__\" type=\"application\/json\">(.*?)<\/script>/s);
+					if (match) {
+						const nextData = JSON.parse(match[1]);
+						const pbpData = nextData?.props?.pageProps?.playByPlay;
+						if (pbpData) {
+							payload = pbpData;
+						}
+					}
+				}
+			} catch (err) {
+				console.warn(`[WnbaPbp] Webpage extraction failed for ${gameId}: ${err.message}`);
+			}
+		}
+
+		if (!payload) {
+			throw new Error(`HTTP Error on CDN, Stats API, and Webpage fallback for ${gameId}`);
 		}
 
 		return payload;

@@ -99,7 +99,40 @@ function parseRawAction(gameId, action, index, headerMap = null) {
 			clock = String(rawClock);
 		}
 
-		eventType = action.actionType ?? action.eventMsgType ?? action.eventType ?? action.type ?? action.event_type;
+		let rawEvtType = action.actionType ?? action.eventMsgType ?? action.eventType ?? action.type ?? action.event_type;
+
+		// Handle string actionType values (e.g. 'period', 'jump ball', 'substitution', 'shot', 'foul', 'rebound', 'turnover', 'freethrow')
+		if (typeof rawEvtType === 'string') {
+			const lowerType = rawEvtType.toLowerCase().trim();
+			if (lowerType === 'made shot' || lowerType === '2pt' || lowerType === '3pt' || lowerType === 'shot' || lowerType === 'field goal') {
+				eventType = (action.shotResult === 'missed' || action.isFieldGoal === 0) ? 2 : 1;
+			} else if (lowerType === 'missed shot') {
+				eventType = 2;
+			} else if (lowerType.includes('free throw') || lowerType === 'freethrow' || lowerType === 'ft') {
+				eventType = 3;
+			} else if (lowerType.includes('rebound')) {
+				eventType = 4;
+			} else if (lowerType.includes('turnover')) {
+				eventType = 5;
+			} else if (lowerType.includes('foul')) {
+				eventType = 6;
+			} else if (lowerType.includes('violation')) {
+				eventType = 7;
+			} else if (lowerType.includes('sub') || lowerType.includes('substitution')) {
+				eventType = 8;
+			} else if (lowerType.includes('timeout')) {
+				eventType = 9;
+			} else if (lowerType.includes('jump ball')) {
+				eventType = 10;
+			} else if (lowerType === 'period' || lowerType.includes('period start') || lowerType.includes('quarter start')) {
+				eventType = (action.subType === 'end' || action.description?.toLowerCase().includes('end')) ? 13 : 12;
+			} else {
+				eventType = 0;
+			}
+		} else {
+			eventType = rawEvtType;
+		}
+
 		subType = action.subType ?? action.actionSubtype ?? action.eventMsgActionType ?? action.sub_type ?? null;
 
 		const rawTeamId = action.teamId ?? action.team_id ?? action.player1TeamId ?? action.player1_team_id;
