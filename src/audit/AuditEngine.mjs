@@ -70,7 +70,10 @@ export class AuditEngine {
 				totalUnsyncedStats: 0,
 				totalOutliers: 0,
 				totalLowMinAnomalies: 0,
-				totalUnplayedGames: 0
+				totalUnplayedGames: 0,
+				totalPbpGames: 0,
+				totalPbpEvents: 0,
+				totalPbpStints: 0
 			};
 
 			for (const season of seasons) {
@@ -81,6 +84,7 @@ export class AuditEngine {
 				const outliers = this.getOutliers(season);
 				const syncStatus = this.getSyncStatus(season);
 				const unplayedGames = this.getUnplayedGamesFromRaw(leagueKey, season);
+				const pbpStats = this.getPbpStats(season, gamesCount);
 
 				report.seasons[season] = {
 					gamesCount,
@@ -89,7 +93,8 @@ export class AuditEngine {
 					lowMinAnomalies,
 					outliers,
 					syncStatus,
-					unplayedGames
+					unplayedGames,
+					pbpStats
 				};
 
 				report.totalGames += gamesCount;
@@ -100,12 +105,68 @@ export class AuditEngine {
 				report.totalUnsyncedGames += syncStatus.unsyncedGames;
 				report.totalUnsyncedStats += syncStatus.unsyncedStats;
 				report.totalUnplayedGames += unplayedGames.length;
+				report.totalPbpGames += pbpStats.pbpGamesCount;
+				report.totalPbpEvents += pbpStats.pbpEventsCount;
+				report.totalPbpStints += pbpStats.pbpStintsCount;
 			}
 
 			return report;
 		} finally {
 			this.close();
 		}
+	}
+
+	/**
+	 * @description Computes PBP statistics (events, stints, coverage %) for a season.
+	 * @param {string} season - The season year
+	 * @param {number} totalGames - Total games in season
+	 * @returns {Object} PBP stats
+	 */
+	getPbpStats(season, totalGames = 0) {
+		const res = { pbpGamesCount: 0, pbpCoveragePct: 0, pbpEventsCount: 0, pbpStintsCount: 0 };
+		try {
+			// Check if game_play_by_play table exists
+			const tableCheck = this.db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='game_play_by_play'`).get();
+			if (!tableCheck) return res;
+
+			const pbpGamesStmt = this.db.prepare(`
+				SELECT COUNT(DISTINCT p.game_id) as cnt
+				FROM game_play_by_play p
+				JOIN team_game_stats t ON p.game_id = t.game_id
+				WHERE t.season = ?
+			`);
+			const pbpGamesRow = pbpGamesStmt.get(season);
+			res.pbpGamesCount = pbpGamesRow ? pbpGamesRow.cnt : 0;
+
+			const pbpEventsStmt = this.db.prepare(`
+				SELECT COUNT(*) as cnt
+				FROM game_play_by_play p
+				JOIN team_game_stats t ON p.game_id = t.game_id
+				WHERE t.season = ?
+			`);
+			const pbpEventsRow = pbpEventsStmt.get(season);
+			res.pbpEventsCount = pbpEventsRow ? pbpEventsRow.cnt : 0;
+
+			// Check if game_stints table exists
+			const stintsTableCheck = this.db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='game_stints'`).get();
+			if (stintsTableCheck) {
+				const pbpStintsStmt = this.db.prepare(`
+					SELECT COUNT(*) as cnt
+					FROM game_stints s
+					JOIN team_game_stats t ON s.game_id = t.game_id
+					WHERE t.season = ?
+				`);
+				const pbpStintsRow = pbpStintsStmt.get(season);
+				res.pbpStintsCount = pbpStintsRow ? pbpStintsRow.cnt : 0;
+			}
+
+			if (totalGames > 0) {
+				res.pbpCoveragePct = Number(((res.pbpGamesCount / totalGames) * 100).toFixed(1));
+			}
+		} catch (e) {
+			// Fail-safe
+		}
+		return res;
 	}
 
 	/**

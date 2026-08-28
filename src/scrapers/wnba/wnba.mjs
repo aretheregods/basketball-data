@@ -1,6 +1,7 @@
 import { HTTPClient, validateSchema } from "#utils";
 import fs from "fs/promises";
 import path from "path";
+import { WnbaPbpHarvester } from "./harvesters/WnbaPbpHarvester.mjs";
 
 /**
  * @description Row mapping of a result set object from the API
@@ -50,8 +51,19 @@ export class WNBAScraper extends HTTPClient {
 		);
 		/** @type {string[]} */
 		this.gameSlugs = [];
-		/** @type {'traditional' | 'advanced'} */
+		/** @type {'traditional' | 'advanced' | 'pbp'} */
 		this.boxscoreType = options.boxscoreType || 'traditional';
+		this.pbpHarvester = new WnbaPbpHarvester(options);
+	}
+
+	/**
+	 * @description Fetches WNBA play-by-play data using WnbaPbpHarvester
+	 * @param {string} gameId
+	 * @param {string|number} year
+	 * @returns {Promise<Object>}
+	 */
+	async fetchPbp(gameId, year) {
+		return this.pbpHarvester.fetchWnbaPbp(gameId, year);
 	}
 
 	/**

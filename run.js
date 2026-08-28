@@ -66,11 +66,11 @@ const LEAGUE_SCRAPERS = {
  * @returns {void}
  */
 function runCliAudit() {
-	console.log(`\n==================================================================================`);
-	console.log(`                     🏀 LIKELYHIGH ETL LOCAL HEALTH REPORT`);
-	console.log(`==================================================================================`);
-	console.log(String().padEnd(16) + ' | ' + 'Season'.padEnd(6) + ' | ' + 'Games'.padStart(6) + ' | ' + 'Mismatches'.padStart(10) + ' | ' + 'Missing'.padStart(8) + ' | ' + 'Low-Min'.padStart(8) + ' | ' + 'Pending'.padStart(8));
-	console.log(`----------------------------------------------------------------------------------`);
+	console.log(`\n====================================================================================================`);
+	console.log(`                             🏀 LIKELYHIGH ETL LOCAL HEALTH REPORT`);
+	console.log(`====================================================================================================`);
+	console.log(String().padEnd(16) + ' | ' + 'Season'.padEnd(6) + ' | ' + 'Games'.padStart(6) + ' | ' + 'PBP Coverage'.padStart(12) + ' | ' + 'Mismatches'.padStart(10) + ' | ' + 'Missing'.padStart(8) + ' | ' + 'Low-Min'.padStart(8) + ' | ' + 'Pending'.padStart(8));
+	console.log(`----------------------------------------------------------------------------------------------------`);
 
 	const dbDir = path.resolve('data/SQL');
 	let totalGamesCount = 0;
@@ -94,10 +94,15 @@ function runCliAudit() {
 					const lowMin = sData.lowMinAnomalies.length;
 					const pending = sData.syncStatus.unsyncedGames;
 
+					const pbpCoverage = (sData.pbpStats && sData.pbpStats.pbpCoveragePct !== undefined)
+						? `${sData.pbpStats.pbpCoveragePct}% (${sData.pbpStats.pbpGamesCount})`
+						: '0%';
+
 					console.log(
 						league.toUpperCase().padEnd(16) + ' | ' +
 						season.padEnd(6) + ' | ' +
 						String(sData.gamesCount).padStart(6) + ' | ' +
+						pbpCoverage.padStart(12) + ' | ' +
 						String(mismatches).padStart(10) + ' | ' +
 						String(missing).padStart(8) + ' | ' +
 						String(lowMin).padStart(8) + ' | ' +
@@ -207,14 +212,14 @@ async function main() {
 		}
 
 		for (const year of targetYears) {
-			console.log(`\n=== Processing [ ${lowerLeague.toUpperCase()} - ${year} ] ===`);
+			console.log(`\n=== Processing [ ${lowerLeague.toUpperCase()} - ${year} (${boxscoreType}) ] ===`);
 
 			// ------------------------------------------------------------
 			// STAGE 1: EXTRACT (Network Request -> Raw Local Disk JSON)
 			// ------------------------------------------------------------
 			if (activeSteps.includes('extract')) {
 				try {
-					await extractStage(scraper, lowerLeague, year);
+					await extractStage(scraper, lowerLeague, year, { boxscoreType });
 				} catch (err) {
 					console.error(`❌ Stage 1 [EXTRACT] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
 					if (activeSteps.length === 1) throw err; // rethrow if executing only this step
@@ -227,7 +232,7 @@ async function main() {
 			let cleanedGamesArray = { players: [], teams: [] };
 			if (activeSteps.includes('transform')) {
 				try {
-					cleanedGamesArray = await transformStage(lowerLeague, year);
+					cleanedGamesArray = await transformStage(lowerLeague, year, { boxscoreType });
 				} catch (err) {
 					console.error(`❌ Stage 2 [TRANSFORM] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
 					if (activeSteps.length === 1) throw err;
@@ -239,7 +244,7 @@ async function main() {
 			// ------------------------------------------------------------
 			if (activeSteps.includes('load')) {
 				try {
-					await loadStage(lowerLeague, year, cleanedGamesArray);
+					await loadStage(lowerLeague, year, cleanedGamesArray, { boxscoreType });
 				} catch (err) {
 					console.error(`❌ Stage 3 [LOAD] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
 					if (activeSteps.length === 1) throw err;

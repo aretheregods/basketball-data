@@ -47,14 +47,14 @@
                 <div class="stat-desc">Across all seasons</div>
             </div>
             <div class="stat-card">
+                <p class="stat-label">PBP Events / Coverage</p>
+                <p id="stat-pbp-events" class="stat-value text-indigo">0</p>
+                <div id="stat-pbp-desc" class="stat-desc">Play-by-play actions logged</div>
+            </div>
+            <div class="stat-card">
                 <p class="stat-label">Integrity / Math Mismatches</p>
                 <p id="stat-mismatches" class="stat-value stat-value-rose">0</p>
                 <div class="stat-desc">Sum of player pts != final score</div>
-            </div>
-            <div class="stat-card">
-                <p class="stat-label">Unmapped Entities</p>
-                <p id="stat-unmapped" class="stat-value stat-value-amber">0</p>
-                <div class="stat-desc">Awaiting alias resolution</div>
             </div>
         </div>
 
@@ -484,10 +484,15 @@
                 return;
             }
 
+            let totalPbpEvents = 0;
+            let totalPbpGames = 0;
+
             for (const [name, audit] of Object.entries(databases)) {
                 totalDbs++;
                 totalGames += audit.totalGames || 0;
                 totalMismatches += audit.totalScoreMismatches || 0;
+                totalPbpEvents += audit.totalPbpEvents || 0;
+                totalPbpGames += audit.totalPbpGames || 0;
 
                 // Determine database-wide status class
                 let statusClass = 'status-healthy';
@@ -520,18 +525,24 @@
                         sBadge = '🟡';
                     }
 
+                    const pbpCov = sData.pbpStats ? `${sData.pbpStats.pbpCoveragePct}% PBP` : '0% PBP';
+
                     seasonsHtml += `
                         <div class="season-item">
                             <span class="season-name">
                                 <span>${sBadge}</span> Season ${season}
                             </span>
-                            <span class="season-games">${sData.gamesCount} games</span>
+                            <span class="season-games">${sData.gamesCount} games (${pbpCov})</span>
                             <button onclick="showDrilldown('${name}', '${season}')" class="btn-inspect">
                                 Inspect
                             </button>
                         </div>
                     `;
                 }
+
+                const dbPbpCov = (audit.totalGames > 0 && audit.totalPbpGames > 0)
+                    ? `${((audit.totalPbpGames / audit.totalGames) * 100).toFixed(1)}% (${audit.totalPbpGames}/${audit.totalGames})`
+                    : 'N/A';
 
                 const cardHtml = `
                     <div class="db-card">
@@ -554,9 +565,9 @@
                                     </div>
                                 </div>
                                 <div class="db-stat-box">
-                                    <div class="db-stat-label">Pending Sync</div>
-                                    <div class="db-stat-num ${audit.totalUnsyncedGames > 0 ? 'text-amber' : ''}">
-                                        ${audit.totalUnsyncedGames}
+                                    <div class="db-stat-label">PBP Coverage</div>
+                                    <div class="db-stat-num text-indigo" style="font-size: 13px;">
+                                        ${dbPbpCov}
                                     </div>
                                 </div>
                             </div>
@@ -581,12 +592,16 @@
             document.getElementById('stat-dbs').textContent = totalDbs;
             document.getElementById('stat-games').textContent = totalGames;
             document.getElementById('stat-mismatches').textContent = totalMismatches;
+            document.getElementById('stat-pbp-events').textContent = totalPbpEvents.toLocaleString();
+            const overallPbpPct = totalGames > 0 ? ((totalPbpGames / totalGames) * 100).toFixed(1) : 0;
+            document.getElementById('stat-pbp-desc').textContent = `${totalPbpGames} PBP games (${overallPbpPct}% coverage)`;
 
             // Render Unmapped Entities panel on the right
             const unmappedTeams = data.unmappedEntities?.teams || [];
             const unmappedPlayers = data.unmappedEntities?.players || [];
 
-            document.getElementById('stat-unmapped').textContent = unmappedTeams.length + unmappedPlayers.length;
+            const statUnmappedEl = document.getElementById('stat-unmapped');
+            if (statUnmappedEl) statUnmappedEl.textContent = unmappedTeams.length + unmappedPlayers.length;
             document.getElementById('unmapped-teams-count').textContent = unmappedTeams.length;
             document.getElementById('unmapped-players-count').textContent = unmappedPlayers.length;
 
@@ -622,6 +637,10 @@
             let html = '';
 
             const renderSeasonDetail = (season, data) => {
+                const pbpCov = data.pbpStats ? `${data.pbpStats.pbpCoveragePct}% (${data.pbpStats.pbpGamesCount}/${data.gamesCount})` : '0%';
+                const pbpEvts = data.pbpStats ? data.pbpStats.pbpEventsCount.toLocaleString() : '0';
+                const pbpStints = data.pbpStats ? data.pbpStats.pbpStintsCount.toLocaleString() : '0';
+
                 let seasonHtml = `
                     <div class="modal-season-card">
                         <div class="modal-season-header">
@@ -643,15 +662,15 @@
                                 <div class="stat-box-val ${data.missingBoxscores.length > 0 ? 'text-rose' : ''}">${data.missingBoxscores.length}</div>
                             </div>
                             <div class="modal-stat-box">
-                                <div class="stat-box-label">Low Minute Alerts</div>
-                                <div class="stat-box-val ${data.lowMinAnomalies.length > 0 ? 'text-amber' : ''}">${data.lowMinAnomalies.length}</div>
+                                <div class="stat-box-label">PBP Coverage</div>
+                                <div class="stat-box-val text-indigo" style="font-size: 1rem;">${pbpCov}</div>
                             </div>
                             <div class="modal-stat-box">
-                                <div class="stat-box-label">Unplayed Games</div>
-                                <div class="stat-box-val ${data.unplayedGames && data.unplayedGames.length > 0 ? 'text-amber' : ''}">${data.unplayedGames ? data.unplayedGames.length : 0}</div>
+                                <div class="stat-box-label">PBP Events / Stints</div>
+                                <div class="stat-box-val text-indigo" style="font-size: 1rem;">${pbpEvts} / ${pbpStints}</div>
                             </div>
                             <div class="modal-stat-box">
-                                <div class="stat-box-label">Sync Backlog (Games)</div>
+                                <div class="stat-box-label">Sync Backlog</div>
                                 <div class="stat-box-val ${data.syncStatus.unsyncedGames > 0 ? 'text-amber' : ''}">${data.syncStatus.unsyncedGames}</div>
                             </div>
                         </div>
