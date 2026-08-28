@@ -21,13 +21,14 @@ export class WnbaPbpHarvester extends HTTPClient {
 	 * @returns {Promise<Object>} - Raw PBP JSON payload
 	 */
 	async fetchWnbaPbp(gameId, year) {
-		// Normalize 10-digit game IDs starting with '10' (from mobile schedule format '1042100313') to '00' (standard Stats API format '0042100313')
-		let normalizedGameId = String(gameId).trim();
-		if (normalizedGameId.startsWith('10') && normalizedGameId.length === 10) {
-			normalizedGameId = '00' + normalizedGameId.substring(2);
-		}
+		const cleanGameId = String(gameId).trim();
 
-		const cachePath = path.resolve(`data/raw/wnba/pbp/${year}/${gameId}.json`);
+		// Primary WNBA CDN ID uses native 10-prefixed ID (e.g. 1022400001). Stats API uses 00-prefixed ID (0022400001).
+		const statsApiGameId = (cleanGameId.startsWith('10') && cleanGameId.length === 10)
+			? '00' + cleanGameId.substring(2)
+			: cleanGameId;
+
+		const cachePath = path.resolve(`data/raw/wnba/pbp/${year}/${cleanGameId}.json`);
 
 		try {
 			const cached = await fs.readFile(cachePath, 'utf-8');
@@ -41,8 +42,8 @@ export class WnbaPbpHarvester extends HTTPClient {
 			// Cache miss, proceed to network fetch
 		}
 
-		const cdnUrl = `https://cdn.wnba.com/static/json/liveData/playbyplay/playbyplay_${normalizedGameId}.json`;
-		const statsUrl = `https://stats.wnba.com/stats/playbyplayv2?GameID=${normalizedGameId}&StartPeriod=0&EndPeriod=14`;
+		const cdnUrl = `https://cdn.wnba.com/static/json/liveData/playbyplay/playbyplay_${cleanGameId}.json`;
+		const statsUrl = `https://stats.wnba.com/stats/playbyplayv2?GameID=${statsApiGameId}&StartPeriod=0&EndPeriod=14`;
 
 		let payload = null;
 
@@ -86,7 +87,7 @@ export class WnbaPbpHarvester extends HTTPClient {
 
 		// Webpage fallback: fetch game page HTML and parse __NEXT_DATA__
 		if (!payload) {
-			const gameUrl = `https://www.wnba.com/game/${normalizedGameId}`;
+			const gameUrl = `https://www.wnba.com/game/${cleanGameId}`;
 			try {
 				const res = await fetch(gameUrl, {
 					headers: {
