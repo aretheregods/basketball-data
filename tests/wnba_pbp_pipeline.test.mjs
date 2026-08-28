@@ -129,6 +129,23 @@ test.describe('WNBA Play-by-Play Unit Tests', () => {
 		assert.equal(result.stints.length, 1);
 		assert.equal(result.stints[0].home_pts, 2);
 	});
+
+	test('fetchWnbaPbp should normalize 10-prefixed legacy game IDs to standard 00-prefixed format', async () => {
+		let fetchedCdnUrl = null;
+		globalThis.fetch = async (url) => {
+			fetchedCdnUrl = url;
+			return {
+				ok: true,
+				status: 200,
+				json: async () => mockCdnPbpResponse
+			};
+		};
+
+		const harvester = new (await import('../src/scrapers/wnba/harvesters/WnbaPbpHarvester.mjs')).WnbaPbpHarvester();
+		await harvester.fetchWnbaPbp('1042100313', '2021');
+
+		assert.equal(fetchedCdnUrl, 'https://cdn.wnba.com/static/json/liveData/playbyplay/playbyplay_0042100313.json');
+	});
 });
 
 test.describe('WNBA PBP Pipeline Integration Tests', () => {

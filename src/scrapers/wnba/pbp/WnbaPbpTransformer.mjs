@@ -69,9 +69,6 @@ function parseRawAction(gameId, action, index, headerMap = null) {
 		const scoreStr = action[headerMap['SCORE']];
 		if (scoreStr && scoreStr.includes('-')) {
 			const parts = scoreStr.split('-').map(s => parseInt(s.trim(), 10));
-			// Stats API SCORE format is "VISITOR - HOME" or "HOME - VISITOR" (typically AWAY - HOME or HOME - AWAY)
-			// Standard Stats API boxscores format SCORE column as "VISITOR - HOME" (e.g. 2 - 0 = Away 2, Home 0 or Home 2, Away 0)
-			// In standard WNBA Stats API: 1st number = Visitor (Away), 2nd number = Home
 			awayScore = parts[0] || 0;
 			homeScore = parts[1] || 0;
 		} else {
@@ -96,7 +93,7 @@ function parseRawAction(gameId, action, index, headerMap = null) {
 			clock = String(rawClock);
 		}
 
-		eventType = action.actionType ?? action.eventMsgType ?? 0;
+		eventType = action.actionType ?? action.eventMsgType;
 		subType = action.subType ?? action.actionSubtype ?? null;
 		teamId = action.teamId ? String(action.teamId) : null;
 		playerId = action.personId ? String(action.personId) : (action.playerId ? String(action.playerId) : null);
@@ -114,25 +111,34 @@ function parseRawAction(gameId, action, index, headerMap = null) {
 		isScoringPlay = (action.isFieldGoal === 1 || action.shotResult === 'made' || eventType === 1 || (eventType === 3 && action.shotResult === 'made')) ? 1 : 0;
 	}
 
-	const secsRemaining = parseClockToSeconds(clock, period);
+	const parsedEventType = Number(eventType);
+	const safeEventType = (!isNaN(parsedEventType) && eventType !== null && eventType !== undefined) ? parsedEventType : 0;
+
+	const parsedPeriod = Number(period);
+	const safePeriod = (!isNaN(parsedPeriod) && period !== null && period !== undefined) ? parsedPeriod : 1;
+
+	const parsedSubType = Number(subType);
+	const safeSubType = (!isNaN(parsedSubType) && subType !== null && subType !== undefined) ? parsedSubType : null;
+
+	const secsRemaining = parseClockToSeconds(clock, safePeriod);
 
 	return {
-		event_id: `${gameId}_${actionNumber}_${index}`,
+		event_id: `${gameId}_${actionNumber ?? (index + 1)}_${index}`,
 		game_id: String(gameId),
-		period: Number(period),
-		clock: String(clock),
-		seconds_remaining: secsRemaining,
-		event_type: Number(eventType),
-		sub_type: subType !== null ? Number(subType) : null,
+		period: safePeriod,
+		clock: String(clock || "00:00"),
+		seconds_remaining: isNaN(secsRemaining) ? 0 : secsRemaining,
+		event_type: safeEventType,
+		sub_type: safeSubType,
 		team_id: teamId,
 		player_id: playerId,
 		secondary_player_id: secondaryPlayerId,
-		description: String(description),
-		home_score: homeScore,
-		away_score: awayScore,
-		loc_x: locX !== null ? Number(locX) : null,
-		loc_y: locY !== null ? Number(locY) : null,
-		shot_distance: shotDistance !== null ? Number(shotDistance) : null,
+		description: String(description || ''),
+		home_score: isNaN(Number(homeScore)) ? 0 : Number(homeScore),
+		away_score: isNaN(Number(awayScore)) ? 0 : Number(awayScore),
+		loc_x: (locX !== null && locX !== undefined && !isNaN(Number(locX))) ? Number(locX) : null,
+		loc_y: (locY !== null && locY !== undefined && !isNaN(Number(locY))) ? Number(locY) : null,
+		shot_distance: (shotDistance !== null && shotDistance !== undefined && !isNaN(Number(shotDistance))) ? Number(shotDistance) : null,
 		is_scoring_play: isScoringPlay ? 1 : 0
 	};
 }

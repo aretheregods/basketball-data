@@ -21,6 +21,12 @@ export class WnbaPbpHarvester extends HTTPClient {
 	 * @returns {Promise<Object>} - Raw PBP JSON payload
 	 */
 	async fetchWnbaPbp(gameId, year) {
+		// Normalize 10-digit game IDs starting with '10' (from mobile schedule format '1042100313') to '00' (standard Stats API format '0042100313')
+		let normalizedGameId = String(gameId).trim();
+		if (normalizedGameId.startsWith('10') && normalizedGameId.length === 10) {
+			normalizedGameId = '00' + normalizedGameId.substring(2);
+		}
+
 		const cachePath = path.resolve(`data/raw/wnba/pbp/${year}/${gameId}.json`);
 
 		try {
@@ -32,8 +38,8 @@ export class WnbaPbpHarvester extends HTTPClient {
 			// Cache miss, proceed to network fetch
 		}
 
-		const cdnUrl = `https://cdn.wnba.com/static/json/liveData/playbyplay/playbyplay_${gameId}.json`;
-		const statsUrl = `https://stats.wnba.com/stats/playbyplayv2?GameID=${gameId}&StartPeriod=0&EndPeriod=14`;
+		const cdnUrl = `https://cdn.wnba.com/static/json/liveData/playbyplay/playbyplay_${normalizedGameId}.json`;
+		const statsUrl = `https://stats.wnba.com/stats/playbyplayv2?GameID=${normalizedGameId}&StartPeriod=0&EndPeriod=14`;
 
 		let payload = null;
 
