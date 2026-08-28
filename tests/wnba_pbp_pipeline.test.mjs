@@ -146,6 +146,29 @@ test.describe('WNBA Play-by-Play Unit Tests', () => {
 
 		assert.equal(fetchedCdnUrl, 'https://cdn.wnba.com/static/json/liveData/playbyplay/playbyplay_0042100313.json');
 	});
+
+	test('transformWnbaPbp should parse alternative PBP payload shapes (plays, resultSet, case-insensitive headers)', () => {
+		// Test alternative 1: game.plays
+		const alt1 = { game: { plays: [{ actionId: 1, period: 1, clock: "10:00", actionType: 12, description: "Start Period" }] } };
+		const res1 = transformWnbaPbp('0042200101', alt1);
+		assert.equal(res1.events.length, 1);
+		assert.equal(res1.events[0].event_type, 12);
+
+		// Test alternative 2: resultSet object with lowercase headers
+		const alt2 = {
+			resultSet: {
+				headers: ["eventNum", "eventMsgType", "period", "pcTimeString", "homedescription", "score"],
+				rowSet: [
+					[1, 1, 1, "09:00", "3PT Jump Shot", "0 - 3"]
+				]
+			}
+		};
+		const res2 = transformWnbaPbp('0042200102', alt2);
+		assert.equal(res2.events.length, 1);
+		assert.equal(res2.events[0].event_type, 1);
+		assert.equal(res2.events[0].away_score, 0);
+		assert.equal(res2.events[0].home_score, 3);
+	});
 });
 
 test.describe('WNBA PBP Pipeline Integration Tests', () => {

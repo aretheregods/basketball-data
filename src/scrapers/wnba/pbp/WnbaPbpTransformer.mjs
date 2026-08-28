@@ -51,41 +51,47 @@ function parseRawAction(gameId, action, index, headerMap = null) {
 	let description, homeScore, awayScore, locX, locY, shotDistance, isScoringPlay;
 
 	if (Array.isArray(action) && headerMap) {
-		// Stats API rowSet array
-		actionNumber = action[headerMap['EVENTNUM']];
-		period = action[headerMap['PERIOD']];
-		clock = action[headerMap['PCTIMESTRING']];
-		eventType = action[headerMap['EVENTMSGTYPE']];
-		subType = action[headerMap['EVENTMSGACTIONTYPE']];
-		teamId = action[headerMap['PLAYER1_TEAM_ID']] ? String(action[headerMap['PLAYER1_TEAM_ID']]) : null;
-		playerId = action[headerMap['PLAYER1_ID']] ? String(action[headerMap['PLAYER1_ID']]) : null;
-		secondaryPlayerId = action[headerMap['PLAYER2_ID']] ? String(action[headerMap['PLAYER2_ID']]) : null;
+		// Stats API rowSet array with case-insensitive header lookup
+		actionNumber = action[headerMap['EVENTNUM']] ?? action[headerMap['ACTIONID']] ?? action[headerMap['EVENT_NUM']];
+		period = action[headerMap['PERIOD']] ?? action[headerMap['PERIODNUM']];
+		clock = action[headerMap['PCTIMESTRING']] ?? action[headerMap['CLOCK']] ?? action[headerMap['TIME_REMAINING']];
+		eventType = action[headerMap['EVENTMSGTYPE']] ?? action[headerMap['EVENTTYPE']] ?? action[headerMap['ACTIONTYPE']];
+		subType = action[headerMap['EVENTMSGACTIONTYPE']] ?? action[headerMap['SUBTYPE']] ?? action[headerMap['ACTIONSUBTYPE']];
 
-		const homeDesc = action[headerMap['HOMEDESCRIPTION']] || '';
-		const neutralDesc = action[headerMap['NEUTRALDESCRIPTION']] || '';
-		const visitorDesc = action[headerMap['VISITORDESCRIPTION']] || '';
+		const rawTeamId = action[headerMap['PLAYER1_TEAM_ID']] ?? action[headerMap['TEAM_ID']] ?? action[headerMap['TEAMID']];
+		teamId = (rawTeamId !== null && rawTeamId !== undefined) ? String(rawTeamId) : null;
+
+		const rawPlayerId = action[headerMap['PLAYER1_ID']] ?? action[headerMap['PERSON_ID']] ?? action[headerMap['PLAYERID']] ?? action[headerMap['PERSONID']];
+		playerId = (rawPlayerId !== null && rawPlayerId !== undefined) ? String(rawPlayerId) : null;
+
+		const rawSecondaryPlayerId = action[headerMap['PLAYER2_ID']] ?? action[headerMap['PERSON2_ID']] ?? action[headerMap['ASSIST_PLAYER_ID']] ?? action[headerMap['BLOCK_PLAYER_ID']];
+		secondaryPlayerId = (rawSecondaryPlayerId !== null && rawSecondaryPlayerId !== undefined) ? String(rawSecondaryPlayerId) : null;
+
+		const homeDesc = action[headerMap['HOMEDESCRIPTION']] || action[headerMap['HOMEDESC']] || '';
+		const neutralDesc = action[headerMap['NEUTRALDESCRIPTION']] || action[headerMap['NEUTRALDESC']] || '';
+		const visitorDesc = action[headerMap['VISITORDESCRIPTION']] || action[headerMap['VISITORDESC']] || '';
 		description = [homeDesc, neutralDesc, visitorDesc].filter(Boolean).join(' | ');
 
 		const scoreStr = action[headerMap['SCORE']];
-		if (scoreStr && scoreStr.includes('-')) {
+		if (scoreStr && typeof scoreStr === 'string' && scoreStr.includes('-')) {
 			const parts = scoreStr.split('-').map(s => parseInt(s.trim(), 10));
-			awayScore = parts[0] || 0;
-			homeScore = parts[1] || 0;
+			awayScore = isNaN(parts[0]) ? 0 : parts[0];
+			homeScore = isNaN(parts[1]) ? 0 : parts[1];
 		} else {
-			homeScore = 0;
-			awayScore = 0;
+			homeScore = parseInt(action[headerMap['SCOREHOME']] ?? action[headerMap['HOME_SCORE']] ?? 0, 10);
+			awayScore = parseInt(action[headerMap['SCOREAWAY']] ?? action[headerMap['VISITOR_SCORE']] ?? action[headerMap['AWAY_SCORE']] ?? 0, 10);
 		}
 
-		locX = null;
-		locY = null;
-		shotDistance = null;
+		locX = action[headerMap['LOCX']] ?? action[headerMap['LOC_X']] ?? action[headerMap['XLEGACY']] ?? null;
+		locY = action[headerMap['LOCY']] ?? action[headerMap['LOC_Y']] ?? action[headerMap['YLEGACY']] ?? null;
+		shotDistance = action[headerMap['SHOT_DISTANCE']] ?? action[headerMap['SHOTDISTANCE']] ?? null;
 		isScoringPlay = (eventType === 1 || (eventType === 3 && scoreStr)) ? 1 : 0;
-	} else {
-		// CDN Live JSON object
-		actionNumber = action.actionId ?? action.actionNumber ?? index + 1;
-		period = action.period ?? 1;
+	} else if (action && typeof action === 'object') {
+		// CDN Live / Stats API JSON object
+		actionNumber = action.actionId ?? action.actionNumber ?? action.eventNum ?? action.eventId ?? action.event_num ?? (index + 1);
+		period = action.period ?? action.periodNumber ?? action.quarter ?? 1;
 
-		const rawClock = action.clock ?? "10:00";
+		const rawClock = action.clock ?? action.pcTimeString ?? action.timeRemaining ?? action.time_remaining ?? "10:00";
 		if (typeof rawClock === 'string' && rawClock.startsWith('PT')) {
 			const secs = parseClockToSeconds(rawClock, period);
 			clock = formatSecondsToClock(secs);
@@ -93,22 +99,53 @@ function parseRawAction(gameId, action, index, headerMap = null) {
 			clock = String(rawClock);
 		}
 
-		eventType = action.actionType ?? action.eventMsgType;
-		subType = action.subType ?? action.actionSubtype ?? null;
-		teamId = action.teamId ? String(action.teamId) : null;
-		playerId = action.personId ? String(action.personId) : (action.playerId ? String(action.playerId) : null);
-		secondaryPlayerId = action.assistPersonId || action.blockPersonId || action.foulPersonId || action.person2Id || null;
-		if (secondaryPlayerId) secondaryPlayerId = String(secondaryPlayerId);
+		eventType = action.actionType ?? action.eventMsgType ?? action.eventType ?? action.type ?? action.event_type;
+		subType = action.subType ?? action.actionSubtype ?? action.eventMsgActionType ?? action.sub_type ?? null;
 
-		description = action.description || action.desc || '';
-		homeScore = action.scoreHome ? parseInt(action.scoreHome, 10) : 0;
-		awayScore = action.scoreAway ? parseInt(action.scoreAway, 10) : 0;
+		const rawTeamId = action.teamId ?? action.team_id ?? action.player1TeamId ?? action.player1_team_id;
+		teamId = (rawTeamId !== null && rawTeamId !== undefined) ? String(rawTeamId) : null;
 
-		locX = action.xLegacy ?? action.x ?? null;
-		locY = action.yLegacy ?? action.y ?? null;
-		shotDistance = action.shotDistance ?? null;
+		const rawPlayerId = action.personId ?? action.playerId ?? action.player_id ?? action.person1Id ?? action.player1Id ?? action.player1_id;
+		playerId = (rawPlayerId !== null && rawPlayerId !== undefined) ? String(rawPlayerId) : null;
+
+		const rawSecondaryPlayerId = action.assistPersonId || action.blockPersonId || action.foulPersonId || action.person2Id || action.player2Id || action.secondaryPlayerId || action.player2_id || null;
+		secondaryPlayerId = (rawSecondaryPlayerId !== null && rawSecondaryPlayerId !== undefined) ? String(rawSecondaryPlayerId) : null;
+
+		description = action.description || action.desc || action.homeDescription || action.visitorDescription || action.neutralDescription || '';
+
+		const scoreStr = action.score || action.scoreString;
+		if (scoreStr && typeof scoreStr === 'string' && scoreStr.includes('-')) {
+			const parts = scoreStr.split('-').map(s => parseInt(s.trim(), 10));
+			awayScore = isNaN(parts[0]) ? 0 : parts[0];
+			homeScore = isNaN(parts[1]) ? 0 : parts[1];
+		} else {
+			homeScore = action.scoreHome ?? action.homeScore ?? action.score_home ?? 0;
+			awayScore = action.scoreAway ?? action.awayScore ?? action.score_away ?? action.scoreVisitor ?? 0;
+			homeScore = parseInt(homeScore, 10);
+			awayScore = parseInt(awayScore, 10);
+		}
+
+		locX = action.xLegacy ?? action.x ?? action.locX ?? action.loc_x ?? null;
+		locY = action.yLegacy ?? action.y ?? action.locY ?? action.loc_y ?? null;
+		shotDistance = action.shotDistance ?? action.shot_distance ?? null;
 
 		isScoringPlay = (action.isFieldGoal === 1 || action.shotResult === 'made' || eventType === 1 || (eventType === 3 && action.shotResult === 'made')) ? 1 : 0;
+	} else {
+		actionNumber = index + 1;
+		period = 1;
+		clock = "10:00";
+		eventType = 0;
+		subType = null;
+		teamId = null;
+		playerId = null;
+		secondaryPlayerId = null;
+		description = '';
+		homeScore = 0;
+		awayScore = 0;
+		locX = null;
+		locY = null;
+		shotDistance = null;
+		isScoringPlay = 0;
 	}
 
 	const parsedEventType = Number(eventType);
@@ -268,16 +305,54 @@ export function transformWnbaPbp(gameId, rawJson) {
 	let rawActions = [];
 	let headerMap = null;
 
-	if (rawJson.game && Array.isArray(rawJson.game.actions)) {
-		rawActions = rawJson.game.actions;
-	} else if (Array.isArray(rawJson.resultSets) && rawJson.resultSets.length > 0) {
-		const rSet = rawJson.resultSets[0];
-		if (Array.isArray(rSet.headers) && Array.isArray(rSet.rowSet)) {
+	if (!rawJson) {
+		return { events: [], stints: [] };
+	}
+
+	// 1. Direct array payload
+	if (Array.isArray(rawJson)) {
+		rawActions = rawJson;
+	}
+	// 2. Standard CDN structure: rawJson.game.actions or rawJson.game.plays
+	else if (rawJson.game && (Array.isArray(rawJson.game.actions) || Array.isArray(rawJson.game.plays))) {
+		rawActions = rawJson.game.actions || rawJson.game.plays;
+	}
+	// 3. Top-level action/play/pbp containers
+	else if (Array.isArray(rawJson.actions)) {
+		rawActions = rawJson.actions;
+	} else if (Array.isArray(rawJson.plays)) {
+		rawActions = rawJson.plays;
+	} else if (Array.isArray(rawJson.playByPlay)) {
+		rawActions = rawJson.playByPlay;
+	} else if (Array.isArray(rawJson.play_by_play)) {
+		rawActions = rawJson.play_by_play;
+	}
+	// 4. Stats API structure: resultSets array
+	else if (Array.isArray(rawJson.resultSets) && rawJson.resultSets.length > 0) {
+		const rSet = rawJson.resultSets.find(s => s && s.name && (s.name.toLowerCase().includes('playbyplay') || s.name.toLowerCase().includes('pbp'))) || rawJson.resultSets[0];
+		if (rSet && Array.isArray(rSet.headers) && Array.isArray(rSet.rowSet)) {
 			headerMap = {};
 			rSet.headers.forEach((h, idx) => {
-				headerMap[h] = idx;
+				headerMap[String(h).toUpperCase()] = idx;
 			});
 			rawActions = rSet.rowSet;
+		}
+	}
+	// 5. Stats API structure: resultSet object
+	else if (rawJson.resultSet && Array.isArray(rawJson.resultSet.headers) && Array.isArray(rawJson.resultSet.rowSet)) {
+		headerMap = {};
+		rawJson.resultSet.headers.forEach((h, idx) => {
+			headerMap[String(h).toUpperCase()] = idx;
+		});
+		rawActions = rawJson.resultSet.rowSet;
+	}
+	// 6. Generic object values fallback
+	else if (typeof rawJson === 'object') {
+		for (const key of Object.keys(rawJson)) {
+			if (Array.isArray(rawJson[key]) && rawJson[key].length > 0) {
+				rawActions = rawJson[key];
+				break;
+			}
 		}
 	}
 
