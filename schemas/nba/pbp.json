@@ -1,0 +1,34 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NBAPlayByPlayPayload",
+  "type": "object",
+  "minProperties": 1,
+  "required": [],
+  "properties": {
+    "game": {
+      "type": "object",
+      "properties": {
+        "gameId": { "type": "string" },
+        "actions": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "plays": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      }
+    },
+    "resultSets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "headers": { "type": "array", "items": { "type": "string" } },
+          "rowSet": { "type": "array" }
+        }
+      }
+    }
+  }
+}

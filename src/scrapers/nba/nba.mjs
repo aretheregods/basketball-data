@@ -1,6 +1,7 @@
 import { HTTPClient, validateSchema } from "#utils";
 import fs from "fs/promises";
 import path from "path";
+import { NbaPbpHarvester } from "./harvesters/NbaPbpHarvester.mjs";
 
 /**
  * @description Mapped NBA box score containing flat nested game data
@@ -14,7 +15,7 @@ export class NBAScraper extends HTTPClient {
 	/**
 	 * @constructor
 	 * @param {Object} [options={}] - Scraper configuration options
-	 * @param {'traditional' | 'advanced'} [options.boxscoreType='traditional'] - The type of box score to fetch (for compliance/compatibility)
+	 * @param {'traditional' | 'advanced' | 'pbp'} [options.boxscoreType='traditional'] - The type of box score to fetch (for compliance/compatibility)
 	 */
 	constructor(options = {}) {
 		// Shift the base URL away from stats.nba.com to prevent Akamai timeout blocks
@@ -29,8 +30,19 @@ export class NBAScraper extends HTTPClient {
 		);
 		/** @type {string[]} */
 		this.gameSlugs = [];
-		/** @type {'traditional' | 'advanced'} */
+		/** @type {'traditional' | 'advanced' | 'pbp'} */
 		this.boxscoreType = options.boxscoreType || 'traditional';
+		this.pbpHarvester = new NbaPbpHarvester(options);
+	}
+
+	/**
+	 * @description Fetches NBA play-by-play data using NbaPbpHarvester
+	 * @param {string} gameId
+	 * @param {string|number} year
+	 * @returns {Promise<Object>}
+	 */
+	async fetchPbp(gameId, year) {
+		return this.pbpHarvester.fetchNbaPbp(gameId, year);
 	}
 
 	/**

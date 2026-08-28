@@ -30,3 +30,12 @@ When running the loader stage of the ETL:
 node run.js --step=load
 ```
 The pipeline programmatically executes any pending migrations dynamically on database initialization, ensuring the database schema is fully updated.
+
+### Play-by-Play Data Ingestion (NBA & WNBA)
+
+The pipeline supports play-by-play (PBP) event feeds and 5-on-5 stint interval tracking for both WNBA and NBA leagues via the `--type=pbp` flag:
+
+```bash
+# Extract, transform, and load NBA play-by-play data
+node run.js --league=nba --years=2024,2025,2026 --type=pbp --step=extract,transform,load
+```

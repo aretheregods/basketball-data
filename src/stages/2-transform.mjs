@@ -60,6 +60,9 @@ export async function transformStage(league, year, options = {}) {
 		if (league.toLowerCase().startsWith('wnba')) {
 			const { transformWnbaPbp } = await import('../scrapers/wnba/pbp/WnbaPbpTransformer.mjs');
 			transformFn = transformWnbaPbp;
+		} else if (league.toLowerCase().startsWith('nba')) {
+			const { transformNbaPbp } = await import('../scrapers/nba/pbp/NbaPbpTransformer.mjs');
+			transformFn = transformNbaPbp;
 		} else {
 			throw new Error(`PBP transformation not implemented for league: ${league}`);
 		}

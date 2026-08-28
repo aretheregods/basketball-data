@@ -86,13 +86,19 @@ const mockStatsApiPbpResponse = {
 
 let originalFetch;
 
-test.before(() => {
+test.before(async () => {
 	process.env.NODE_ENV = 'test';
 	originalFetch = globalThis.fetch;
+	await fs.rm(path.resolve(`data/raw/wnba_pbp_test`), { recursive: true, force: true });
+	await fs.rm(path.resolve(`data/transformed/wnba_pbp_test`), { recursive: true, force: true });
+	await fs.rm(path.resolve(`data/SQL/WNBA_PBP_TEST.sqlite`), { force: true });
 });
 
-test.after(() => {
+test.after(async () => {
 	globalThis.fetch = originalFetch;
+	await fs.rm(path.resolve(`data/raw/wnba_pbp_test`), { recursive: true, force: true });
+	await fs.rm(path.resolve(`data/transformed/wnba_pbp_test`), { recursive: true, force: true });
+	await fs.rm(path.resolve(`data/SQL/WNBA_PBP_TEST.sqlite`), { force: true });
 });
 
 test.describe('WNBA Play-by-Play Unit Tests', () => {
@@ -132,19 +138,27 @@ test.describe('WNBA Play-by-Play Unit Tests', () => {
 
 	test('fetchWnbaPbp should preserve native 10-prefixed game IDs for WNBA CDN requests', async () => {
 		let fetchedCdnUrl = null;
-		globalThis.fetch = async (url) => {
-			fetchedCdnUrl = url;
-			return {
-				ok: true,
-				status: 200,
-				json: async () => mockCdnPbpResponse
+		const prevFetch = globalThis.fetch;
+		const cacheFile = path.resolve('data/raw/wnba/pbp/2021/1042100313.json');
+		await fs.rm(cacheFile, { force: true });
+		try {
+			globalThis.fetch = async (url) => {
+				fetchedCdnUrl = url;
+				return {
+					ok: true,
+					status: 200,
+					json: async () => mockCdnPbpResponse
+				};
 			};
-		};
 
-		const harvester = new (await import('../src/scrapers/wnba/harvesters/WnbaPbpHarvester.mjs')).WnbaPbpHarvester();
-		await harvester.fetchWnbaPbp('1042100313', '2021');
+			const harvester = new (await import('../src/scrapers/wnba/harvesters/WnbaPbpHarvester.mjs')).WnbaPbpHarvester();
+			await harvester.fetchWnbaPbp('1042100313', '2021');
 
-		assert.equal(fetchedCdnUrl, 'https://cdn.wnba.com/static/json/liveData/playbyplay/playbyplay_1042100313.json');
+			assert.equal(fetchedCdnUrl, 'https://cdn.wnba.com/static/json/liveData/playbyplay/playbyplay_1042100313.json');
+		} finally {
+			globalThis.fetch = prevFetch;
+			await fs.rm(cacheFile, { force: true });
+		}
 	});
 
 	test('transformWnbaPbp should parse alternative PBP payload shapes (plays, resultSet, case-insensitive headers)', () => {
@@ -176,59 +190,60 @@ test.describe('WNBA PBP Pipeline Integration Tests', () => {
 		const testLeague = 'wnba_pbp_test';
 		const testYear = '2024';
 
-		globalThis.fetch = async (url) => {
-			if (url.includes('playbyplay_0042300101.json')) {
-				return {
-					ok: true,
-					status: 200,
-					json: async () => mockCdnPbpResponse
-				};
-			}
-			return {
-				ok: false,
-				status: 404
-			};
-		};
-
-		const scraper = new WNBAScraper({ boxscoreType: 'pbp' });
-		scraper.getSeasonGameSlugs = async function() {
-			this.gameSlugs = ['nyl-vs-con-0042300101'];
-			return this;
-		};
-
-		// 1. Stage 1 Extract
-		const extractedGameIds = await extractStage(scraper, testLeague, testYear, { boxscoreType: 'pbp' });
-		assert.deepEqual(extractedGameIds, ['0042300101']);
-
-		const rawFilePath = path.resolve(`data/raw/${testLeague}/pbp/${testYear}/0042300101.json`);
-		const rawExists = await fs.access(rawFilePath).then(() => true).catch(() => false);
-		assert.equal(rawExists, true);
-
-		// 2. Stage 2 Transform
-		const transformedData = await transformStage(testLeague, testYear, { boxscoreType: 'pbp' });
-		assert.equal(transformedData.events.length, 4);
-		assert.equal(transformedData.stints.length, 2);
-
-		// 3. Stage 3 Load
-		await loadStage(testLeague, testYear, transformedData, { boxscoreType: 'pbp' });
-
-		// 4. Verification & Audit Queries in SQLite
-		const db = await initDatabase(testLeague);
+		const prevFetch = globalThis.fetch;
 		try {
-			const eventsCount = db.prepare('SELECT COUNT(*) as count FROM game_play_by_play WHERE game_id = ?').get('0042300101');
-			assert.equal(eventsCount.count, 4);
+			globalThis.fetch = async (url) => {
+				if (url.includes('playbyplay_0042300101.json')) {
+					return {
+						ok: true,
+						status: 200,
+						json: async () => mockCdnPbpResponse
+					};
+				}
+				return {
+					ok: false,
+					status: 404
+				};
+			};
 
-			const maxAwayScore = db.prepare('SELECT MAX(away_score) as max_score FROM game_play_by_play WHERE game_id = ?').get('0042300101');
-			assert.equal(maxAwayScore.max_score, 3);
+			const scraper = new WNBAScraper({ boxscoreType: 'pbp' });
+			scraper.getSeasonGameSlugs = async function() {
+				this.gameSlugs = ['nyl-vs-con-0042300101'];
+				return this;
+			};
 
-			const stintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('0042300101');
-			assert.equal(stintsCount.count, 2);
+			// 1. Stage 1 Extract
+			const extractedGameIds = await extractStage(scraper, testLeague, testYear, { boxscoreType: 'pbp' });
+			assert.deepEqual(extractedGameIds, ['0042300101']);
+
+			const rawFilePath = path.resolve(`data/raw/${testLeague}/pbp/${testYear}/0042300101.json`);
+			const rawExists = await fs.access(rawFilePath).then(() => true).catch(() => false);
+			assert.equal(rawExists, true);
+
+			// 2. Stage 2 Transform
+			const transformedData = await transformStage(testLeague, testYear, { boxscoreType: 'pbp' });
+			assert.equal(transformedData.events.length, 4);
+			assert.equal(transformedData.stints.length, 2);
+
+			// 3. Stage 3 Load
+			await loadStage(testLeague, testYear, transformedData, { boxscoreType: 'pbp' });
+
+			// 4. Verification & Audit Queries in SQLite
+			const db = await initDatabase(testLeague);
+			try {
+				const eventsCount = db.prepare('SELECT COUNT(*) as count FROM game_play_by_play WHERE game_id = ?').get('0042300101');
+				assert.equal(eventsCount.count, 4);
+
+				const maxAwayScore = db.prepare('SELECT MAX(away_score) as max_score FROM game_play_by_play WHERE game_id = ?').get('0042300101');
+				assert.equal(maxAwayScore.max_score, 3);
+
+				const stintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('0042300101');
+				assert.equal(stintsCount.count, 2);
+			} finally {
+				if (db) db.destroy();
+			}
 		} finally {
-			db.destroy();
-			// Cleanup test artifacts
-			await fs.rm(path.resolve(`data/raw/${testLeague}`), { recursive: true, force: true });
-			await fs.rm(path.resolve(`data/transformed/${testLeague}`), { recursive: true, force: true });
-			await fs.rm(path.resolve(`data/SQL/${testLeague.toUpperCase()}.sqlite`), { force: true });
+			globalThis.fetch = prevFetch;
 		}
 	});
 });
