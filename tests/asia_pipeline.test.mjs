@@ -1,5 +1,3 @@
-process.env.NODE_ENV = 'test';
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs/promises';
@@ -20,14 +18,15 @@ test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
 	const year = '2024'; // Isolated year for pipeline test
 
 	test.before(async () => {
-		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
-		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+		process.env.NODE_ENV = 'test';
+		await fs.rm(path.resolve('data/raw', league), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/transformed', league), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/SQL/ASIA_TEST.sqlite'), { force: true });
 	});
 
 	test.after(async () => {
-		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
-		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/raw', league), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/transformed', league), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/SQL/ASIA_TEST.sqlite'), { force: true });
 	});
 

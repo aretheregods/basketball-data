@@ -3,32 +3,26 @@ import path from 'path';
 import { HTTPClient } from '#utils';
 
 /**
- * @description Harvester & Network scraper for WNBA Play-By-Play feeds.
+ * @description Harvester & Network scraper for NBA Play-By-Play feeds.
  */
-export class WnbaPbpHarvester extends HTTPClient {
+export class NbaPbpHarvester extends HTTPClient {
 	constructor(options = {}) {
-		super('https://cdn.wnba.com', {
+		super('https://cdn.nba.com', {
 			'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 			'accept': 'application/json'
 		});
 	}
 
 	/**
-	 * @description Fetches raw WNBA Play-by-play payload for a given game ID with fallback mechanism.
-	 * Target CDN live endpoint first, falling back to stats.wnba.com playbyplayv2 endpoint.
-	 * @param {string} gameId - 10-digit game ID
+	 * @description Fetches raw NBA Play-by-play payload for a given game ID with fallback mechanism.
+	 * Target CDN live endpoint first, falling back to stats.nba.com playbyplayv2 endpoint and nba.com webpage NEXT_DATA.
+	 * @param {string} gameId - Game ID (e.g. 0022300001)
 	 * @param {string|number} year - Season year
 	 * @returns {Promise<Object>} - Raw PBP JSON payload
 	 */
-	async fetchWnbaPbp(gameId, year) {
+	async fetchNbaPbp(gameId, year) {
 		const cleanGameId = String(gameId).trim();
-
-		// Primary WNBA CDN ID uses native 10-prefixed ID (e.g. 1022400001). Stats API uses 00-prefixed ID (0022400001).
-		const statsApiGameId = (cleanGameId.startsWith('10') && cleanGameId.length === 10)
-			? '00' + cleanGameId.substring(2)
-			: cleanGameId;
-
-		const cachePath = path.resolve(`data/raw/wnba/pbp/${year}/${cleanGameId}.json`);
+		const cachePath = path.resolve(`data/raw/nba/pbp/${year}/${cleanGameId}.json`);
 
 		try {
 			const cached = await fs.readFile(cachePath, 'utf-8');
@@ -42,11 +36,12 @@ export class WnbaPbpHarvester extends HTTPClient {
 			// Cache miss, proceed to network fetch
 		}
 
-		const cdnUrl = `https://cdn.wnba.com/static/json/liveData/playbyplay/playbyplay_${cleanGameId}.json`;
-		const statsUrl = `https://stats.wnba.com/stats/playbyplayv2?GameID=${statsApiGameId}&StartPeriod=0&EndPeriod=14`;
+		const cdnUrl = `https://cdn.nba.com/static/json/liveData/playbyplay/playbyplay_${cleanGameId}.json`;
+		const statsUrl = `https://stats.nba.com/stats/playbyplayv2?GameID=${cleanGameId}&StartPeriod=0&EndPeriod=14`;
 
 		let payload = null;
 
+		// 1. Primary Attempt: NBA Live CDN API
 		try {
 			const res = await fetch(cdnUrl, {
 				headers: {
@@ -61,17 +56,18 @@ export class WnbaPbpHarvester extends HTTPClient {
 				}
 			}
 		} catch (err) {
-			console.warn(`[WnbaPbp] CDN failed for ${gameId}: ${err.message}. Retrying stats endpoint...`);
+			console.warn(`[NbaPbpHarvester] CDN failed for ${cleanGameId}: ${err.message}. Retrying stats endpoint...`);
 		}
 
+		// 2. Secondary Fallback: stats.nba.com API
 		if (!payload) {
 			try {
 				const res = await fetch(statsUrl, {
 					headers: {
 						'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 						'accept': 'application/json',
-						'referer': 'https://www.wnba.com/',
-						'origin': 'https://www.wnba.com'
+						'referer': 'https://www.nba.com/',
+						'origin': 'https://www.nba.com'
 					}
 				});
 				if (res.ok) {
@@ -81,13 +77,13 @@ export class WnbaPbpHarvester extends HTTPClient {
 					}
 				}
 			} catch (err) {
-				// Fall through to HTML webpage extraction
+				// Fall through to webpage fallback
 			}
 		}
 
-		// Webpage fallback: fetch game page HTML and parse __NEXT_DATA__
+		// 3. Webpage fallback: fetch game page HTML and parse __NEXT_DATA__
 		if (!payload) {
-			const gameUrl = `https://www.wnba.com/game/${cleanGameId}`;
+			const gameUrl = `https://www.nba.com/game/${cleanGameId}`;
 			try {
 				const res = await fetch(gameUrl, {
 					headers: {
@@ -100,26 +96,19 @@ export class WnbaPbpHarvester extends HTTPClient {
 					const match = html.match(/<script id=\"__NEXT_DATA__\" type=\"application\/json\">(.*?)<\/script>/s);
 					if (match) {
 						const nextData = JSON.parse(match[1]);
-						const pbpData = nextData?.props?.pageProps?.playByPlay;
+						const pbpData = nextData?.props?.pageProps?.playByPlay || nextData?.props?.pageProps?.game?.actions;
 						if (pbpData) {
-							payload = pbpData;
+							payload = Array.isArray(pbpData) ? { game: { actions: pbpData } } : pbpData;
 						}
 					}
 				}
 			} catch (err) {
-				console.warn(`[WnbaPbp] Webpage extraction failed for ${gameId}: ${err.message}`);
+				console.warn(`[NbaPbpHarvester] Webpage extraction failed for ${cleanGameId}: ${err.message}`);
 			}
 		}
 
 		if (!payload) {
 			throw new Error(`HTTP Error on CDN, Stats API, and Webpage fallback for ${cleanGameId}`);
-		}
-
-		try {
-			await fs.mkdir(path.dirname(cachePath), { recursive: true });
-			await fs.writeFile(cachePath, JSON.stringify(payload, null, 2));
-		} catch (e) {
-			// Cache write error ignore
 		}
 
 		return payload;
@@ -129,7 +118,7 @@ export class WnbaPbpHarvester extends HTTPClient {
 /**
  * Helper function exported for standalone pipeline calls.
  */
-export async function fetchWnbaPbp(gameId, year) {
-	const harvester = new WnbaPbpHarvester();
-	return harvester.fetchWnbaPbp(gameId, year);
+export async function fetchNbaPbp(gameId, year) {
+	const harvester = new NbaPbpHarvester();
+	return harvester.fetchNbaPbp(gameId, year);
 }

@@ -10,6 +10,7 @@ export function up(db) {
 			period INTEGER NOT NULL,
 			clock TEXT NOT NULL,
 			seconds_remaining REAL NOT NULL,
+			game_seconds_remaining REAL DEFAULT 0,
 			event_type INTEGER NOT NULL,
 			sub_type INTEGER,
 			team_id TEXT,

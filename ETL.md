@@ -429,6 +429,51 @@ To run the ETL for only specific competitions (e.g. BCLA and NBB Brazil):
 node run.js --league=southamerica --competitions=bcla,nbb --years=2024
 ```
 
+### 9. Play-by-Play Ingestion Examples (WNBA & NBA)
+Ingest play-by-play events and calculate 5-on-5 lineups/stints for WNBA or NBA:
+```bash
+# WNBA Play-by-Play
+node run.js --league=wnba --years=2023,2024 --type=pbp --step=extract,transform,load
+
+# NBA Play-by-Play (12-minute quarters)
+node run.js --league=nba --years=2024,2025,2026 --type=pbp --step=extract,transform,load
+```
+
+### Play-by-Play Schema Definitions (`game_play_by_play` and `game_stints`)
+
+#### `game_play_by_play` Table Schema
+- `event_id`: Composite synthetic key (`{game_id}_{action_number}_{index}`)
+- `game_id`: Game identifier
+- `period`: Period / Quarter
+- `clock`: Display clock (e.g. `"11:42"` or `"05:30"`)
+- `seconds_remaining`: Clock remaining in current period (float seconds)
+- `game_seconds_remaining`: Total regulation/game seconds remaining (for NBA: 12-min quarters, periods 1-4 = `(4-period)*720 + seconds_remaining`)
+- `event_type`: EventMsgType code (1=Make, 2=Miss, 3=FT, 4=Reb, 5=TO, 6=Foul, 8=Sub, etc.)
+- `sub_type`: ActionType sub-code
+- `team_id`: Acting team ID
+- `player_id`: Acting player ID
+- `secondary_player_id`: Assist/Block/Foul drawer ID
+- `description`: Action description string
+- `home_score`: Running home score
+- `away_score`: Running away score
+- `loc_x`: Court X coordinate
+- `loc_y`: Court Y coordinate
+- `shot_distance`: Shot distance in feet
+- `is_scoring_play`: Binary flag (1 if scoring play, 0 otherwise)
+
+#### `game_stints` Table Schema
+- `stint_id`: Composite synthetic key (`{game_id}_{period}_{stint_index}`)
+- `game_id`: Game identifier
+- `period`: Period / Quarter
+- `start_clock`: Stint start clock string
+- `end_clock`: Stint end clock string
+- `duration_seconds`: Stint duration in seconds
+- `home_lineup_hash`: JSON array of sorted on-court home player IDs
+- `away_lineup_hash`: JSON array of sorted on-court away player IDs
+- `home_pts`: Home points scored during stint
+- `away_pts`: Away points scored during stint
+- `possessions`: Estimated stint possessions (`FGA + 0.44 * FTA - OREB + TOV`)
+
 ---
 
 ## Data Rectification and Cleaning Guide
