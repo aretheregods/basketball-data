@@ -87,6 +87,8 @@ export async function extractStage(scraper, league, year, options = {}) {
 					schemaFolder = 'wnba';
 				} else if (schemaFolder.startsWith('nba')) {
 					schemaFolder = 'nba';
+				} else if (schemaFolder.startsWith('nbl')) {
+					schemaFolder = 'nbl';
 				} else if (schemaFolder.includes('_test')) {
 					schemaFolder = schemaFolder.split('_test')[0];
 				}

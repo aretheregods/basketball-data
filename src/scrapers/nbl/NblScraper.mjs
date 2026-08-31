@@ -2,12 +2,13 @@ import fs from 'fs/promises';
 import path from 'path';
 import { HTTPClient } from '#utils';
 import { NblHarvester } from './harvesters/NblHarvester.mjs';
+import { NblPbpHarvester } from './harvesters/NblPbpHarvester.mjs';
 import { parseNblHtml } from './parsers/NblParser.mjs';
 
 /**
  * @class NblScraper
  * @description Scraper for Oceania NBL competition.
- * Fetches, caches, parses, and normalizes NBL game box score statistics from Proballers.
+ * Fetches, caches, parses, and normalizes NBL game box score statistics from Proballers and FIBA LiveStats.
  */
 export class NblScraper extends HTTPClient {
 	/**
@@ -17,9 +18,20 @@ export class NblScraper extends HTTPClient {
 	constructor(options = {}) {
 		super('https://www.proballers.com');
 		this.harvester = new NblHarvester(this);
+		this.pbpHarvester = new NblPbpHarvester(options);
 		this.gameSlugs = [];
 		this.gameUrlMap = new Map();
 		this.bypassNetwork = process.env.NODE_ENV === 'test';
+	}
+
+	/**
+	 * @description Fetches NBL play-by-play data using NblPbpHarvester
+	 * @param {string} gameId
+	 * @param {string|number} year
+	 * @returns {Promise<Object>}
+	 */
+	async fetchPbp(gameId, year) {
+		return this.pbpHarvester.fetchNblPbp(gameId, year);
 	}
 
 	/**
