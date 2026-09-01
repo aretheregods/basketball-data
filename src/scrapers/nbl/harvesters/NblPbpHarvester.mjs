@@ -81,7 +81,7 @@ export class NblPbpHarvester extends HTTPClient {
 		}
 
 		if (!payload) {
-			throw new Error(`Failed to fetch FIBA LiveStats PBP data for Game ID ${gameId}`);
+			throw new Error(`No FIBA LiveStats PBP feed available on CDN for Game ID ${gameId} (FIBA ID ${fibaMatchId})`);
 		}
 
 		try {
