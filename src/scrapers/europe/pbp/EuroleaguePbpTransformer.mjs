@@ -187,11 +187,45 @@ export function transformEuroleaguePbp(gameCode, rawJson) {
 	if (!rawJson) return { events: [], stints: [] };
 
 	let rawEvents = [];
-	if (rawJson.pbp) {
-		rawEvents = Array.isArray(rawJson.pbp.Rows) ? rawJson.pbp.Rows : (Array.isArray(rawJson.pbp) ? rawJson.pbp : []);
-	} else if (Array.isArray(rawJson.Rows)) {
+	const pbpObj = rawJson.pbp || rawJson;
+
+	if (pbpObj) {
+		if (Array.isArray(pbpObj.Rows)) {
+			rawEvents = pbpObj.Rows;
+		} else if (Array.isArray(pbpObj)) {
+			rawEvents = pbpObj;
+		} else if (typeof pbpObj === 'object') {
+			const quarterKeys = [
+				{ key: 'FirstQuarter', period: 1 },
+				{ key: 'SecondQuarter', period: 2 },
+				{ key: 'ThirdQuarter', period: 3 },
+				{ key: 'ForthQuarter', period: 4 },
+				{ key: 'FourthQuarter', period: 4 },
+				{ key: 'ExtraTime', period: 5 },
+				{ key: 'ExtraTime1', period: 5 },
+				{ key: 'ExtraTime2', period: 6 },
+				{ key: 'ExtraTime3', period: 7 }
+			];
+
+			for (const { key, period } of quarterKeys) {
+				const qEvents = pbpObj[key];
+				if (Array.isArray(qEvents) && qEvents.length > 0) {
+					for (const evt of qEvents) {
+						if (evt && typeof evt === 'object') {
+							if (evt.PERIOD === undefined && evt.period === undefined) {
+								evt.PERIOD = period;
+							}
+							rawEvents.push(evt);
+						}
+					}
+				}
+			}
+		}
+	}
+
+	if (rawEvents.length === 0 && Array.isArray(rawJson.Rows)) {
 		rawEvents = rawJson.Rows;
-	} else if (Array.isArray(rawJson)) {
+	} else if (rawEvents.length === 0 && Array.isArray(rawJson)) {
 		rawEvents = rawJson;
 	}
 
@@ -234,6 +268,9 @@ export function transformEuroleaguePbp(gameCode, rawJson) {
 
 		const isScoring = ['2FGM', '3FGM', 'FTM', 'O2FGM', 'O3FGM', 'D2FGM', 'D3FGM'].includes(String(playType).toUpperCase()) || Number(action.POINTS || action.points || 0) > 0;
 
+		const teamId = (action.TEAM && String(action.TEAM).trim()) || (action.CODETEAM && String(action.CODETEAM).trim()) || null;
+		const playerId = (action.PLAYER_ID && String(action.PLAYER_ID).trim()) || null;
+
 		events.push({
 			event_id: `${seasonCode}_${gameCode}_pbp_${playNumber}_${i}`,
 			game_id: String(gameCode),
@@ -243,9 +280,9 @@ export function transformEuroleaguePbp(gameCode, rawJson) {
 			seconds_remaining: secondsRemaining,
 			game_seconds_remaining: gameSecondsRemaining,
 			event_type: String(playType),
-			sub_type: action.TYPE ? String(action.TYPE) : null,
-			team_id: action.TEAM ? String(action.TEAM) : null,
-			player_id: action.PLAYER_ID ? String(action.PLAYER_ID) : null,
+			sub_type: action.TYPE !== undefined && action.TYPE !== null ? String(action.TYPE) : null,
+			team_id: teamId,
+			player_id: playerId,
 			secondary_player_id: action.PASSING_PLAYER_ID || action.BLOCK_PLAYER_ID || null,
 			description: String(action.PLAYINFO || action.COMMENT || action.description || ''),
 			home_score: runningHomeScore,

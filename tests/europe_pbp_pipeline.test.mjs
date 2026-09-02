@@ -14,6 +14,8 @@ import { transformStage } from '../src/stages/2-transform.mjs';
 import { loadStage, initDatabase } from '../src/stages/3-load.mjs';
 import { AuditEngine } from '../src/audit/AuditEngine.mjs';
 
+process.env.NODE_ENV = 'test';
+
 test('EuroLeague PBP Clock and Helper Unit Tests', async (t) => {
 	await t.test('parseEuroClock should parse clock string MM:SS into remaining period seconds', () => {
 		assert.equal(parseEuroClock(null, '10:00'), 600);
@@ -46,7 +48,7 @@ test('EuroLeague PBP Harvester & Transformer Unit Tests', async (t) => {
 		});
 	});
 
-	await t.test('transformEuroleaguePbp should normalize event streams and derive 5-on-5 stints', () => {
+	await t.test('transformEuroleaguePbp should normalize event streams and derive 5-on-5 stints from Rows array', () => {
 		const rawPayload = {
 			seasonCode: 'E2024',
 			pbp: {
@@ -99,6 +101,53 @@ test('EuroLeague PBP Harvester & Transformer Unit Tests', async (t) => {
 		assert.equal(stints.length, 1);
 		assert.equal(stints[0].period, 1);
 		assert.equal(stints[0].duration_seconds, 15);
+	});
+
+	await t.test('transformEuroleaguePbp should support Quarter-based object payloads (FirstQuarter, SecondQuarter, etc.)', () => {
+		const quarterPayload = {
+			seasonCode: 'E2021',
+			pbp: {
+				FirstQuarter: [
+					{
+						NUMBEROFPLAY: 1,
+						MARKERTIME: '09:50',
+						MINUTE: 1,
+						PLAYTYPE: '2FGM',
+						CODETEAM: 'MCO',
+						PLAYER_ID: 'P100',
+						POINTS_A: 2,
+						POINTS_B: 0,
+						PLAYINFO: 'Jump Shot Made'
+					}
+				],
+				SecondQuarter: [
+					{
+						NUMBEROFPLAY: 2,
+						MARKERTIME: '08:15',
+						MINUTE: 2,
+						PLAYTYPE: '3FGM',
+						CODETEAM: 'PAN',
+						PLAYER_ID: 'P200',
+						POINTS_A: 2,
+						POINTS_B: 3,
+						PLAYINFO: '3PT Shot Made'
+					}
+				]
+			}
+		};
+
+		const { events, stints } = transformEuroleaguePbp('E2021_1', quarterPayload);
+		assert.equal(events.length, 2);
+		assert.equal(events[0].period, 1);
+		assert.equal(events[0].team_id, 'MCO');
+		assert.equal(events[0].player_id, 'P100');
+		assert.equal(events[1].period, 2);
+		assert.equal(events[1].team_id, 'PAN');
+		assert.equal(events[1].player_id, 'P200');
+
+		assert.equal(stints.length, 2);
+		assert.equal(stints[0].period, 1);
+		assert.equal(stints[1].period, 2);
 	});
 });
 
