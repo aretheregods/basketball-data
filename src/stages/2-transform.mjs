@@ -66,6 +66,9 @@ export async function transformStage(league, year, options = {}) {
 		} else if (league.toLowerCase().startsWith('nbl')) {
 			const { transformNblPbp } = await import('../scrapers/nbl/pbp/NblPbpTransformer.mjs');
 			transformFn = transformNblPbp;
+		} else if (league.toLowerCase().startsWith('europe')) {
+			const { transformEuroleaguePbp } = await import('../scrapers/europe/pbp/EuroleaguePbpTransformer.mjs');
+			transformFn = transformEuroleaguePbp;
 		} else {
 			throw new Error(`PBP transformation not implemented for league: ${league}`);
 		}

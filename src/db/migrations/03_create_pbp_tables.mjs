@@ -7,12 +7,13 @@ export function up(db) {
 		CREATE TABLE IF NOT EXISTS game_play_by_play (
 			event_id TEXT PRIMARY KEY,
 			game_id TEXT NOT NULL,
+			competition_id TEXT,
 			period INTEGER NOT NULL,
 			clock TEXT NOT NULL,
 			seconds_remaining REAL NOT NULL,
 			game_seconds_remaining REAL DEFAULT 0,
-			event_type INTEGER NOT NULL,
-			sub_type INTEGER,
+			event_type TEXT NOT NULL,
+			sub_type TEXT,
 			team_id TEXT,
 			player_id TEXT,
 			secondary_player_id TEXT,
@@ -21,7 +22,7 @@ export function up(db) {
 			away_score INTEGER NOT NULL,
 			loc_x REAL,
 			loc_y REAL,
-			shot_distance INTEGER,
+			shot_distance REAL,
 			is_scoring_play INTEGER DEFAULT 0
 		);
 
@@ -31,6 +32,7 @@ export function up(db) {
 		CREATE TABLE IF NOT EXISTS game_stints (
 			stint_id TEXT PRIMARY KEY,
 			game_id TEXT NOT NULL,
+			competition_id TEXT,
 			period INTEGER NOT NULL,
 			start_clock TEXT NOT NULL,
 			end_clock TEXT NOT NULL,

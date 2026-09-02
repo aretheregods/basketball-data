@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "EuropePlayByPlayPayload",
+  "type": "object",
+  "minProperties": 1,
+  "required": [],
+  "properties": {
+    "pbp": {
+      "type": ["object", "array"]
+    },
+    "points": {
+      "type": ["object", "array", "null"]
+    }
+  }
+}
