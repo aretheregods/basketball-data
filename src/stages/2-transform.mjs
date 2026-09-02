@@ -48,10 +48,16 @@ export async function transformStage(league, year, options = {}) {
 			files = await fs.readdir(rawDir);
 		} catch (error) {
 			console.warn(`⚠️ Raw PBP data directory does not exist or cannot be read: ${rawDir}`);
+			console.warn(`💡 Hint: Ensure you have executed Stage 1 [EXTRACT] first (e.g., node run.js --league=${league} --years=${year} --type=pbp --step=extract,transform,load)`);
 			return { events: [], stints: [] };
 		}
 		const jsonFiles = files.filter(f => f.endsWith('.json'));
-		console.log(`📂 Found ${jsonFiles.length} raw PBP JSON files to transform.`);
+		if (jsonFiles.length === 0) {
+			console.warn(`⚠️ No raw PBP JSON files found in ${rawDir}`);
+			console.warn(`💡 Hint: Ensure Stage 1 [EXTRACT] has extracted game files into disk storage first.`);
+		} else {
+			console.log(`📂 Found ${jsonFiles.length} raw PBP JSON files to transform.`);
+		}
 
 		const allEvents = [];
 		const allStints = [];
@@ -141,6 +147,7 @@ export async function transformStage(league, year, options = {}) {
 		files = await fs.readdir(rawDir);
 	} catch (error) {
 		console.warn(`⚠️ Raw data directory does not exist or cannot be read: ${rawDir}`);
+		console.warn(`💡 Hint: Ensure you have executed Stage 1 [EXTRACT] first (e.g., node run.js --league=${league} --years=${year} --step=extract,transform,load)`);
 		return { players: [], teams: [] };
 	}
 

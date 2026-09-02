@@ -64,8 +64,11 @@ export async function extractStage(scraper, league, year, options = {}) {
 				const content = await fs.readFile(filePath, 'utf8');
 				const parsed = JSON.parse(content);
 				if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-					console.log(`⏭️ Game ID: ${gameId} already exists in raw cache. Skipping...`);
-					continue;
+					// Verify that for PBP runs, the cached payload is a PBP payload
+					if (!isPbp || (parsed.pbp || parsed.game || parsed.actions || parsed.Rows || parsed.resultSets)) {
+						console.log(`⏭️ Game ID: ${gameId} already exists in raw cache. Skipping...`);
+						continue;
+					}
 				}
 			}
 		} catch (e) {
@@ -134,16 +137,22 @@ export async function extractStage(scraper, league, year, options = {}) {
 			console.error(`❌ Failed to extract/save box score for Game ID ${gameId}:`, error.message || error);
 			if (league.toLowerCase().startsWith('europe')) {
 				console.warn(`⚠️ Warning: Bypassing extraction failure for European game ${gameId} to prevent pipeline crash. Writing fallback unplayed skeleton...`);
-				const fallback = {
-					gameId,
-					competitionId: gameId.startsWith('U') ? 'eurocup' : (gameId.startsWith('B') ? 'bcl' : 'euroleague'),
-					seasonId: String(year),
-					gameDate: "",
-					homeTeam: { teamId: "", teamName: "Unplayed", score: 0, players: [] },
-					awayTeam: { teamId: "", teamName: "Unplayed", score: 0, players: [] }
-				};
-				const schemaFolder = league.toLowerCase().startsWith('europe') ? 'europe' : league;
-				validateSchema(`${schemaFolder}/boxscore.json`, fallback);
+				let fallback;
+				let schemaFolder = 'europe';
+				if (isPbp) {
+					fallback = { seasonCode: String(year), pbp: { Rows: [] }, points: { Rows: [] } };
+					validateSchema(`${schemaFolder}/pbp.json`, fallback);
+				} else {
+					fallback = {
+						gameId,
+						competitionId: gameId.startsWith('U') ? 'eurocup' : (gameId.startsWith('B') ? 'bcl' : 'euroleague'),
+						seasonId: String(year),
+						gameDate: "",
+						homeTeam: { teamId: "", teamName: "Unplayed", score: 0, players: [] },
+						awayTeam: { teamId: "", teamName: "Unplayed", score: 0, players: [] }
+					};
+					validateSchema(`${schemaFolder}/boxscore.json`, fallback);
+				}
 				await fs.writeFile(filePath, JSON.stringify(fallback, null, 2), 'utf8');
 			} else {
 				console.warn(`⚠️ Warning: Skipping Game ID ${gameId} due to extraction failure. Loop will continue...`);
