@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "NBLPlayByPlayPayload",
+  "type": "object",
+  "minProperties": 1,
+  "required": [],
+  "properties": {
+    "pbp": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "actions": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "plays": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "game": {
+      "type": "object"
+    }
+  }
+}
