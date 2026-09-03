@@ -34,7 +34,7 @@ test('EuroLeague PBP Clock and Helper Unit Tests', async (t) => {
 });
 
 test('EuroLeague PBP Harvester & Transformer Unit Tests', async (t) => {
-	await t.test('EuroleaguePbpHarvester parseGameId should parse game codes and competitions', () => {
+	await t.test('EuroleaguePbpHarvester parseGameId should parse game codes and normalize 2-digit years to 4-digit API season codes', () => {
 		const harvester = new EuroleaguePbpHarvester();
 		assert.deepEqual(harvester.parseGameId('realmadrid-vs-panathinaikos-E2024_1'), {
 			competition: 'euroleague',
@@ -45,6 +45,16 @@ test('EuroLeague PBP Harvester & Transformer Unit Tests', async (t) => {
 			competition: 'eurocup',
 			seasonCode: 'U2024',
 			gameCode: '15'
+		});
+		assert.deepEqual(harvester.parseGameId('matchup-E25_1'), {
+			competition: 'euroleague',
+			seasonCode: 'E2025',
+			gameCode: '1'
+		});
+		assert.deepEqual(harvester.parseGameId('matchup-U25_10'), {
+			competition: 'eurocup',
+			seasonCode: 'U2025',
+			gameCode: '10'
 		});
 	});
 

@@ -20,7 +20,8 @@ export class EuroleaguePbpHarvester extends HTTPClient {
 
 	/**
 	 * @description Parses competition season code and game code from a gameId slug or string.
-	 * @param {string} gameId - e.g. 'E2024_1', 'U2024_15', or 'realmadrid-vs-panathinaikos-E2024_1'
+	 * Automatically normalizes 2-digit years (e.g. E25 -> E2025).
+	 * @param {string} gameId - e.g. 'E2024_1', 'E25_1', 'U2024_15', or 'realmadrid-vs-panathinaikos-E2024_1'
 	 * @returns {{ competition: string, seasonCode: string, gameCode: string }}
 	 */
 	parseGameId(gameId) {
@@ -30,7 +31,7 @@ export class EuroleaguePbpHarvester extends HTTPClient {
 		const gameCode = parts[1] || '1';
 
 		const subParts = keyPart.split('-');
-		const seasonCode = subParts[subParts.length - 1] || 'E2024';
+		let seasonCode = subParts[subParts.length - 1] || 'E2024';
 
 		const codeChar = seasonCode.toUpperCase().charAt(0);
 		let competition = 'euroleague';
@@ -38,6 +39,12 @@ export class EuroleaguePbpHarvester extends HTTPClient {
 			competition = 'eurocup';
 		} else if (codeChar === 'B') {
 			competition = 'bcl';
+		}
+
+		// Normalize 2-digit years to full 4-digit season codes (e.g. E25 -> E2025)
+		const yearDigits = seasonCode.substring(1);
+		if (yearDigits.length === 2) {
+			seasonCode = `${codeChar}20${yearDigits}`;
 		}
 
 		return {

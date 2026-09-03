@@ -14,26 +14,25 @@ export class EuroleagueEngine extends HTTPClient {
 
 	/**
 	 * @description Fetches EuroLeague schedule/slugs for a given season and competition.
+	 * Normalizes 2-digit years to 4-digit years (e.g. '25' -> '2025').
 	 * @param {string|number} year - The season year
 	 * @param {string} competitionId - The competition identifier ('euroleague' or 'eurocup')
 	 * @returns {Promise<string[]>}
 	 */
 	async getSeasonGameSlugs(year, competitionId) {
-		// Mock/construct slugs dynamically or fetch from a known schedule endpoint.
-		// For the European ETL, we construct standard game slugs based on the season code and game codes.
-		// EuroLeague regular season typically runs games 1 to 300+.
-		// We'll generate/return a handful of sample slugs or fetch an official list.
-		// To be robust and clean, we will return some standard slugs for the season to allow targeted scraping.
 		let competitionCode = 'E';
 		if (competitionId === 'eurocup') {
 			competitionCode = 'U';
 		} else if (competitionId === 'bcl') {
 			competitionCode = 'B';
 		} else {
-			// Fallback for future domestic leagues/competitions: first char capitalized
 			competitionCode = String(competitionId).charAt(0).toUpperCase();
 		}
-		const yearFull = String(year); // e.g. 2025 or 2021
+
+		let yearFull = String(year).trim();
+		if (yearFull.length === 2) {
+			yearFull = '20' + yearFull;
+		}
 
 		if (process.env.NODE_ENV === 'test') {
 			const slugs = [
@@ -62,7 +61,8 @@ export class EuroleagueEngine extends HTTPClient {
 
 	/**
 	 * @description Parses the competition, season, and gamecode from a gameId.
-	 * Supports both standard short form (e.g. 'E2099_1') and full slug form.
+	 * Supports both standard short form (e.g. 'E2025_1', 'E25_1') and full slug form.
+	 * Automatically normalizes 2-digit year codes to 4-digit year codes.
 	 * @param {string} gameId
 	 * @returns {{ competitionId: string, seasonCode: string, gameCode: string, yearPrefix: string }}
 	 */
@@ -73,7 +73,7 @@ export class EuroleagueEngine extends HTTPClient {
 		const gameCode = parts[1] || '1';
 
 		const subParts = keyPart.split('-');
-		const seasonCode = subParts[subParts.length - 1] || 'E2025';
+		let seasonCode = subParts[subParts.length - 1] || 'E2025';
 
 		const codeChar = seasonCode.toUpperCase().charAt(0);
 		let competitionId = 'euroleague';
@@ -84,12 +84,15 @@ export class EuroleagueEngine extends HTTPClient {
 		} else if (codeChar === 'E') {
 			competitionId = 'euroleague';
 		} else {
-			// Fallback: take lowercase character to identify dynamic/future leagues
 			competitionId = codeChar.toLowerCase();
 		}
 
 		const yearShort = seasonCode.substring(1);
 		const yearPrefix = yearShort.length === 2 ? '20' + yearShort : yearShort;
+
+		if (yearShort.length === 2) {
+			seasonCode = `${codeChar}${yearPrefix}`;
+		}
 
 		return {
 			competitionId,
@@ -142,7 +145,7 @@ export class EuroleagueEngine extends HTTPClient {
 
 	/**
 	 * @description Formats unified box score by querying /Header and /Boxscore endpoints.
-	 * @param {string} gameId - Combined game identifier, e.g. 'E25_1' (E = EuroLeague, 25 = 2025, 1 = gamecode)
+	 * @param {string} gameId - Combined game identifier, e.g. 'E2025_1' or 'E25_1'
 	 * @returns {Promise<Object>} Unified Europe BoxScore response
 	 */
 	async getUnifiedBoxScore(gameId) {
@@ -165,7 +168,6 @@ export class EuroleagueEngine extends HTTPClient {
 			boxscoreData = await this.request(boxscoreUrl, {}, 3, 1000);
 		} catch (error) {
 			console.warn(`⚠️ Failed to fetch Euroleague API for game ${gameId}:`, error.message || error);
-			// Gracefully fallback to an unplayed skeleton instead of throwing to avoid catastrophic multi-year failure
 			headerData = null;
 			boxscoreData = null;
 		}
