@@ -38,9 +38,18 @@ export async function transformStage(league, year, options = {}) {
 	const isPbp = options.boxscoreType === 'pbp' || options.type === 'pbp';
 	console.log(`⚙️ Starting Stage 2 [TRANSFORM] for ${league.toUpperCase()} - ${year}${isPbp ? ' (PBP)' : ''}`);
 
-	const rawDir = isPbp
-		? path.resolve('data/raw', league, 'pbp', String(year))
-		: path.resolve('data/raw', league, String(year));
+	let rawDir;
+	if (isPbp) {
+		if (league.toLowerCase().startsWith('europe')) {
+			const comp = (options.competitions || options.competition || 'euroleague').toLowerCase();
+			const subFolder = comp.includes('acb') ? 'acb' : (comp.includes('eurocup') ? 'eurocup' : (comp.includes('bcl') ? 'bcl' : 'euroleague'));
+			rawDir = path.resolve('data/raw', 'europe', 'pbp', subFolder, String(year));
+		} else {
+			rawDir = path.resolve('data/raw', league, 'pbp', String(year));
+		}
+	} else {
+		rawDir = path.resolve('data/raw', league, String(year));
+	}
 
 	if (isPbp) {
 		let files = [];

@@ -62,7 +62,8 @@ export class AcbPbpHarvester extends HTTPClient {
 	 */
 	async fetchAcbPbp(gameId, seasonYear = '2025') {
 		const { competitionId, gameCode, seasonYear: year } = this.parseGameId(gameId, seasonYear);
-		const cachePath = path.resolve(`data/raw/europe/pbp/acb/${year}/${gameId}.json`);
+		const targetFolder = String(year).startsWith('A') ? year.substring(1) : year;
+		const cachePath = path.resolve(`data/raw/europe/pbp/acb/${targetFolder}/${gameId}.json`);
 
 		// Disk cache check
 		try {

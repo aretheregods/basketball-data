@@ -65,6 +65,19 @@ export class EuroleaguePbpHarvester extends HTTPClient {
 	async fetchEuroleaguePbp(gameId, year) {
 		const { competition, seasonCode, gameCode } = this.parseGameId(gameId);
 
+		const competitionFolder = competition === 'eurocup' ? 'eurocup' : (competition === 'bcl' ? 'bcl' : 'euroleague');
+		const cachePath = path.resolve(`data/raw/europe/pbp/${competitionFolder}/${year}/${gameId}.json`);
+
+		try {
+			const cached = await fs.readFile(cachePath, 'utf-8');
+			const parsed = JSON.parse(cached);
+			if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+				return parsed;
+			}
+		} catch (e) {
+			// Cache miss, proceed
+		}
+
 		const pbpUrl = `https://live.euroleague.net/api/PlaybyPlay?gamecode=${gameCode}&seasoncode=${seasonCode}`;
 		const pointsUrl = `https://live.euroleague.net/api/Points?gamecode=${gameCode}&seasoncode=${seasonCode}`;
 

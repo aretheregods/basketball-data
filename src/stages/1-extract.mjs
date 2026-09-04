@@ -22,10 +22,19 @@ export async function extractStage(scraper, league, year, options = {}) {
 	const isPbp = options.boxscoreType === 'pbp' || options.type === 'pbp';
 	console.log(`📥 Starting Stage 1 [EXTRACT] for ${league.toUpperCase()} - ${year}${isPbp ? ' (PBP)' : ''}`);
 
-	// Ensure output directory exists
-	const outputDir = isPbp
-		? path.resolve('data/raw', league, 'pbp', String(year))
-		: path.resolve('data/raw', league, String(year));
+	// Determine competition subdirectory for European PBP or general league directory
+	let outputDir;
+	if (isPbp) {
+		if (league.toLowerCase().startsWith('europe')) {
+			const comp = (options.competitions || options.competition || 'euroleague').toLowerCase();
+			const subFolder = comp.includes('acb') ? 'acb' : (comp.includes('eurocup') ? 'eurocup' : (comp.includes('bcl') ? 'bcl' : 'euroleague'));
+			outputDir = path.resolve('data/raw', 'europe', 'pbp', subFolder, String(year));
+		} else {
+			outputDir = path.resolve('data/raw', league, 'pbp', String(year));
+		}
+	} else {
+		outputDir = path.resolve('data/raw', league, String(year));
+	}
 	await fs.mkdir(outputDir, { recursive: true });
 
 	// 1. Fetch game slugs/keys for the given season
