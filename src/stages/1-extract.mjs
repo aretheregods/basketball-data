@@ -65,7 +65,7 @@ export async function extractStage(scraper, league, year, options = {}) {
 				const parsed = JSON.parse(content);
 				if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
 					// Verify that for PBP runs, the cached payload is a PBP payload
-					if (!isPbp || (parsed.pbp || parsed.game || parsed.actions || parsed.Rows || parsed.resultSets)) {
+					if (!isPbp || (parsed.pbp || parsed.game || parsed.actions || parsed.Rows || parsed.resultSets || parsed.jugadas)) {
 						console.log(`⏭️ Game ID: ${gameId} already exists in raw cache. Skipping...`);
 						continue;
 					}

@@ -10,6 +10,9 @@
     },
     "points": {
       "type": ["object", "array", "null"]
+    },
+    "jugadas": {
+      "type": "array"
     }
   }
 }

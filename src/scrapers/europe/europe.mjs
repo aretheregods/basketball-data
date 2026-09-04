@@ -10,6 +10,7 @@ import { AbaScraper } from './AbaScraper.mjs';
 import { BslScraper } from './BslScraper.mjs';
 import { IsraeliScraper } from './IsraeliScraper.mjs';
 import { EuroleaguePbpHarvester } from './pbp/EuroleaguePbpHarvester.mjs';
+import { AcbPbpHarvester } from './pbp/AcbPbpHarvester.mjs';
 
 /**
  * @description EuropeScraper is the master orchestrator for European basketball competitions.
@@ -42,6 +43,7 @@ export class EuropeScraper extends HTTPClient {
 		this.boxscoreType = options.boxscoreType || 'traditional';
 		this.gameSlugs = [];
 		this.pbpHarvester = new EuroleaguePbpHarvester(options);
+		this.acbPbpHarvester = new AcbPbpHarvester(options);
 
 		// Instantiate available engines
 		this.engines = {
@@ -88,12 +90,17 @@ export class EuropeScraper extends HTTPClient {
 	}
 
 	/**
-	 * @description Fetches EuroLeague / EuroCup play-by-play data using EuroleaguePbpHarvester
+	 * @description Fetches European play-by-play data using appropriate harvester based on game ID prefix / competition.
 	 * @param {string} gameId
 	 * @param {string|number} year
 	 * @returns {Promise<Object>}
 	 */
 	async fetchPbp(gameId, year) {
+		const clean = String(gameId || '').trim();
+		const isAcb = clean.startsWith('A') || clean.includes('_acb_') || this.competitions.includes('acb');
+		if (isAcb) {
+			return this.acbPbpHarvester.fetchAcbPbp(gameId, year);
+		}
 		return this.pbpHarvester.fetchEuroleaguePbp(gameId, year);
 	}
 

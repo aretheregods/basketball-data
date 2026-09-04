@@ -74,7 +74,16 @@ export async function transformStage(league, year, options = {}) {
 			transformFn = transformNblPbp;
 		} else if (league.toLowerCase().startsWith('europe')) {
 			const { transformEuroleaguePbp } = await import('../scrapers/europe/pbp/EuroleaguePbpTransformer.mjs');
-			transformFn = transformEuroleaguePbp;
+			const { transformAcbPbp } = await import('../scrapers/europe/pbp/AcbPbpTransformer.mjs');
+
+			transformFn = (gameId, rawData) => {
+				const clean = String(gameId || '').trim();
+				const isAcb = clean.startsWith('A') || clean.includes('_acb_') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('acb'));
+				if (isAcb) {
+					return transformAcbPbp(gameId, rawData);
+				}
+				return transformEuroleaguePbp(gameId, rawData);
+			};
 		} else {
 			throw new Error(`PBP transformation not implemented for league: ${league}`);
 		}
