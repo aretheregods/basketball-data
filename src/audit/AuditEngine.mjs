@@ -132,19 +132,19 @@ export class AuditEngine {
 			const pbpGamesStmt = this.db.prepare(`
 				SELECT COUNT(DISTINCT p.game_id) as cnt
 				FROM game_play_by_play p
-				JOIN team_game_stats t ON p.game_id = t.game_id
-				WHERE t.season = ?
+				LEFT JOIN team_game_stats t ON p.game_id = t.game_id
+				WHERE COALESCE(t.season, p.competition_id) LIKE '%' || ? || '%' OR p.event_id LIKE '%' || ? || '%'
 			`);
-			const pbpGamesRow = pbpGamesStmt.get(season);
+			const pbpGamesRow = pbpGamesStmt.get(season, season);
 			res.pbpGamesCount = pbpGamesRow ? pbpGamesRow.cnt : 0;
 
 			const pbpEventsStmt = this.db.prepare(`
 				SELECT COUNT(*) as cnt
 				FROM game_play_by_play p
-				JOIN team_game_stats t ON p.game_id = t.game_id
-				WHERE t.season = ?
+				LEFT JOIN team_game_stats t ON p.game_id = t.game_id
+				WHERE COALESCE(t.season, p.competition_id) LIKE '%' || ? || '%' OR p.event_id LIKE '%' || ? || '%'
 			`);
-			const pbpEventsRow = pbpEventsStmt.get(season);
+			const pbpEventsRow = pbpEventsStmt.get(season, season);
 			res.pbpEventsCount = pbpEventsRow ? pbpEventsRow.cnt : 0;
 
 			// Check if game_stints table exists
@@ -153,10 +153,10 @@ export class AuditEngine {
 				const pbpStintsStmt = this.db.prepare(`
 					SELECT COUNT(*) as cnt
 					FROM game_stints s
-					JOIN team_game_stats t ON s.game_id = t.game_id
-					WHERE t.season = ?
+					LEFT JOIN team_game_stats t ON s.game_id = t.game_id
+					WHERE COALESCE(t.season, s.competition_id) LIKE '%' || ? || '%' OR s.stint_id LIKE '%' || ? || '%'
 				`);
-				const pbpStintsRow = pbpStintsStmt.get(season);
+				const pbpStintsRow = pbpStintsStmt.get(season, season);
 				res.pbpStintsCount = pbpStintsRow ? pbpStintsRow.cnt : 0;
 			}
 
