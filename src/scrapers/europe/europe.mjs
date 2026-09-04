@@ -9,6 +9,7 @@ import { LklScraper } from './LklScraper.mjs';
 import { AbaScraper } from './AbaScraper.mjs';
 import { BslScraper } from './BslScraper.mjs';
 import { IsraeliScraper } from './IsraeliScraper.mjs';
+import { EuroleaguePbpHarvester } from './pbp/EuroleaguePbpHarvester.mjs';
 
 /**
  * @description EuropeScraper is the master orchestrator for European basketball competitions.
@@ -40,6 +41,7 @@ export class EuropeScraper extends HTTPClient {
 
 		this.boxscoreType = options.boxscoreType || 'traditional';
 		this.gameSlugs = [];
+		this.pbpHarvester = new EuroleaguePbpHarvester(options);
 
 		// Instantiate available engines
 		this.engines = {
@@ -83,6 +85,16 @@ export class EuropeScraper extends HTTPClient {
 				}
 			}
 		}
+	}
+
+	/**
+	 * @description Fetches EuroLeague / EuroCup play-by-play data using EuroleaguePbpHarvester
+	 * @param {string} gameId
+	 * @param {string|number} year
+	 * @returns {Promise<Object>}
+	 */
+	async fetchPbp(gameId, year) {
+		return this.pbpHarvester.fetchEuroleaguePbp(gameId, year);
 	}
 
 	/**

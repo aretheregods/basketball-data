@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 // Project root is two levels up from src/utils/
 const PROJECT_ROOT = path.resolve(__dirname, '../../');
 
-const ajv = new Ajv({ allErrors: true });
+const ajv = new Ajv({ allErrors: true, allowUnionTypes: true });
 
 /**
  * @description Validates data against a JSON schema stored in the schemas directory.

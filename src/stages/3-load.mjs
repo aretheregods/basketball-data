@@ -59,8 +59,8 @@ export async function loadStage(league, year, cleanedGamesArray, options = {}) {
 				const cacheContent = await fs.readFile(cachePath, 'utf8');
 				data = JSON.parse(cacheContent);
 			} catch (error) {
-				console.error(`❌ Transformed PBP data cache file not found or failed to read at ${cachePath}.`);
-				throw new Error(`Failed to load PBP data for ${league.toUpperCase()} - ${year}. No direct data passed and fallback cache file not found or unreadable.`);
+				console.error(`❌ Transformed PBP data cache file not found at ${cachePath}.`);
+				throw new Error(`Failed to load PBP data for ${league.toUpperCase()} - ${year}. Raw data was not extracted or transformed yet. Please run Stage 1 [EXTRACT] first (e.g., node run.js --league=${league} --years=${year} --type=pbp --step=extract,transform,load).`);
 			}
 		}
 
@@ -68,7 +68,7 @@ export async function loadStage(league, year, cleanedGamesArray, options = {}) {
 		const stints = (data && data.stints) || [];
 
 		if (events.length === 0 && stints.length === 0) {
-			const msg = `❌ No PBP event or stint records to load for ${league.toUpperCase()} - ${year}.`;
+			const msg = `❌ No PBP event or stint records to load for ${league.toUpperCase()} - ${year}. Raw data was not extracted or transformed yet. Please run Stage 1 [EXTRACT] first (e.g., node run.js --league=${league} --years=${year} --type=pbp --step=extract,transform,load).`;
 			console.error(msg);
 			throw new Error(msg);
 		}
@@ -129,8 +129,8 @@ export async function loadStage(league, year, cleanedGamesArray, options = {}) {
 			const cacheContent = await fs.readFile(cachePath, 'utf8');
 			data = JSON.parse(cacheContent);
 		} catch (error) {
-			console.error(`❌ Transformed data cache file not found or failed to read at ${cachePath}.`);
-			throw new Error(`Failed to load data for ${league.toUpperCase()} - ${year}. No direct data passed and fallback cache file not found or unreadable.`);
+			console.error(`❌ Transformed data cache file not found at ${cachePath}.`);
+			throw new Error(`Failed to load data for ${league.toUpperCase()} - ${year}. Raw data was not extracted or transformed yet. Please run Stage 1 [EXTRACT] first (e.g., node run.js --league=${league} --years=${year} --step=extract,transform,load).`);
 		}
 	}
 
