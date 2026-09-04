@@ -87,8 +87,8 @@ export class EuroleaguePbpHarvester extends HTTPClient {
 		if (!this.bypassNetwork && process.env.NODE_ENV !== 'test') {
 			try {
 				const [pbpRes, pointsRes] = await Promise.all([
-					this.request(pbpUrl, {}, 3, 2000),
-					this.request(pointsUrl, {}, 3, 2000)
+					this.request(pbpUrl, {}, 0, 2000),
+					this.request(pointsUrl, {}, 0, 2000)
 				]);
 
 				pbpData = pbpRes;

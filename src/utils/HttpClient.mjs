@@ -60,8 +60,21 @@ export class HTTPClient {
 				throw new Error(`HTTP Error: ${response.status} ${response.statusText}`);
 			}
 
-			return await response.json();
+			let text;
+			if (typeof response.text === 'function') {
+				text = await response.text();
+			} else if (typeof response.json === 'function') {
+				return await response.json();
+			}
+			if (!text || typeof text !== 'string' || text.trim() === '') {
+				return null;
+			}
+			return JSON.parse(text);
 		} catch (error) {
+			if (retries > 0 && error instanceof SyntaxError) {
+				// Don't retry empty/non-JSON 200 responses endlessly
+				throw error;
+			}
 			if (retries > 0) {
 				console.warn(`[HTTP Error] ${ error.message || error }. Retrying ${ url } in ${ delay }ms... (${ retries } left)`);
 				await new Promise( resolve => setTimeout(resolve, delay) );
