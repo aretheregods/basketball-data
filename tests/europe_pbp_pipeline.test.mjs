@@ -28,6 +28,25 @@ import { AuditEngine } from '../src/audit/AuditEngine.mjs';
 
 process.env.NODE_ENV = 'test';
 
+const league = 'europe_pbp_test';
+const year = '2024';
+
+const testRawDir = path.resolve(`data/raw/${league}/pbp/${year}`);
+const testTransformedDir = path.resolve(`data/transformed/${league}/pbp/${year}`);
+const testDbPath = path.resolve(`data/SQL/${league.toUpperCase()}.sqlite`);
+
+test.before(async () => {
+	await fs.rm(testRawDir, { recursive: true, force: true });
+	await fs.rm(testTransformedDir, { recursive: true, force: true });
+	await fs.rm(testDbPath, { force: true });
+});
+
+test.after(async () => {
+	await fs.rm(testRawDir, { recursive: true, force: true });
+	await fs.rm(testTransformedDir, { recursive: true, force: true });
+	await fs.rm(testDbPath, { force: true });
+});
+
 test('EuroLeague, ACB & LNB PBP Clock and Helper Unit Tests', async (t) => {
 	await t.test('parseEuroClock, parseAcbClock and parseLnbClock should parse clock string MM:SS into remaining period seconds', () => {
 		assert.equal(parseEuroClock(null, '10:00'), 600);
@@ -345,9 +364,6 @@ test('EuroLeague PBP Harvester & Transformer Unit Tests', async (t) => {
 });
 
 test('Europe, ACB & LNB PBP Full Pipeline Integration Test', async (t) => {
-	const league = 'europe_pbp_test';
-	const year = '2024';
-
 	// Setup clean mock scraper
 	const scraper = new EuropeScraper({ competitions: 'acb,lnb,euroleague', boxscoreType: 'pbp' });
 	scraper.pbpHarvester.bypassNetwork = true;
@@ -361,15 +377,6 @@ test('Europe, ACB & LNB PBP Full Pipeline Integration Test', async (t) => {
 		];
 		return this;
 	};
-
-	// Clean test directory and test DB before run
-	const testRawDir = path.resolve(`data/raw/${league}/pbp/${year}`);
-	const testTransformedDir = path.resolve(`data/transformed/${league}/pbp/${year}`);
-	const testDbPath = path.resolve(`data/SQL/${league.toUpperCase()}.sqlite`);
-
-	await fs.rm(testRawDir, { recursive: true, force: true });
-	await fs.rm(testTransformedDir, { recursive: true, force: true });
-	await fs.rm(testDbPath, { force: true });
 
 	await t.test('Full Europe, ACB & LNB PBP Pipeline Execution: Extract -> Transform -> Load -> SQLite Audit', async () => {
 		// Stage 1: Extract
@@ -388,7 +395,7 @@ test('Europe, ACB & LNB PBP Full Pipeline Integration Test', async (t) => {
 		await loadStage(league, year, transformedData, { type: 'pbp', competitions: 'acb,lnb,euroleague' });
 
 		// Stage 4: Direct DB verification
-		const db = await initDatabase(league);
+		let db = await initDatabase(league);
 		try {
 			const elEventsCount = db.prepare('SELECT COUNT(*) as count FROM game_play_by_play WHERE game_id = ?').get('E2024_1');
 			assert.equal(elEventsCount.count, 2);
@@ -429,12 +436,10 @@ test('Europe, ACB & LNB PBP Full Pipeline Integration Test', async (t) => {
 			assert.ok(fullAudit.totalPbpEvents > 0);
 			assert.ok(fullAudit.totalPbpStints > 0);
 		} finally {
-			if (db) db.destroy();
+			if (db) {
+				db.close();
+				db = null;
+			}
 		}
 	});
-
-	// Cleanup test artifacts
-	await fs.rm(testRawDir, { recursive: true, force: true });
-	await fs.rm(testTransformedDir, { recursive: true, force: true });
-	await fs.rm(testDbPath, { force: true });
 });

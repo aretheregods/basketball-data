@@ -81,7 +81,7 @@ export class AcbPbpHarvester extends HTTPClient {
 
 		if (!this.bypassNetwork && process.env.NODE_ENV !== 'test') {
 			try {
-				payload = await this.request(apiUrl, {}, 3, 2000);
+				payload = await this.request(apiUrl, {}, 0, 0);
 			} catch (err) {
 				console.warn(`⚠️ [AcbPbpHarvester] Failed fetching PBP for ACB Game ${gameId} (${year}): ${err.message}`);
 				payload = {

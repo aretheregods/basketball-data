@@ -81,7 +81,7 @@ export class LnbPbpHarvester extends HTTPClient {
 
 		if (!this.bypassNetwork && process.env.NODE_ENV !== 'test') {
 			try {
-				payload = await this.request(apiUrl, {}, 3, 2000);
+				payload = await this.request(apiUrl, {}, 0, 0);
 			} catch (err) {
 				console.warn(`⚠️ [LnbPbpHarvester] Failed fetching PBP for LNB Game ${gameId} (${year}): ${err.message}`);
 				payload = {
