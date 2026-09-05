@@ -73,7 +73,13 @@ export async function extractStage(scraper, league, year, options = {}) {
 
 	// 3. Download and save raw payload for each game
 	for (const gameId of gameIds) {
-		const filePath = path.join(outputDir, `${gameId}.json`);
+		let targetOutputDir = outputDir;
+		if (isPbp && league.toLowerCase().startsWith('europe')) {
+			const subFolder = gameId.startsWith('A') ? 'acb' : (gameId.startsWith('L') ? 'lnb' : (gameId.startsWith('U') ? 'eurocup' : (gameId.startsWith('B') ? 'bcl' : 'euroleague')));
+			targetOutputDir = path.resolve('data/raw', league.includes('_test') ? league : 'europe', 'pbp', subFolder, String(year));
+			await fs.mkdir(targetOutputDir, { recursive: true });
+		}
+		const filePath = path.join(targetOutputDir, `${gameId}.json`);
 
 		// Cache check: skip if the file already exists, is non-empty, and contains valid non-empty data
 		try {
