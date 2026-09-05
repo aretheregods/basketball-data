@@ -27,7 +27,16 @@ export async function extractStage(scraper, league, year, options = {}) {
 	if (isPbp) {
 		if (league.toLowerCase().startsWith('europe')) {
 			const comp = (options.competitions || options.competition || 'euroleague').toLowerCase();
-			const subFolder = comp.includes('acb') ? 'acb' : (comp.includes('eurocup') ? 'eurocup' : (comp.includes('bcl') ? 'bcl' : 'euroleague'));
+			let subFolder = 'euroleague';
+			if (comp === 'lnb' || (comp.includes('lnb') && !comp.includes('acb'))) {
+				subFolder = 'lnb';
+			} else if (comp.includes('acb')) {
+				subFolder = 'acb';
+			} else if (comp.includes('eurocup')) {
+				subFolder = 'eurocup';
+			} else if (comp.includes('bcl')) {
+				subFolder = 'bcl';
+			}
 			outputDir = path.resolve('data/raw', 'europe', 'pbp', subFolder, String(year));
 		} else {
 			outputDir = path.resolve('data/raw', league, 'pbp', String(year));

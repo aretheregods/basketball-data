@@ -13,6 +13,15 @@
     },
     "jugadas": {
       "type": "array"
+    },
+    "actions": {
+      "type": "array"
+    },
+    "rows": {
+      "type": "array"
+    },
+    "plays": {
+      "type": "array"
     }
   }
 }
