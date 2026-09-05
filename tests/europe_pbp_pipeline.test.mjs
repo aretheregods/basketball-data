@@ -106,12 +106,14 @@ test('French LNB PBP Harvester & Transformer Unit Tests', async (t) => {
 			competitionId: 'LNB2025',
 			seasonCode: 'LNB2025',
 			gameCode: '1001',
+			fibaMatchId: '1001',
 			seasonYear: '2025'
 		});
 		assert.deepEqual(harvester.parseGameId('1001', '2024'), {
 			competitionId: 'LNB2024',
 			seasonCode: 'LNB2024',
 			gameCode: '1001',
+			fibaMatchId: '1001',
 			seasonYear: '2024'
 		});
 	});

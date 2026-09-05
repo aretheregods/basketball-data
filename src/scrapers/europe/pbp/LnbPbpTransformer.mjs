@@ -40,19 +40,19 @@ export function normalizeLnbAction(frenchText = '', typeCode = '') {
 	const text = String(frenchText || '').toLowerCase();
 	const type = String(typeCode || '').toUpperCase();
 
-	if (type === '3FGM' || text.includes('3pts réussi') || text.includes('3pt réussi') || text.includes('tir à 3pts réussi') || text.includes('3pt made')) {
+	if (type === '3FGM' || type === '3PT' || text.includes('3pts réussi') || text.includes('3pt réussi') || text.includes('tir à 3pts réussi') || text.includes('3pt made')) {
 		return '3FGM';
 	}
 	if (type === '3FGA' || text.includes('3pts manqué') || text.includes('3pt manqué') || text.includes('tir à 3pts manqué') || text.includes('3pt miss')) {
 		return '3FGA';
 	}
-	if (type === '2FGM' || text.includes('2pts réussi') || text.includes('2pt réussi') || text.includes('dunk') || text.includes('layup') || text.includes('panier') || text.includes('2pt made')) {
+	if (type === '2FGM' || type === '2PT' || text.includes('2pts réussi') || text.includes('2pt réussi') || text.includes('dunk') || text.includes('layup') || text.includes('panier') || text.includes('2pt made')) {
 		return '2FGM';
 	}
 	if (type === '2FGA' || text.includes('2pts manqué') || text.includes('2pt manqué') || text.includes('tir à 2pts manqué') || text.includes('2pt miss')) {
 		return '2FGA';
 	}
-	if (type === 'FTM' || text.includes('lancer franc réussi') || text.includes('lf réussi') || text.includes('ft made')) {
+	if (type === 'FTM' || type === 'FREETHROW' || text.includes('lancer franc réussi') || text.includes('lf réussi') || text.includes('ft made')) {
 		return 'FTM';
 	}
 	if (type === 'FTA' || text.includes('lancer franc manqué') || text.includes('lf manqué') || text.includes('ft miss')) {
@@ -64,10 +64,10 @@ export function normalizeLnbAction(frenchText = '', typeCode = '') {
 	if (type === 'DRB' || text.includes('rebond défensif') || text.includes('rebond defensif') || text.includes('defensive rebound') || text.includes('rebond')) {
 		return 'DRB';
 	}
-	if (type === 'TOV' || text.includes('balle perdue') || text.includes('perte de balle') || text.includes('turnover')) {
+	if (type === 'TOV' || type === 'TURNOVER' || text.includes('balle perdue') || text.includes('perte de balle') || text.includes('turnover')) {
 		return 'TOV';
 	}
-	if (type === 'BLK' || text.includes('contre') || text.includes('tir contré') || text.includes('block')) {
+	if (type === 'BLK' || type === 'BLOCK' || text.includes('contre') || text.includes('tir contré') || text.includes('block')) {
 		return 'BLK';
 	}
 	if (type === 'FOUL' || text.includes('faute') || text.includes('faute personnelle') || text.includes('foul')) {
@@ -221,6 +221,7 @@ function buildStintsFromEvents(gameId, competitionId, events) {
 
 /**
  * @description Main transformation function for French LNB raw PBP JSON payloads.
+ * Supports FIBA LiveStats Genius Sports payload format and LNB REST payload format.
  * @param {string} gameId
  * @param {Object} rawJson
  * @returns {{ events: Object[], stints: Object[] }}
@@ -231,6 +232,83 @@ export function transformLnbPbp(gameId, rawJson) {
 	const seasonYear = rawJson.seasonYear || '2025';
 	const competitionId = rawJson.competitionId || `LNB${seasonYear}`;
 
+	// Check if rawJson is a FIBA LiveStats payload (contains pbp array and tm team object)
+	if (Array.isArray(rawJson.pbp) && rawJson.tm) {
+		const events = [];
+		const tm1 = rawJson.tm['1'] || {};
+		const tm2 = rawJson.tm['2'] || {};
+		const homeCode = tm1.code || tm1.name || 'HOME';
+		const awayCode = tm2.code || tm2.name || 'AWAY';
+
+		const rawPbp = rawJson.pbp;
+		for (let i = 0; i < rawPbp.length; i++) {
+			const action = rawPbp[i];
+
+			const period = parseInt(action.period || 1, 10);
+			const clockRaw = action.gt || "10:00";
+			const secondsRemaining = parseLnbClock(clockRaw);
+			const gameSecondsRemaining = calculateGameSecondsRemaining(period, secondsRemaining);
+
+			const homeScore = parseInt(action.s1 || 0, 10);
+			const awayScore = parseInt(action.s2 || 0, 10);
+
+			const actType = String(action.actionType || '').toLowerCase();
+			const subType = String(action.subType || '').toLowerCase();
+
+			let eventType = 'OTHER';
+			if (actType === '2pt') {
+				eventType = action.success === 1 ? '2FGM' : '2FGA';
+			} else if (actType === '3pt') {
+				eventType = action.success === 1 ? '3FGM' : '3FGA';
+			} else if (actType === 'freethrow') {
+				eventType = action.success === 1 ? 'FTM' : 'FTA';
+			} else if (actType === 'reb') {
+				eventType = subType === 'offensive' ? 'ORB' : 'DRB';
+			} else if (actType === 'turnover') {
+				eventType = 'TOV';
+			} else if (actType === 'foul') {
+				eventType = 'FOUL';
+			} else if (actType === 'block') {
+				eventType = 'BLK';
+			} else if (actType === 'sub') {
+				eventType = 'SUB';
+			}
+
+			const teamId = action.tno === 1 ? homeCode : (action.tno === 2 ? awayCode : null);
+			const playerName = action.player || `${action.firstName || ''} ${action.familyName || ''}`.trim();
+			const playerId = action.pno ? String(action.pno) : (playerName ? playerName.toLowerCase().replace(/[^a-z0-9]/g, '-') : null);
+
+			const description = `${actType} ${subType} ${playerName ? 'by ' + playerName : ''}`.trim();
+			const isScoring = ['2FGM', '3FGM', 'FTM'].includes(eventType) ? 1 : 0;
+			const actionId = action.actionNumber ?? (i + 1);
+
+			events.push({
+				event_id: `${competitionId}_${gameId}_lnb_pbp_${actionId}_${i}`,
+				game_id: String(gameId),
+				competition_id: competitionId,
+				period,
+				clock: String(clockRaw),
+				seconds_remaining: secondsRemaining,
+				game_seconds_remaining: gameSecondsRemaining,
+				event_type: eventType,
+				sub_type: action.subType ? String(action.subType) : null,
+				team_id: teamId,
+				player_id: playerId,
+				secondary_player_id: null,
+				description,
+				home_score: homeScore,
+				away_score: awayScore,
+				loc_x: action.x !== undefined && action.x !== null ? Number(action.x) : null,
+				loc_y: action.y !== undefined && action.y !== null ? Number(action.y) : null,
+				shot_distance: null,
+				is_scoring_play: isScoring
+			});
+		}
+
+		const stints = buildStintsFromEvents(gameId, competitionId, events);
+		return { events, stints };
+	}
+
 	let rawEvents = [];
 	if (Array.isArray(rawJson.actions)) {
 		rawEvents = rawJson.actions;
@@ -240,6 +318,8 @@ export function transformLnbPbp(gameId, rawJson) {
 		rawEvents = rawJson.plays;
 	} else if (Array.isArray(rawJson.jugadas)) {
 		rawEvents = rawJson.jugadas;
+	} else if (Array.isArray(rawJson.pbp)) {
+		rawEvents = rawJson.pbp;
 	} else if (Array.isArray(rawJson)) {
 		rawEvents = rawJson;
 	}
@@ -252,22 +332,24 @@ export function transformLnbPbp(gameId, rawJson) {
 		const action = rawEvents[i];
 
 		const period = parseInt(action.periode || action.period || action.quarter || 1, 10);
-		const clockRaw = action.chrono || action.clock || action.reloj || "10:00";
+		const clockRaw = action.chrono || action.clock || action.reloj || action.gt || "10:00";
 		const secondsRemaining = parseLnbClock(clockRaw);
 		const gameSecondsRemaining = calculateGameSecondsRemaining(period, secondsRemaining);
 
 		if (action.scoreDomicile !== undefined && action.scoreDomicile !== null) runningHomeScore = parseInt(action.scoreDomicile, 10);
 		else if (action.home_score !== undefined && action.home_score !== null) runningHomeScore = parseInt(action.home_score, 10);
+		else if (action.s1 !== undefined && action.s1 !== null) runningHomeScore = parseInt(action.s1, 10);
 
 		if (action.scoreExterieur !== undefined && action.scoreExterieur !== null) runningAwayScore = parseInt(action.scoreExterieur, 10);
 		else if (action.away_score !== undefined && action.away_score !== null) runningAwayScore = parseInt(action.away_score, 10);
+		else if (action.s2 !== undefined && action.s2 !== null) runningAwayScore = parseInt(action.s2, 10);
 
 		const frenchText = action.libelle || action.description || action.texto || '';
-		const rawType = action.type || action.event_type || action.tipo || '';
+		const rawType = action.type || action.event_type || action.tipo || action.actionType || '';
 		const eventType = normalizeLnbAction(frenchText, rawType);
 
 		const isScoring = ['2FGM', '3FGM', 'FTM'].includes(eventType) || Number(action.puntos || action.points || 0) > 0;
-		const actionId = action.id ?? action.action_id ?? action.playNumber ?? (i + 1);
+		const actionId = action.id ?? action.action_id ?? action.playNumber ?? action.actionNumber ?? (i + 1);
 
 		events.push({
 			event_id: `${competitionId}_${gameId}_lnb_pbp_${actionId}_${i}`,
@@ -278,15 +360,15 @@ export function transformLnbPbp(gameId, rawJson) {
 			seconds_remaining: secondsRemaining,
 			game_seconds_remaining: gameSecondsRemaining,
 			event_type: eventType,
-			sub_type: action.sousType !== undefined && action.sousType !== null ? String(action.sousType) : (action.subtipo !== undefined && action.subtipo !== null ? String(action.subtipo) : null),
+			sub_type: action.sousType !== undefined && action.sousType !== null ? String(action.sousType) : (action.subType !== undefined && action.subType !== null ? String(action.subType) : null),
 			team_id: action.equipeId ? String(action.equipeId) : (action.team_id ? String(action.team_id) : (action.idEquipo ? String(action.idEquipo) : null)),
 			player_id: action.joueurId ? String(action.joueurId) : (action.player_id ? String(action.player_id) : (action.idJugador ? String(action.idJugador) : null)),
 			secondary_player_id: action.joueurSecondaireId ? String(action.joueurSecondaireId) : (action.secondary_player_id ? String(action.secondary_player_id) : null),
 			description: String(frenchText),
 			home_score: runningHomeScore,
 			away_score: runningAwayScore,
-			loc_x: action.coordX !== undefined && action.coordX !== null ? Number(action.coordX) : (action.posX !== undefined && action.posX !== null ? Number(action.posX) : (action.loc_x ?? null)),
-			loc_y: action.coordY !== undefined && action.coordY !== null ? Number(action.coordY) : (action.posY !== undefined && action.posY !== null ? Number(action.posY) : (action.loc_y ?? null)),
+			loc_x: action.coordX !== undefined && action.coordX !== null ? Number(action.coordX) : (action.posX !== undefined && action.posX !== null ? Number(action.posX) : (action.x !== undefined && action.x !== null ? Number(action.x) : (action.loc_x ?? null))),
+			loc_y: action.coordY !== undefined && action.coordY !== null ? Number(action.coordY) : (action.posY !== undefined && action.posY !== null ? Number(action.posY) : (action.y !== undefined && action.y !== null ? Number(action.y) : (action.loc_y ?? null))),
 			shot_distance: action.distance !== undefined && action.distance !== null ? Number(action.distance) : (action.shot_distance ?? null),
 			is_scoring_play: isScoring ? 1 : 0
 		});

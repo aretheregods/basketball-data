@@ -4,6 +4,7 @@ import { HTTPClient } from '#utils';
 
 /**
  * @description Harvester for French LNB Élite (Pro A) Play-by-Play endpoints.
+ * Supports Genius Sports FIBA LiveStats API feeds and official LNB REST endpoints with fail-soft fallbacks.
  */
 export class LnbPbpHarvester extends HTTPClient {
 	/**
@@ -11,20 +12,22 @@ export class LnbPbpHarvester extends HTTPClient {
 	 * @param {Object} [options={}] - Options
 	 */
 	constructor(options = {}) {
-		super('https://prod.lnb.fr', {
+		super('https://fibalivestats.dcd.shared.geniussports.com', {
 			'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-			'accept': 'application/json, text/plain, */*',
-			'referer': 'https://www.lnb.fr/'
+			'accept': 'application/json, text/plain, */*'
 		});
 		this.bypassNetwork = options.bypassNetwork || false;
 	}
 
 	/**
-	 * @description Parses game code and season year from an LNB game ID.
-	 * LNB game ID is formatted as L{season}_{gameCode}, e.g. L2025_2024_09_26_limoges or L2025_12345.
+	 * @description Parses game code, numeric FIBA match ID, and season year from an LNB game ID.
+	 * LNB game ID formats:
+	 * - L{season}_{numericId} (e.g. L2025_2300000)
+	 * - L{season}_{date_slug} (e.g. L2021_2020_09_23_monaco)
+	 * - {numericId} (e.g. 2300000)
 	 * @param {string} gameId
 	 * @param {string|number} [defaultYear='2025']
-	 * @returns {{ competitionId: string, seasonCode: string, gameCode: string, seasonYear: string }}
+	 * @returns {{ competitionId: string, seasonCode: string, gameCode: string, fibaMatchId: string|null, seasonYear: string }}
 	 */
 	parseGameId(gameId, defaultYear = '2025') {
 		const clean = String(gameId || '').trim();
@@ -44,24 +47,36 @@ export class LnbPbpHarvester extends HTTPClient {
 			}
 		}
 
+		// Extract numeric match ID if present
+		let fibaMatchId = null;
+		if (/^\d+$/.test(gameCode)) {
+			fibaMatchId = gameCode;
+		} else {
+			const match = gameCode.match(/\b(\d{6,8})\b/);
+			if (match) {
+				fibaMatchId = match[1];
+			}
+		}
+
 		return {
 			competitionId: `LNB${seasonYear}`,
 			seasonCode: `LNB${seasonYear}`,
 			gameCode,
+			fibaMatchId,
 			seasonYear
 		};
 	}
 
 	/**
 	 * @description Fetches French LNB raw play-by-play data.
-	 * Checks raw disk cache first, falling back to live HTTP API or test mock payload.
+	 * Checks raw disk cache first, falling back to Genius Sports FIBA LiveStats or official LNB API.
 	 *
 	 * @param {string} gameId - Game identifier
 	 * @param {string|number} seasonYear - Season year (e.g. 2025)
-	 * @returns {Promise<Object|null>} - Raw play-by-play payload object
+	 * @returns {Promise<Object>} - Raw play-by-play payload object
 	 */
 	async fetchLnbPbp(gameId, seasonYear = '2025') {
-		const { competitionId, gameCode, seasonYear: year } = this.parseGameId(gameId, seasonYear);
+		const { competitionId, gameCode, fibaMatchId, seasonYear: year } = this.parseGameId(gameId, seasonYear);
 		const targetFolder = String(year).startsWith('L') ? year.substring(1) : year;
 		const cachePath = path.resolve(`data/raw/europe/pbp/lnb/${targetFolder}/${gameId}.json`);
 
@@ -76,20 +91,33 @@ export class LnbPbpHarvester extends HTTPClient {
 			// Cache miss or invalid JSON, proceed
 		}
 
-		const apiUrl = `https://prod.lnb.fr/api/matchs/${gameCode}/playbyplay`;
 		let payload = null;
 
 		if (!this.bypassNetwork && process.env.NODE_ENV !== 'test') {
-			try {
-				payload = await this.request(apiUrl, {}, 0, 0);
-			} catch (err) {
-				console.warn(`⚠️ [LnbPbpHarvester] Failed fetching PBP for LNB Game ${gameId} (${year}): ${err.message}`);
-				payload = {
-					gameId: String(gameId),
-					competitionId,
-					seasonYear: year,
-					actions: []
-				};
+			// 1. Try Genius Sports FIBA LiveStats endpoint if numeric ID available
+			if (fibaMatchId) {
+				const fibaUrl = `https://fibalivestats.dcd.shared.geniussports.com/data/${fibaMatchId}/data.json`;
+				try {
+					payload = await this.request(fibaUrl, {}, 0, 0);
+					if (payload && (payload.pbp || payload.tm)) {
+						payload.gameId = String(gameId);
+						payload.competitionId = competitionId;
+						payload.seasonYear = year;
+					}
+				} catch (err) {
+					// Fall through to LNB REST
+				}
+			}
+
+			// 2. Fall back to LNB official live endpoint
+			if (!payload) {
+				const apiUrl = `https://prod.lnb.fr/api/matchs/${gameCode}/playbyplay`;
+				try {
+					payload = await this.request(apiUrl, {}, 0, 0);
+				} catch (err) {
+					// Live fetch failed, log fail-soft warning
+					console.warn(`⚠️ [LnbPbpHarvester] Live PBP API unavailable for LNB Game ${gameId} (${year})`);
+				}
 			}
 		}
 
@@ -131,13 +159,22 @@ export class LnbPbpHarvester extends HTTPClient {
 			};
 		}
 
-		if (payload) {
-			try {
-				await fs.mkdir(path.dirname(cachePath), { recursive: true });
-				await fs.writeFile(cachePath, JSON.stringify(payload, null, 2), 'utf8');
-			} catch (e) {
-				// Ignore write errors if in strict mock test modes
-			}
+		// Fail-soft fallback object if fetch was completely unfulfilled
+		if (!payload) {
+			payload = {
+				gameId: String(gameId),
+				competitionId,
+				seasonYear: year,
+				actions: [],
+				pbp: []
+			};
+		}
+
+		try {
+			await fs.mkdir(path.dirname(cachePath), { recursive: true });
+			await fs.writeFile(cachePath, JSON.stringify(payload, null, 2), 'utf8');
+		} catch (e) {
+			// Ignore write errors
 		}
 
 		return payload;
