@@ -16,7 +16,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '../');
 
 test.describe('ABA Adriatic Basketball Scraper & Pipeline Integration', () => {
 	const league = 'europe_aba_test';
-	const year = '2097'; // Unique test year to isolate test runs
+	const year = '2024'; // Unique test year to isolate test runs
 
 	test.before(async () => {
 		process.env.NODE_ENV = 'test';
@@ -31,21 +31,21 @@ test.describe('ABA Adriatic Basketball Scraper & Pipeline Integration', () => {
 
 	test('AbaHarvester should return mock slugs in test mode', async () => {
 		const harvester = new AbaHarvester();
-		const slugs = await harvester.getSeasonGameSlugs('2097');
+		const slugs = await harvester.getSeasonGameSlugs('2024');
 
 		assert.ok(slugs.length > 0, 'Should return some slugs');
-		assert.ok(slugs[0].includes('-V2097_'), 'Slugs must be formatted with V season prefix segment');
+		assert.ok(slugs[0].includes('-V2024_'), 'Slugs must be formatted with V season prefix segment');
 		const sampleGameId = slugs[0].split('-').pop();
-		assert.match(sampleGameId, /^V2097_\d+$/, 'gameId Segment must match ABA pattern');
+		assert.match(sampleGameId, /^V2024_\d+$/, 'gameId Segment must match ABA pattern');
 	});
 
 	test('AbaScraper should return correct unified schema mock data', async () => {
 		const scraper = new AbaScraper();
-		const boxscore = await scraper.getUnifiedBoxScore('partizan-vs-crvena-zvezda-V2097_123');
+		const boxscore = await scraper.getUnifiedBoxScore('partizan-vs-crvena-zvezda-V2024_123');
 
-		assert.equal(boxscore.gameId, 'partizan-vs-crvena-zvezda-V2097_123');
+		assert.equal(boxscore.gameId, 'partizan-vs-crvena-zvezda-V2024_123');
 		assert.equal(boxscore.competitionId, 'aba');
-		assert.equal(boxscore.seasonId, '2097');
+		assert.equal(boxscore.seasonId, '2024');
 
 		// Home team check
 		assert.equal(boxscore.homeTeam.teamName, 'Crvena Zvezda');
@@ -85,7 +85,7 @@ test.describe('ABA Adriatic Basketball Scraper & Pipeline Integration', () => {
 		const testHtml = `
 			<html>
 				<body>
-					<div class="time_match">15.11.2097</div>
+					<div class="time_match">15.11.2024</div>
 					<div class="title_match">PARTIZAN MOZZART BET - CRVENA ZVEZDA</div>
 
 					<h3>PARTIZAN MOZZART BET</h3>
@@ -110,7 +110,7 @@ test.describe('ABA Adriatic Basketball Scraper & Pipeline Integration', () => {
 		const scraper = new AbaScraper();
 
 		// Setup cached raw HTML file so AbaScraper reads from it directly instead of fetching
-		const gameId = 'partizan-vs-crvena-zvezda-V2097_123';
+		const gameId = 'partizan-vs-crvena-zvezda-V2024_123';
 		const { yearPrefix, gameCode } = scraper.parseGameId(gameId);
 		const htmlCacheDir = path.resolve('data/raw/europe/aba', String(yearPrefix));
 		await fs.mkdir(htmlCacheDir, { recursive: true });
@@ -128,7 +128,7 @@ test.describe('ABA Adriatic Basketball Scraper & Pipeline Integration', () => {
 			assert.equal(boxscore.awayTeam.teamName, 'PARTIZAN MOZZART BET');
 			assert.equal(boxscore.homeTeam.score, 85);
 			assert.equal(boxscore.awayTeam.score, 82);
-			assert.equal(boxscore.gameDate, '2097-11-15');
+			assert.equal(boxscore.gameDate, '2024-11-15');
 
 			const sik = boxscore.awayTeam.players.find(p => p.playerName === 'Antonio Sikiric');
 			assert.ok(sik, 'Should parse Antonio Sikiric successfully');
@@ -148,7 +148,7 @@ test.describe('ABA Adriatic Basketball Scraper & Pipeline Integration', () => {
 
 	test('EuropeScraper should route gameId prefixed with V to AbaScraper', () => {
 		const scraper = new EuropeScraper({ competitions: 'aba' });
-		const engine = scraper.getEngineForGame('partizan-vs-crvena-zvezda-V2097_123');
+		const engine = scraper.getEngineForGame('partizan-vs-crvena-zvezda-V2024_123');
 		assert.ok(engine instanceof AbaScraper);
 	});
 
@@ -159,7 +159,7 @@ test.describe('ABA Adriatic Basketball Scraper & Pipeline Integration', () => {
 			// 1. STAGE 1: Extract
 			const gameIds = await extractStage(scraper, league, year);
 			assert.ok(gameIds.length > 0);
-			assert.ok(gameIds.includes('V2097_123'));
+			assert.ok(gameIds.includes('V2024_123'));
 
 			// 2. STAGE 2: Transform
 			const transformed = await transformStage(league, year);
@@ -189,7 +189,7 @@ test.describe('ABA Adriatic Basketball Scraper & Pipeline Integration', () => {
 
 				const games = db.prepare('SELECT * FROM games WHERE competition_id = ? AND season_id = ?').all('aba', year);
 				assert.ok(games.length > 0);
-				assert.ok(games.some(g => g.id === 'V2097_123'));
+				assert.ok(games.some(g => g.id === 'V2024_123'));
 			} finally {
 				db.destroy();
 			}

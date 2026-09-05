@@ -38,34 +38,41 @@ export async function transformStage(league, year, options = {}) {
 	const isPbp = options.boxscoreType === 'pbp' || options.type === 'pbp';
 	console.log(`⚙️ Starting Stage 2 [TRANSFORM] for ${league.toUpperCase()} - ${year}${isPbp ? ' (PBP)' : ''}`);
 
-	let rawDir;
-	if (isPbp) {
-		if (league.toLowerCase().startsWith('europe')) {
-			const comp = (options.competitions || options.competition || 'euroleague').toLowerCase();
-			const subFolder = comp.includes('acb') ? 'acb' : (comp.includes('eurocup') ? 'eurocup' : (comp.includes('bcl') ? 'bcl' : 'euroleague'));
-			rawDir = path.resolve('data/raw', 'europe', 'pbp', subFolder, String(year));
-		} else {
-			rawDir = path.resolve('data/raw', league, 'pbp', String(year));
-		}
-	} else {
-		rawDir = path.resolve('data/raw', league, String(year));
-	}
+	let rawDir = path.resolve('data/raw', league, String(year));
 
 	if (isPbp) {
-		let files = [];
-		try {
-			files = await fs.readdir(rawDir);
-		} catch (error) {
-			console.warn(`⚠️ Raw PBP data directory does not exist or cannot be read: ${rawDir}`);
+		const jsonFilesMap = [];
+		if (league.toLowerCase().startsWith('europe')) {
+			const subFolders = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb'];
+			for (const sf of subFolders) {
+				const sfDir = path.resolve('data/raw', league.includes('_test') ? league : 'europe', 'pbp', sf, String(year));
+				try {
+					const sfFiles = await fs.readdir(sfDir);
+					for (const f of sfFiles.filter(file => file.endsWith('.json'))) {
+						jsonFilesMap.push({ dir: sfDir, fileName: f });
+					}
+				} catch (e) {
+					// Subfolder doesn't exist
+				}
+			}
+		} else {
+			const dir = path.resolve('data/raw', league, 'pbp', String(year));
+			try {
+				const files = await fs.readdir(dir);
+				for (const f of files.filter(file => file.endsWith('.json'))) {
+					jsonFilesMap.push({ dir, fileName: f });
+				}
+			} catch (e) {
+				// Directory doesn't exist
+			}
+		}
+
+		if (jsonFilesMap.length === 0) {
+			console.warn(`⚠️ Raw PBP data directory does not exist or contains no JSON files.`);
 			console.warn(`💡 Hint: Ensure you have executed Stage 1 [EXTRACT] first (e.g., node run.js --league=${league} --years=${year} --type=pbp --step=extract,transform,load)`);
 			return { events: [], stints: [] };
-		}
-		const jsonFiles = files.filter(f => f.endsWith('.json'));
-		if (jsonFiles.length === 0) {
-			console.warn(`⚠️ No raw PBP JSON files found in ${rawDir}`);
-			console.warn(`💡 Hint: Ensure Stage 1 [EXTRACT] has extracted game files into disk storage first.`);
 		} else {
-			console.log(`📂 Found ${jsonFiles.length} raw PBP JSON files to transform.`);
+			console.log(`📂 Found ${jsonFilesMap.length} raw PBP JSON files to transform.`);
 		}
 
 		const allEvents = [];
@@ -84,6 +91,7 @@ export async function transformStage(league, year, options = {}) {
 		} else if (league.toLowerCase().startsWith('europe')) {
 			const { transformEuroleaguePbp } = await import('../scrapers/europe/pbp/EuroleaguePbpTransformer.mjs');
 			const { transformAcbPbp } = await import('../scrapers/europe/pbp/AcbPbpTransformer.mjs');
+			const { transformLnbPbp } = await import('../scrapers/europe/pbp/LnbPbpTransformer.mjs');
 
 			transformFn = (gameId, rawData) => {
 				const clean = String(gameId || '').trim();
@@ -91,14 +99,18 @@ export async function transformStage(league, year, options = {}) {
 				if (isAcb) {
 					return transformAcbPbp(gameId, rawData);
 				}
+				const isLnb = clean.startsWith('L') || clean.includes('_lnb_') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('lnb'));
+				if (isLnb) {
+					return transformLnbPbp(gameId, rawData);
+				}
 				return transformEuroleaguePbp(gameId, rawData);
 			};
 		} else {
 			throw new Error(`PBP transformation not implemented for league: ${league}`);
 		}
 
-		for (const fileName of jsonFiles) {
-			const filePath = path.join(rawDir, fileName);
+		for (const { dir, fileName } of jsonFilesMap) {
+			const filePath = path.join(dir, fileName);
 			try {
 				const content = await fs.readFile(filePath, 'utf8');
 				const rawData = JSON.parse(content);
