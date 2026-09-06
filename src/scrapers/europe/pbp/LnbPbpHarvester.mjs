@@ -5,7 +5,7 @@ import { HTTPClient } from '#utils';
 /**
  * @description Harvester for French LNB Élite (Pro A) Play-by-Play endpoints.
  * Supports Genius Sports FIBA LiveStats API feeds, official LNB REST endpoints,
- * and Playwright browser response interception with fail-soft fallbacks.
+ * and Playwright Match Centre navigation (.sw-sub-tabs & [data-testid="fixture-pbp"]).
  */
 export class LnbPbpHarvester extends HTTPClient {
 	/**
@@ -70,7 +70,7 @@ export class LnbPbpHarvester extends HTTPClient {
 
 	/**
 	 * @description Fetches French LNB raw play-by-play data.
-	 * Checks raw disk cache first, falling back to Genius Sports FIBA LiveStats, LNB REST, or Playwright interception.
+	 * Checks raw disk cache first, falling back to Genius Sports FIBA LiveStats, LNB REST, or Playwright Match Centre navigation.
 	 *
 	 * @param {string} gameId - Game identifier
 	 * @param {string|number} seasonYear - Season year (e.g. 2025)
@@ -120,7 +120,7 @@ export class LnbPbpHarvester extends HTTPClient {
 				}
 			}
 
-			// 3. Fall back to Playwright browser response interception for dynamic web rendering
+			// 3. Playwright Match Centre Navigation (.sw-sub-tabs 2nd tab & [data-testid="fixture-pbp"])
 			if (!payload) {
 				try {
 					const { chromium } = await import('playwright');
@@ -129,10 +129,12 @@ export class LnbPbpHarvester extends HTTPClient {
 						args: ['--no-sandbox', '--disable-setuid-sandbox']
 					});
 					const context = await browser.newContext({
-						userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+						userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+						viewport: { width: 1920, height: 1080 }
 					});
 					const page = await context.newPage();
 
+					// Intercept background API response
 					page.on('response', async (res) => {
 						const url = res.url();
 						if (url.includes('/playbyplay') || url.includes('/data.json')) {
@@ -145,9 +147,49 @@ export class LnbPbpHarvester extends HTTPClient {
 						}
 					});
 
-					const targetMatchUrl = `https://www.lnb.fr/fr/match/${gameCode}`;
-					await page.goto(targetMatchUrl, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
-					await page.waitForTimeout(1000).catch(() => {});
+					const matchCenterUrl = `https://www.lnb.fr/fr/match/${gameCode}`;
+					await page.goto(matchCenterUrl, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+
+					// Click the 2nd tab in .sw-sub-tabs (Play-by-Play view)
+					try {
+						const subTabs = page.locator('.sw-sub-tabs button, .sw-sub-tabs div, .sw-sub-tabs a');
+						if (await subTabs.count() >= 2) {
+							await subTabs.nth(1).click().catch(() => {});
+							await page.waitForTimeout(1000).catch(() => {});
+						}
+					} catch (e) {}
+
+					// If response wasn't intercepted, extract rendered PBP events from [data-testid="fixture-pbp"]
+					if (!payload) {
+						const domActions = await page.evaluate(() => {
+							const container = document.querySelector('[data-testid="fixture-pbp"]') || document.querySelector('.fixture-pbp');
+							if (!container) return [];
+
+							const rows = Array.from(container.querySelectorAll('.pbp-row, tr, div[class*="row"]'));
+							return rows.map((r, idx) => {
+								const text = r.textContent.trim();
+								const clockMatch = text.match(/(\d{1,2}:\d{2})/);
+								const clock = clockMatch ? clockMatch[1] : "10:00";
+								return {
+									id: idx + 1,
+									periode: 1,
+									chrono: clock,
+									libelle: text,
+									type: "DOM_PBP"
+								};
+							});
+						}).catch(() => []);
+
+						if (domActions && domActions.length > 0) {
+							payload = {
+								gameId: String(gameId),
+								competitionId,
+								seasonYear: year,
+								actions: domActions
+							};
+						}
+					}
+
 					await browser.close().catch(() => {});
 				} catch (err) {
 					// Playwright not installed or browser execution failed

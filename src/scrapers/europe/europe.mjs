@@ -99,11 +99,11 @@ export class EuropeScraper extends HTTPClient {
 	 */
 	async fetchPbp(gameId, year) {
 		const clean = String(gameId || '').trim();
-		const isAcb = clean.startsWith('A') || clean.includes('_acb_') || this.competitions.includes('acb');
+		const isAcb = clean.startsWith('A') || clean.includes('_acb_') || clean.includes('-A20') || (this.competitions.length === 1 && this.competitions[0] === 'acb');
 		if (isAcb) {
 			return this.acbPbpHarvester.fetchAcbPbp(gameId, year);
 		}
-		const isLnb = clean.startsWith('L') || clean.includes('_lnb_') || this.competitions.includes('lnb');
+		const isLnb = clean.startsWith('L') || clean.includes('_lnb_') || clean.includes('-L20') || (this.competitions.length === 1 && this.competitions[0] === 'lnb');
 		if (isLnb) {
 			return this.lnbPbpHarvester.fetchLnbPbp(gameId, year);
 		}

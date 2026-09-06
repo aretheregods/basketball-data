@@ -95,11 +95,11 @@ export async function transformStage(league, year, options = {}) {
 
 			transformFn = (gameId, rawData) => {
 				const clean = String(gameId || '').trim();
-				const isAcb = clean.startsWith('A') || clean.includes('_acb_') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('acb'));
+				const isAcb = clean.startsWith('A') || clean.includes('_acb_') || clean.includes('-A20') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('acb'));
 				if (isAcb) {
 					return transformAcbPbp(gameId, rawData);
 				}
-				const isLnb = clean.startsWith('L') || clean.includes('_lnb_') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('lnb'));
+				const isLnb = clean.startsWith('L') || clean.includes('_lnb_') || clean.includes('-L20') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('lnb'));
 				if (isLnb) {
 					return transformLnbPbp(gameId, rawData);
 				}

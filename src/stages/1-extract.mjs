@@ -75,7 +75,7 @@ export async function extractStage(scraper, league, year, options = {}) {
 	for (const gameId of gameIds) {
 		let targetOutputDir = outputDir;
 		if (isPbp && league.toLowerCase().startsWith('europe')) {
-			const subFolder = gameId.startsWith('A') ? 'acb' : (gameId.startsWith('L') ? 'lnb' : (gameId.startsWith('U') ? 'eurocup' : (gameId.startsWith('B') ? 'bcl' : 'euroleague')));
+			const subFolder = (gameId.startsWith('A') || gameId.includes('-A20') || gameId.includes('_acb_')) ? 'acb' : ((gameId.startsWith('L') || gameId.includes('-L20') || gameId.includes('_lnb_')) ? 'lnb' : ((gameId.startsWith('U') || gameId.includes('-U20') || gameId.includes('_eurocup_')) ? 'eurocup' : ((gameId.startsWith('B') || gameId.includes('-B20') || gameId.includes('_bcl_')) ? 'bcl' : 'euroleague')));
 			targetOutputDir = path.resolve('data/raw', league.includes('_test') ? league : 'europe', 'pbp', subFolder, String(year));
 			await fs.mkdir(targetOutputDir, { recursive: true });
 		}
