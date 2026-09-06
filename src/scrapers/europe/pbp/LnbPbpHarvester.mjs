@@ -4,7 +4,8 @@ import { HTTPClient } from '#utils';
 
 /**
  * @description Harvester for French LNB Élite (Pro A) Play-by-Play endpoints.
- * Supports Genius Sports FIBA LiveStats API feeds and official LNB REST endpoints with fail-soft fallbacks.
+ * Supports Genius Sports FIBA LiveStats API feeds, official LNB REST endpoints,
+ * and Playwright browser response interception with fail-soft fallbacks.
  */
 export class LnbPbpHarvester extends HTTPClient {
 	/**
@@ -69,7 +70,7 @@ export class LnbPbpHarvester extends HTTPClient {
 
 	/**
 	 * @description Fetches French LNB raw play-by-play data.
-	 * Checks raw disk cache first, falling back to Genius Sports FIBA LiveStats or official LNB API.
+	 * Checks raw disk cache first, falling back to Genius Sports FIBA LiveStats, LNB REST, or Playwright interception.
 	 *
 	 * @param {string} gameId - Game identifier
 	 * @param {string|number} seasonYear - Season year (e.g. 2025)
@@ -105,19 +106,56 @@ export class LnbPbpHarvester extends HTTPClient {
 						payload.seasonYear = year;
 					}
 				} catch (err) {
-					// Fall through to LNB REST
+					// Fall through
 				}
 			}
 
-			// 2. Fall back to LNB official live endpoint
+			// 2. Try LNB official live REST endpoint
 			if (!payload) {
 				const apiUrl = `https://prod.lnb.fr/api/matchs/${gameCode}/playbyplay`;
 				try {
 					payload = await this.request(apiUrl, {}, 0, 0);
 				} catch (err) {
-					// Live fetch failed, log fail-soft warning
-					console.warn(`⚠️ [LnbPbpHarvester] Live PBP API unavailable for LNB Game ${gameId} (${year})`);
+					// Fall through
 				}
+			}
+
+			// 3. Fall back to Playwright browser response interception for dynamic web rendering
+			if (!payload) {
+				try {
+					const { chromium } = await import('playwright');
+					const browser = await chromium.launch({
+						headless: true,
+						args: ['--no-sandbox', '--disable-setuid-sandbox']
+					});
+					const context = await browser.newContext({
+						userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+					});
+					const page = await context.newPage();
+
+					page.on('response', async (res) => {
+						const url = res.url();
+						if (url.includes('/playbyplay') || url.includes('/data.json')) {
+							try {
+								const json = await res.json();
+								if (json && (json.pbp || json.actions)) {
+									payload = json;
+								}
+							} catch (e) {}
+						}
+					});
+
+					const targetMatchUrl = `https://www.lnb.fr/fr/match/${gameCode}`;
+					await page.goto(targetMatchUrl, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+					await page.waitForTimeout(1000).catch(() => {});
+					await browser.close().catch(() => {});
+				} catch (err) {
+					// Playwright not installed or browser execution failed
+				}
+			}
+
+			if (!payload) {
+				console.warn(`⚠️ [LnbPbpHarvester] Live PBP API unavailable for LNB Game ${gameId} (${year})`);
 			}
 		}
 
