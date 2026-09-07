@@ -72,7 +72,7 @@ test.describe('LNB French Basketball Scraper & Pipeline Integration', () => {
 		// 1. STAGE 1: Extract
 		const gameIds = await extractStage(scraper, league, year);
 		assert.ok(gameIds.length > 0);
-		assert.ok(gameIds.some(id => id.includes('-L2093_')));
+		assert.ok(gameIds.some(id => id.includes('L2093_')));
 
 		// 2. STAGE 2: Transform
 		const transformed = await transformStage(league, year);
@@ -100,7 +100,7 @@ test.describe('LNB French Basketball Scraper & Pipeline Integration', () => {
 
 			const games = db.prepare('SELECT * FROM games WHERE competition_id = ? AND season_id = ?').all('lnb', year);
 			assert.ok(games.length > 0);
-			assert.ok(games.some(g => g.id.includes('-L2093_')));
+			assert.ok(games.some(g => g.id.includes('L2093_')));
 		} finally {
 			db.destroy();
 		}

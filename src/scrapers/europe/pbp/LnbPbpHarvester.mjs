@@ -35,17 +35,22 @@ export class LnbPbpHarvester extends HTTPClient {
 		let gameCode = clean;
 		let seasonYear = String(defaultYear);
 
-		if (clean.includes('_')) {
+		if (clean.includes('-L') || clean.includes('_L')) {
+			const lIndex = clean.search(/[-_]L\d{4}/);
+			if (lIndex !== -1) {
+				const afterL = clean.substring(lIndex + 1); // e.g. "L2025_b9da0426-6d55-11f0-9f79-8bb582d8f542"
+				const firstUnderscore = afterL.indexOf('_');
+				if (firstUnderscore !== -1) {
+					const keyPart = afterL.substring(0, firstUnderscore);
+					seasonYear = keyPart.substring(1);
+					gameCode = afterL.substring(firstUnderscore + 1);
+				}
+			}
+		} else if (clean.includes('_')) {
 			const parts = clean.split('_');
 			const keyPart = parts[0] || 'L2025';
 			gameCode = parts.slice(1).join('_');
 			seasonYear = keyPart.startsWith('L') ? keyPart.substring(1) : keyPart;
-		} else if (clean.includes('-')) {
-			const parts = clean.split('-');
-			const lastPart = parts[parts.length - 1];
-			if (lastPart.includes('_')) {
-				return this.parseGameId(lastPart, defaultYear);
-			}
 		}
 
 		// Extract numeric match ID if present

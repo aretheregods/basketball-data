@@ -216,9 +216,9 @@ export class LnbHarvester extends HTTPClient {
 
 			const homeSlug = slugify(g.home) || 'home';
 			const awaySlug = slugify(g.away) || 'away';
-			const cleanCode = g.code.replace(/-/g, '_');
+			const rawCode = String(g.code).trim();
 
-			slugs.push(`${homeSlug}-vs-${awaySlug}-L${year}_${cleanCode}`);
+			slugs.push(`${homeSlug}-vs-${awaySlug}-L${year}_${rawCode}`);
 		}
 
 		console.log(`✅ [LnbHarvester] Discovered ${slugs.length} unique games for LNB season ${year}.`);
