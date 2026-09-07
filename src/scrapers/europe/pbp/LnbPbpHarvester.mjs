@@ -59,6 +59,11 @@ export class LnbPbpHarvester extends HTTPClient {
 			}
 		}
 
+		// Restore UUID hyphens if gameCode is a 36-character 8-4-4-4-12 hex UUID formatted with underscores
+		if (/^[0-9a-f]{8}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{4}_[0-9a-f]{12}$/i.test(gameCode)) {
+			gameCode = gameCode.replace(/^([0-9a-f]{8})_([0-9a-f]{4})_([0-9a-f]{4})_([0-9a-f]{4})_([0-9a-f]{12})$/i, '$1-$2-$3-$4-$5');
+		}
+
 		return {
 			competitionId: `LNB${seasonYear}`,
 			seasonCode: `LNB${seasonYear}`,
@@ -147,8 +152,8 @@ export class LnbPbpHarvester extends HTTPClient {
 						}
 					});
 
-					const matchCenterUrl = `https://www.lnb.fr/fr/match/${gameCode}`;
-					await page.goto(matchCenterUrl, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+					const matchCenterUrl = `https://lnb.fr/en/match-center/${gameCode}`;
+					await page.goto(matchCenterUrl, { waitUntil: 'domcontentloaded', timeout: 12000 }).catch(() => {});
 
 					// Click the 2nd tab in .sw-sub-tabs (Play-by-Play view)
 					try {

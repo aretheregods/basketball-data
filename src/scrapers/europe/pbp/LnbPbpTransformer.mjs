@@ -13,12 +13,23 @@ export function calculateGameSecondsRemaining(period, secondsInPeriod) {
 }
 
 /**
- * @description Parses clock strings (e.g. "09:45" or "9:45") into remaining period seconds.
- * @param {string} clockStr - Display clock string
+ * @description Parses clock strings (e.g. "09:45", "9:45", or ISO 8601 duration "PT10M0S") into remaining period seconds.
+ * @param {string} clockStr - Display clock string or ISO 8601 duration string
  * @returns {number}
  */
 export function parseLnbClock(clockStr) {
 	if (!clockStr || typeof clockStr !== 'string') return 0;
+
+	// ISO 8601 duration format (e.g. "PT10M0S", "PT9M45S", "PT0M30.5S")
+	if (clockStr.startsWith('PT')) {
+		const match = clockStr.match(/PT(?:(\d+)M)?(?:([\d.]+)S)?/i);
+		if (match) {
+			const mins = parseInt(match[1] || '0', 10);
+			const secs = parseFloat(match[2] || '0');
+			return (mins * 60) + secs;
+		}
+	}
+
 	const parts = clockStr.split(':');
 	if (parts.length === 2) {
 		const mins = parseInt(parts[0], 10);
@@ -231,6 +242,66 @@ export function transformLnbPbp(gameId, rawJson) {
 
 	const seasonYear = rawJson.seasonYear || '2025';
 	const competitionId = rawJson.competitionId || `LNB${seasonYear}`;
+
+	// Check if rawJson contains period-keyed PBP object (e.g., rawJson.pbp["1"], rawJson.pbp["2"]) or rawJson.data.pbp
+	const pbpObj = rawJson.pbp || rawJson.data?.pbp;
+	if (pbpObj && typeof pbpObj === 'object' && !Array.isArray(pbpObj)) {
+		const events = [];
+		let runningHomeScore = 0;
+		let runningAwayScore = 0;
+		let globalIndex = 0;
+
+		const periodKeys = Object.keys(pbpObj).sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+
+		for (const periodKey of periodKeys) {
+			const period = parseInt(periodKey, 10);
+			const periodBlock = pbpObj[periodKey] || {};
+			const periodEvents = Array.isArray(periodBlock.events) ? periodBlock.events : [];
+
+			for (const action of periodEvents) {
+				globalIndex++;
+
+				const clockRaw = action.clock || action.chrono || "10:00";
+				const secondsRemaining = parseLnbClock(clockRaw);
+				const gameSecondsRemaining = calculateGameSecondsRemaining(period, secondsRemaining);
+
+				if (action.homeScore !== undefined && action.homeScore !== null) runningHomeScore = parseInt(action.homeScore, 10);
+				if (action.awayScore !== undefined && action.awayScore !== null) runningAwayScore = parseInt(action.awayScore, 10);
+
+				const frenchText = action.desc || action.description || action.libelle || '';
+				const rawType = action.type || action.eventType || '';
+				const eventType = normalizeLnbAction(frenchText, rawType);
+
+				const isScoring = ['2FGM', '3FGM', 'FTM'].includes(eventType) || Number(action.points || 0) > 0;
+				const actionId = action.id ?? action.eventId ?? globalIndex;
+
+				events.push({
+					event_id: `${competitionId}_${gameId}_lnb_pbp_${actionId}_${globalIndex}`,
+					game_id: String(gameId),
+					competition_id: competitionId,
+					period,
+					clock: String(clockRaw),
+					seconds_remaining: secondsRemaining,
+					game_seconds_remaining: gameSecondsRemaining,
+					event_type: eventType,
+					sub_type: action.subType ? String(action.subType) : null,
+					team_id: action.teamId ? String(action.teamId) : null,
+					player_id: action.personId ? String(action.personId) : (action.playerId ? String(action.playerId) : null),
+					secondary_player_id: action.secondaryPersonId ? String(action.secondaryPersonId) : null,
+					description: String(frenchText),
+					home_score: runningHomeScore,
+					away_score: runningAwayScore,
+					loc_x: action.coordX ?? null,
+					loc_y: action.coordY ?? null,
+					shot_distance: action.distance ?? null,
+					is_scoring_play: isScoring ? 1 : 0
+				});
+			}
+		}
+
+		const stints = buildStintsFromEvents(gameId, competitionId, events);
+		return { events, stints };
+	}
 
 	// Check if rawJson is a FIBA LiveStats payload (contains pbp array and tm team object)
 	if (Array.isArray(rawJson.pbp) && rawJson.tm) {
