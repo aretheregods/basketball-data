@@ -105,44 +105,31 @@ export class LnbPbpHarvester extends HTTPClient {
 		let payload = null;
 
 		if (!this.bypassNetwork && process.env.NODE_ENV !== 'test') {
-			// 1. Primary Source: Official LNB Match Centre REST API (https://api-prod.lnb.fr/matchs/${gameCode}/playbyplay or /matchs/${gameCode})
+			// 1. Primary Source: Sportradar Match Centre API Endpoint
 			try {
-				const apiUrl = `https://api-prod.lnb.fr/matchs/${gameCode}/playbyplay`;
-				payload = await this.request(apiUrl, {
+				const sportradarUrl = `https://embed-api.eui.connect.sportradar.com/v1/embed/12/fixture_detail?state=eJwljEEOg0AIAL9iOEsCqyj4gD6gP1iKnHow7U3TvzfE20wymQu-sA0QOTF1EhTugcxJ6KGGr3USId15J4NxgHfF-cHHs-wsO_wozmK36DS3BZcQuTeWq6G6i7bQlLnB7w95Xxxb&fixtureId=${gameCode}`;
+				const res = await fetch(sportradarUrl, {
 					headers: {
+						'Accept': '*/*',
+						'User-Agent': 'Mozilla/5.0 (X11; CrOS x86_64 14541.0.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36',
 						'Origin': 'https://lnb.fr',
-						'Referer': 'https://lnb.fr/en/calendar'
+						'Referer': `https://lnb.fr/en/match-center/${gameCode}`
 					}
-				}, 0, 0);
-				if (payload) {
-					payload.gameId = String(gameId);
-					payload.competitionId = competitionId;
-					payload.seasonYear = year;
+				});
+				if (res.ok) {
+					const json = await res.json();
+					if (json && json.data) {
+						payload = json;
+						payload.gameId = String(gameId);
+						payload.competitionId = competitionId;
+						payload.seasonYear = year;
+					}
 				}
 			} catch (err) {
 				// Fall through
 			}
 
-			if (!payload) {
-				try {
-					const matchApiUrl = `https://api-prod.lnb.fr/matchs/${gameCode}`;
-					payload = await this.request(matchApiUrl, {
-						headers: {
-							'Origin': 'https://lnb.fr',
-							'Referer': 'https://lnb.fr/en/calendar'
-						}
-					}, 0, 0);
-					if (payload) {
-						payload.gameId = String(gameId);
-						payload.competitionId = competitionId;
-						payload.seasonYear = year;
-					}
-				} catch (err) {
-					// Fall through
-				}
-			}
-
-			// 2. Secondary Source: Playwright LNB Match Centre Page Navigation
+			// 2. Secondary Source: Playwright LNB Match Centre Page Navigation & Response Interception
 			if (!payload) {
 				try {
 					const { chromium } = await import('playwright');
@@ -156,13 +143,13 @@ export class LnbPbpHarvester extends HTTPClient {
 					});
 					const page = await context.newPage();
 
-					// Intercept background API response
+					// Intercept background fixture_detail API response
 					page.on('response', async (res) => {
 						const url = res.url();
-						if (url.includes('/playbyplay') || url.includes('/data.json')) {
+						if (url.includes('fixture_detail') || url.includes('/playbyplay') || url.includes('/data.json')) {
 							try {
 								const json = await res.json();
-								if (json && (json.pbp || json.actions)) {
+								if (json && (json.data?.pbp || json.pbp || json.actions)) {
 									payload = json;
 								}
 							} catch (e) {}
@@ -170,46 +157,13 @@ export class LnbPbpHarvester extends HTTPClient {
 					});
 
 					const matchCenterUrl = `https://lnb.fr/en/match-center/${gameCode}`;
-					await page.goto(matchCenterUrl, { waitUntil: 'domcontentloaded', timeout: 12000 }).catch(() => {});
+					await page.goto(matchCenterUrl, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+					await page.waitForTimeout(2000).catch(() => {});
 
-					// Click the 2nd tab in .sw-sub-tabs (Play-by-Play view)
-					try {
-						const subTabs = page.locator('.sw-sub-tabs button, .sw-sub-tabs div, .sw-sub-tabs a');
-						if (await subTabs.count() >= 2) {
-							await subTabs.nth(1).click().catch(() => {});
-							await page.waitForTimeout(1000).catch(() => {});
-						}
-					} catch (e) {}
-
-					// If response wasn't intercepted, extract rendered PBP events from [data-testid="fixture-pbp"]
-					if (!payload) {
-						const domActions = await page.evaluate(() => {
-							const container = document.querySelector('[data-testid="fixture-pbp"]') || document.querySelector('.fixture-pbp');
-							if (!container) return [];
-
-							const rows = Array.from(container.querySelectorAll('.pbp-row, tr, div[class*="row"]'));
-							return rows.map((r, idx) => {
-								const text = r.textContent.trim();
-								const clockMatch = text.match(/(\d{1,2}:\d{2})/);
-								const clock = clockMatch ? clockMatch[1] : "10:00";
-								return {
-									id: idx + 1,
-									periode: 1,
-									chrono: clock,
-									libelle: text,
-									type: "DOM_PBP"
-								};
-							});
-						}).catch(() => []);
-
-						if (domActions && domActions.length > 0) {
-							payload = {
-								gameId: String(gameId),
-								competitionId,
-								seasonYear: year,
-								actions: domActions
-							};
-						}
+					if (payload) {
+						payload.gameId = String(gameId);
+						payload.competitionId = competitionId;
+						payload.seasonYear = year;
 					}
 
 					await browser.close().catch(() => {});
