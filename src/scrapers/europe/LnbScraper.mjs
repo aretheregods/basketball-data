@@ -36,20 +36,31 @@ export class LnbScraper extends HTTPClient {
 	 */
 	parseGameId(gameId) {
 		const clean = String(gameId || '').trim();
-		const parts = clean.split('_');
-		const keyPart = parts[0] || 'L2021';
+		let seasonCode = '2025';
+		let matchSegment = clean;
 
-		// Reconstruct the original Basketball Reference match segment (replacing underscores back to hyphens)
-		const matchSegment = parts.slice(1).join('-'); // e.g. "2020-09-26-limoges"
-
-		const seasonCode = keyPart.substring(1); // Strip 'L'
-		const yearPrefix = seasonCode;
+		if (clean.includes('-L') || clean.includes('_L')) {
+			const lIndex = clean.search(/[-_]L\d{4}/);
+			if (lIndex !== -1) {
+				const afterL = clean.substring(lIndex + 1); // e.g. "L2025_b9da0426-6d55-11f0-9f79-8bb582d8f542"
+				const firstUnderscore = afterL.indexOf('_');
+				if (firstUnderscore !== -1) {
+					seasonCode = afterL.substring(1, firstUnderscore);
+					matchSegment = afterL.substring(firstUnderscore + 1);
+				}
+			}
+		} else if (clean.includes('_')) {
+			const parts = clean.split('_');
+			const keyPart = parts[0] || 'L2025';
+			seasonCode = keyPart.startsWith('L') ? keyPart.substring(1) : keyPart;
+			matchSegment = parts.slice(1).join('_');
+		}
 
 		return {
 			competitionId: 'lnb',
 			seasonCode,
 			gameCode: matchSegment,
-			yearPrefix,
+			yearPrefix: seasonCode,
 			gameUuid: matchSegment
 		};
 	}

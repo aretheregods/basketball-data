@@ -16,7 +16,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '../');
 
 test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => {
 	const league = 'europe_lkl_test';
-	const year = '2099'; // Unique test year to isolate test runs
+	const year = '2024'; // Unique test year to isolate test runs
 
 	test.before(async () => {
 		process.env.NODE_ENV = 'test';
@@ -31,21 +31,21 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 
 	test('LklHarvester should return mock slugs in test mode', async () => {
 		const harvester = new LklHarvester();
-		const slugs = await harvester.getSeasonGameSlugs('2099');
+		const slugs = await harvester.getSeasonGameSlugs('2024');
 
 		assert.ok(slugs.length > 0, 'Should return some slugs');
-		assert.ok(slugs[0].includes('-K2099_'), 'Slugs must be formatted with K season prefix segment');
+		assert.ok(slugs[0].includes('-K2024_'), 'Slugs must be formatted with K season prefix segment');
 		const sampleGameId = slugs[0].split('-').pop();
-		assert.match(sampleGameId, /^K2099_\d+$/, 'gameId Segment must match LKL pattern');
+		assert.match(sampleGameId, /^K2024_\d+$/, 'gameId Segment must match LKL pattern');
 	});
 
 	test('LklScraper should return correct unified schema mock data', async () => {
 		const scraper = new LklScraper();
-		const boxscore = await scraper.getUnifiedBoxScore('lietkabelis-vs-neptunas-K2099_11574');
+		const boxscore = await scraper.getUnifiedBoxScore('lietkabelis-vs-neptunas-K2024_11574');
 
-		assert.equal(boxscore.gameId, 'lietkabelis-vs-neptunas-K2099_11574');
+		assert.equal(boxscore.gameId, 'lietkabelis-vs-neptunas-K2024_11574');
 		assert.equal(boxscore.competitionId, 'lkl');
-		assert.equal(boxscore.seasonId, '2099');
+		assert.equal(boxscore.seasonId, '2024');
 
 		// Home team check
 		assert.equal(boxscore.homeTeam.teamName, 'Lietkabelis');
@@ -62,10 +62,10 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 
 	test('LklScraper API Parser should correctly parse LKL team names, scores, and player statistics from cache', async () => {
 		const sampleBoxscoreObj = {
-			gameId: 'lietkabelis-vs-neptunas-K2099_11574',
+			gameId: 'lietkabelis-vs-neptunas-K2024_11574',
 			competitionId: 'lkl',
-			seasonId: '2099',
-			gameDate: '2099-06-13',
+			seasonId: '2024',
+			gameDate: '2024-06-13',
 			homeTeam: {
 				teamId: "LIE",
 				teamName: "Lietkabelis",
@@ -109,7 +109,7 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 		const scraper = new LklScraper();
 
 		// Setup cached raw HTML file so LklScraper reads from it directly instead of fetching
-		const gameId = 'lietkabelis-vs-neptunas-K2099_11574';
+		const gameId = 'lietkabelis-vs-neptunas-K2024_11574';
 		const { yearPrefix, gameCode } = scraper.parseGameId(gameId);
 		const jsonCacheDir = path.resolve('data/raw/europe/lkl', String(yearPrefix));
 		await fs.mkdir(jsonCacheDir, { recursive: true });
@@ -127,7 +127,7 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 			assert.equal(boxscore.awayTeam.teamName, 'Neptūnas');
 			assert.equal(boxscore.homeTeam.score, 82);
 			assert.equal(boxscore.awayTeam.score, 91);
-			assert.equal(boxscore.gameDate, '2099-06-13');
+			assert.equal(boxscore.gameDate, '2024-06-13');
 
 			const bick = boxscore.homeTeam.players.find(p => p.playerName === 'Dovis Bickauskis');
 			assert.ok(bick, 'Should parse Dovis Bickauskis successfully');
@@ -147,7 +147,7 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 
 	test('EuropeScraper should route gameId prefixed with K to LklScraper', () => {
 		const scraper = new EuropeScraper({ competitions: 'lkl' });
-		const engine = scraper.getEngineForGame('lietkabelis-vs-neptunas-K2099_11574');
+		const engine = scraper.getEngineForGame('lietkabelis-vs-neptunas-K2024_11574');
 		assert.ok(engine instanceof LklScraper);
 	});
 
@@ -158,7 +158,7 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 			// 1. STAGE 1: Extract
 			const gameIds = await extractStage(scraper, league, year);
 			assert.ok(gameIds.length > 0);
-			assert.ok(gameIds.includes('K2099_11574'));
+			assert.ok(gameIds.includes('K2024_11574'));
 
 			// 2. STAGE 2: Transform
 			const transformed = await transformStage(league, year);
@@ -188,7 +188,7 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 
 				const games = db.prepare('SELECT * FROM games WHERE competition_id = ? AND season_id = ?').all('lkl', year);
 				assert.ok(games.length > 0);
-				assert.ok(games.some(g => g.id === 'K2099_11574'));
+				assert.ok(games.some(g => g.id === 'K2024_11574'));
 			} finally {
 				db.destroy();
 			}

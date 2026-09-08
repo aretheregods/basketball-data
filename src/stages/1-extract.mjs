@@ -27,7 +27,16 @@ export async function extractStage(scraper, league, year, options = {}) {
 	if (isPbp) {
 		if (league.toLowerCase().startsWith('europe')) {
 			const comp = (options.competitions || options.competition || 'euroleague').toLowerCase();
-			const subFolder = comp.includes('acb') ? 'acb' : (comp.includes('eurocup') ? 'eurocup' : (comp.includes('bcl') ? 'bcl' : 'euroleague'));
+			let subFolder = 'euroleague';
+			if (comp === 'lnb' || (comp.includes('lnb') && !comp.includes('acb'))) {
+				subFolder = 'lnb';
+			} else if (comp.includes('acb')) {
+				subFolder = 'acb';
+			} else if (comp.includes('eurocup')) {
+				subFolder = 'eurocup';
+			} else if (comp.includes('bcl')) {
+				subFolder = 'bcl';
+			}
 			outputDir = path.resolve('data/raw', 'europe', 'pbp', subFolder, String(year));
 		} else {
 			outputDir = path.resolve('data/raw', league, 'pbp', String(year));
@@ -45,9 +54,30 @@ export async function extractStage(scraper, league, year, options = {}) {
 		return [];
 	}
 
+	// Helper function to extract full game ID from slug (preserving UUID hyphens)
+	const extractGameIdFromSlug = (slug) => {
+		if (!slug || typeof slug !== 'string') return '';
+		const clean = slug.trim();
+		// Match standard competition prefix segment: -L2026_..., -A2025_..., -E2025_..., -BCLA2024_...
+		const prefixMatch = clean.match(/(?:^|-)([A-Za-z]{1,5}\d{2,4}_.+)$/);
+		if (prefixMatch) {
+			return prefixMatch[1];
+		}
+		// If slug contains an underscore, split at last hyphen before underscore
+		const underscoreIdx = clean.indexOf('_');
+		if (underscoreIdx !== -1) {
+			const lastHyphenBeforeUnderscore = clean.lastIndexOf('-', underscoreIdx);
+			if (lastHyphenBeforeUnderscore !== -1) {
+				return clean.substring(lastHyphenBeforeUnderscore + 1);
+			}
+			return clean;
+		}
+		// Fallback for simple slugs without underscores
+		return clean.split('-').pop();
+	};
+
 	// 2. Extract unique game IDs from slugs
-	// Slugs are formatted as cleanMatchup-gameId, so we split by '-' and get the last piece
-	const gameIds = [...new Set(scraper.gameSlugs.map(slug => slug.split('-').pop()))];
+	const gameIds = [...new Set(scraper.gameSlugs.map(extractGameIdFromSlug))].filter(Boolean);
 
 	// Sort game IDs numerically (with fallback to alphabetical localeCompare for alphanumeric IDs)
 	// to ensure extraction runs in actual chronological/numerical order (e.g., October games first).
@@ -64,7 +94,13 @@ export async function extractStage(scraper, league, year, options = {}) {
 
 	// 3. Download and save raw payload for each game
 	for (const gameId of gameIds) {
-		const filePath = path.join(outputDir, `${gameId}.json`);
+		let targetOutputDir = outputDir;
+		if (isPbp && league.toLowerCase().startsWith('europe')) {
+			const subFolder = (gameId.startsWith('A') || gameId.includes('-A20') || gameId.includes('_acb_')) ? 'acb' : ((gameId.startsWith('L') || gameId.includes('-L20') || gameId.includes('_lnb_')) ? 'lnb' : ((gameId.startsWith('U') || gameId.includes('-U20') || gameId.includes('_eurocup_')) ? 'eurocup' : ((gameId.startsWith('B') || gameId.includes('-B20') || gameId.includes('_bcl_')) ? 'bcl' : 'euroleague')));
+			targetOutputDir = path.resolve('data/raw', league.includes('_test') ? league : 'europe', 'pbp', subFolder, String(year));
+			await fs.mkdir(targetOutputDir, { recursive: true });
+		}
+		const filePath = path.join(targetOutputDir, `${gameId}.json`);
 
 		// Cache check: skip if the file already exists, is non-empty, and contains valid non-empty data
 		try {

@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { AsiaScraper } from '../src/scrapers/asia/AsiaScraper.mjs';
 import { AsiaHarvester } from '../src/scrapers/asia/harvesters/AsiaHarvester.mjs';
 import { parseAsiaHtml, parseAsiaRealGmHtml } from '../src/scrapers/asia/parsers/AsiaParser.mjs';
@@ -10,27 +9,21 @@ import { extractStage } from '../src/stages/1-extract.mjs';
 import { transformStage } from '../src/stages/2-transform.mjs';
 import { loadStage, initDatabase } from '../src/stages/3-load.mjs';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+process.env.NODE_ENV = 'test';
 
-test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
+test('Asia Basketball Pipeline & Scraper Integration', async (t) => {
 	const league = 'asia_test';
 	const year = '2024'; // Isolated year for pipeline test
 
-	test.before(async () => {
-		process.env.NODE_ENV = 'test';
-		await fs.rm(path.resolve('data/raw', league), { recursive: true, force: true });
-		await fs.rm(path.resolve('data/transformed', league), { recursive: true, force: true });
-		await fs.rm(path.resolve('data/SQL/ASIA_TEST.sqlite'), { force: true });
-	});
+	const testRawDir = path.resolve('data/raw', league);
+	const testTransformedDir = path.resolve('data/transformed', league);
+	const testDbPath = path.resolve('data/SQL/ASIA_TEST.sqlite');
 
-	test.after(async () => {
-		await fs.rm(path.resolve('data/raw', league), { recursive: true, force: true });
-		await fs.rm(path.resolve('data/transformed', league), { recursive: true, force: true });
-		await fs.rm(path.resolve('data/SQL/ASIA_TEST.sqlite'), { force: true });
-	});
+	await fs.rm(testRawDir, { recursive: true, force: true });
+	await fs.rm(testTransformedDir, { recursive: true, force: true });
+	await fs.rm(testDbPath, { force: true });
 
-	test('AsiaHarvester should auto-route bcl_asia queries prior to 2024 to FIBA Asia Champions Cup and vice versa', async () => {
+	await t.test('AsiaHarvester should auto-route bcl_asia queries prior to 2024 to FIBA Asia Champions Cup and vice versa', async () => {
 		const scraper = new AsiaScraper({ competitions: 'bcl_asia' });
 		scraper.bypassNetwork = true;
 		const harvester = scraper.harvester;
@@ -62,7 +55,7 @@ test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
 		assert.equal(route2024Bcl.isCancelled, false);
 	});
 
-	test('AsiaHarvester should return mock slugs for active competitions in test mode', async () => {
+	await t.test('AsiaHarvester should return mock slugs for active competitions in test mode', async () => {
 		const scraper = new AsiaScraper({ competitions: 'bcl_asia,bleague,kbl' });
 		scraper.bypassNetwork = true;
 		const harvester = scraper.harvester;
@@ -89,7 +82,7 @@ test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
 		assert.match(kblGameId, /^KBL2024_\d+$/);
 	});
 
-	test('AsiaScraper should return correct unified schema mock data based on competition', async () => {
+	await t.test('AsiaScraper should return correct unified schema mock data based on competition', async () => {
 		const scraper = new AsiaScraper({ competitions: 'bcl_asia,bleague,kbl,fiba_asia_cc' });
 		scraper.bypassNetwork = true;
 
@@ -118,7 +111,7 @@ test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
 		assert.equal(fibaBox.awayTeam.score, 83);
 	});
 
-	test('AsiaParser HTML regex table parser should correctly parse dynamic columns and player statistics', async () => {
+	await t.test('AsiaParser HTML regex table parser should correctly parse dynamic columns and player statistics', async () => {
 		const sampleHtml = `
 			<html>
 			<body>
@@ -245,7 +238,7 @@ test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
 		assert.equal(togashi.statistics.min, '32:15');
 	});
 
-	test('AsiaParser parseAsiaRealGmHtml should correctly parse RealGM KBL HTML boxscore tables', async () => {
+	await t.test('AsiaParser parseAsiaRealGmHtml should correctly parse RealGM KBL HTML boxscore tables', async () => {
 		const sampleRealGmHtml = `
 			<!DOCTYPE html>
 			<html>
@@ -362,7 +355,7 @@ test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
 		assert.equal(monroe.statistics.pts, 21);
 	});
 
-	test('AsiaParser and Stage 2 Transform should disambiguate anglicized player name collisions on the same team', async () => {
+	await t.test('AsiaParser and Stage 2 Transform should disambiguate anglicized player name collisions on the same team', async () => {
 		const sampleCollisionHtml = `
 			<html>
 			<body>
@@ -426,66 +419,65 @@ test.describe('Asia Basketball Pipeline & Scraper Integration', () => {
 		assert.equal(zhejiangPlayers[1].playerId, 'wei-liu-10002');
 	});
 
-	test('Full Asia Multi-Competition Pipeline Integration: Extract -> Transform -> Load', async () => {
+	await t.test('Full Asia Multi-Competition Pipeline Integration: Extract -> Transform -> Load', async () => {
+		const scraper = new AsiaScraper({ competitions: 'bcl_asia,bleague,kbl,fiba_asia_cc' });
+		scraper.bypassNetwork = true;
+
+		// 1. STAGE 1: Extract
+		const gameIds = await extractStage(scraper, league, year);
+		assert.ok(gameIds.length > 0);
+		assert.ok(gameIds.includes('BCLASIA2024_10001'));
+		assert.ok(gameIds.includes('BLEAGUE2024_20001'));
+		assert.ok(gameIds.includes('KBL2024_30001'));
+
+		// 2. STAGE 2: Transform
+		const transformed = await transformStage(league, year);
+		assert.ok(transformed.players.length > 0);
+		assert.ok(transformed.teams.length > 0);
+
+		// Assert transformed BLEAGUE records
+		const cooleyBleague = transformed.players.find(p => p.game_id === 'BLEAGUE2024_20001' && p.player_id === 'jack-cooley');
+		assert.ok(cooleyBleague);
+		assert.equal(cooleyBleague.team_id, 'ryukyu-golden-kings'); // mapped from config/asia_team_mappings.json
+		assert.equal(cooleyBleague.pts, 20);
+		assert.equal(cooleyBleague.min, '28.5'); // "28:30" -> 28.5 minutes
+
+		const togashiBleague = transformed.players.find(p => p.game_id === 'BLEAGUE2024_20001' && p.player_id === 'yuki-togashi');
+		assert.ok(togashiBleague);
+		assert.equal(togashiBleague.team_id, 'chiba-jets'); // mapped
+		assert.equal(togashiBleague.pts, 22);
+		assert.equal(togashiBleague.min, '32.3'); // "32:15" -> 32.3 minutes
+
+		// Assert transformed KBL records
+		const warneyKbl = transformed.players.find(p => p.game_id === 'KBL2024_30001' && p.player_id === 'jameel-warney');
+		assert.ok(warneyKbl);
+		assert.equal(warneyKbl.team_id, 'seoul-sk-knights'); // mapped
+		assert.equal(warneyKbl.pts, 26);
+		assert.equal(warneyKbl.min, '34.5'); // "34:30" -> 34.5 minutes
+
+		// 3. STAGE 3: Load
+		await loadStage(league, year, transformed);
+
+		// 4. Verify in Local Staging Database
+		const db = await initDatabase(league);
 		try {
-			const scraper = new AsiaScraper({ competitions: 'bcl_asia,bleague,kbl,fiba_asia_cc' });
-			scraper.bypassNetwork = true;
+			const playerStats = db.prepare('SELECT * FROM player_game_stats WHERE league = ? AND season = ?').all('asia', year);
+			assert.ok(playerStats.length > 0);
 
-			// 1. STAGE 1: Extract
-			const gameIds = await extractStage(scraper, league, year);
-			assert.ok(gameIds.length > 0);
-			assert.ok(gameIds.includes('BCLASIA2024_10001'));
-			assert.ok(gameIds.includes('BLEAGUE2024_20001'));
-			assert.ok(gameIds.includes('KBL2024_30001'));
+			// Verify games exist under 'asia' league rollup
+			assert.ok(playerStats.some(p => p.player_name === 'Jack Cooley' && p.game_id.includes('BLEAGUE')));
+			assert.ok(playerStats.some(p => p.player_name === 'Jameel Warney' && p.game_id.includes('KBL')));
 
-			// 2. STAGE 2: Transform
-			const transformed = await transformStage(league, year);
-			assert.ok(transformed.players.length > 0);
-			assert.ok(transformed.teams.length > 0);
-
-			// Assert transformed BLEAGUE records
-			const cooleyBleague = transformed.players.find(p => p.game_id === 'BLEAGUE2024_20001' && p.player_id === 'jack-cooley');
-			assert.ok(cooleyBleague);
-			assert.equal(cooleyBleague.team_id, 'ryukyu-golden-kings'); // mapped from config/asia_team_mappings.json
-			assert.equal(cooleyBleague.pts, 20);
-			assert.equal(cooleyBleague.min, '28.5'); // "28:30" -> 28.5 minutes
-
-			const togashiBleague = transformed.players.find(p => p.game_id === 'BLEAGUE2024_20001' && p.player_id === 'yuki-togashi');
-			assert.ok(togashiBleague);
-			assert.equal(togashiBleague.team_id, 'chiba-jets'); // mapped
-			assert.equal(togashiBleague.pts, 22);
-			assert.equal(togashiBleague.min, '32.3'); // "32:15" -> 32.3 minutes
-
-			// Assert transformed KBL records
-			const warneyKbl = transformed.players.find(p => p.game_id === 'KBL2024_30001' && p.player_id === 'jameel-warney');
-			assert.ok(warneyKbl);
-			assert.equal(warneyKbl.team_id, 'seoul-sk-knights'); // mapped
-			assert.equal(warneyKbl.pts, 26);
-			assert.equal(warneyKbl.min, '34.5'); // "34:30" -> 34.5 minutes
-
-			// 3. STAGE 3: Load
-			await loadStage(league, year, transformed);
-
-			// 4. Verify in Local Staging Database
-			const db = await initDatabase(league);
-			try {
-				const playerStats = db.prepare('SELECT * FROM player_game_stats WHERE league = ? AND season = ?').all('asia', year);
-				assert.ok(playerStats.length > 0);
-
-				// Verify games exist under 'asia' league rollup
-				assert.ok(playerStats.some(p => p.player_name === 'Jack Cooley' && p.game_id.includes('BLEAGUE')));
-				assert.ok(playerStats.some(p => p.player_name === 'Jameel Warney' && p.game_id.includes('KBL')));
-
-				const teamStats = db.prepare('SELECT * FROM team_game_stats WHERE league = ? AND season = ?').all('asia', year);
-				assert.ok(teamStats.length > 0);
-				assert.ok(teamStats.some(t => t.team_name === 'RYUKYU GOLDEN KINGS' && t.game_id.includes('BLEAGUE')));
-				assert.ok(teamStats.some(t => t.team_name === 'SEOUL SK KNIGHTS' && t.game_id.includes('KBL')));
-			} finally {
-				db.destroy();
-			}
-		} catch (err) {
-			console.error('DEBUG SUBTEST 5 ERROR:', err);
-			throw err;
+			const teamStats = db.prepare('SELECT * FROM team_game_stats WHERE league = ? AND season = ?').all('asia', year);
+			assert.ok(teamStats.length > 0);
+			assert.ok(teamStats.some(t => t.team_name === 'RYUKYU GOLDEN KINGS' && t.game_id.includes('BLEAGUE')));
+			assert.ok(teamStats.some(t => t.team_name === 'SEOUL SK KNIGHTS' && t.game_id.includes('KBL')));
+		} finally {
+			if (db) db.destroy();
 		}
 	});
+
+	await fs.rm(testRawDir, { recursive: true, force: true });
+	await fs.rm(testTransformedDir, { recursive: true, force: true });
+	await fs.rm(testDbPath, { force: true });
 });
