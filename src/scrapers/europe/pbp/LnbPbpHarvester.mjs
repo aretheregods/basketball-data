@@ -4,8 +4,7 @@ import { HTTPClient } from '#utils';
 
 /**
  * @description Harvester for French LNB Élite (Pro A) Play-by-Play endpoints.
- * Supports Genius Sports FIBA LiveStats API feeds, official LNB REST endpoints,
- * and Playwright Match Centre navigation (.sw-sub-tabs & [data-testid="fixture-pbp"]).
+ * Fetches match details and play-by-play directly from lnb.fr official live REST endpoints and Match Centre page navigation.
  */
 export class LnbPbpHarvester extends HTTPClient {
 	/**
@@ -13,9 +12,10 @@ export class LnbPbpHarvester extends HTTPClient {
 	 * @param {Object} [options={}] - Options
 	 */
 	constructor(options = {}) {
-		super('https://fibalivestats.dcd.shared.geniussports.com', {
+		super('https://lnb.fr', {
 			'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-			'accept': 'application/json, text/plain, */*'
+			'accept': 'application/json, text/plain, */*',
+			'referer': 'https://lnb.fr/en/calendar'
 		});
 		this.bypassNetwork = options.bypassNetwork || false;
 	}
@@ -105,12 +105,34 @@ export class LnbPbpHarvester extends HTTPClient {
 		let payload = null;
 
 		if (!this.bypassNetwork && process.env.NODE_ENV !== 'test') {
-			// 1. Try Genius Sports FIBA LiveStats endpoint if numeric ID available
-			if (fibaMatchId) {
-				const fibaUrl = `https://fibalivestats.dcd.shared.geniussports.com/data/${fibaMatchId}/data.json`;
+			// 1. Primary Source: Official LNB Match Centre REST API (https://api-prod.lnb.fr/matchs/${gameCode}/playbyplay or /matchs/${gameCode})
+			try {
+				const apiUrl = `https://api-prod.lnb.fr/matchs/${gameCode}/playbyplay`;
+				payload = await this.request(apiUrl, {
+					headers: {
+						'Origin': 'https://lnb.fr',
+						'Referer': 'https://lnb.fr/en/calendar'
+					}
+				}, 0, 0);
+				if (payload) {
+					payload.gameId = String(gameId);
+					payload.competitionId = competitionId;
+					payload.seasonYear = year;
+				}
+			} catch (err) {
+				// Fall through
+			}
+
+			if (!payload) {
 				try {
-					payload = await this.request(fibaUrl, {}, 0, 0);
-					if (payload && (payload.pbp || payload.tm)) {
+					const matchApiUrl = `https://api-prod.lnb.fr/matchs/${gameCode}`;
+					payload = await this.request(matchApiUrl, {
+						headers: {
+							'Origin': 'https://lnb.fr',
+							'Referer': 'https://lnb.fr/en/calendar'
+						}
+					}, 0, 0);
+					if (payload) {
 						payload.gameId = String(gameId);
 						payload.competitionId = competitionId;
 						payload.seasonYear = year;
@@ -120,17 +142,7 @@ export class LnbPbpHarvester extends HTTPClient {
 				}
 			}
 
-			// 2. Try LNB official live REST endpoint
-			if (!payload) {
-				const apiUrl = `https://prod.lnb.fr/api/matchs/${gameCode}/playbyplay`;
-				try {
-					payload = await this.request(apiUrl, {}, 0, 0);
-				} catch (err) {
-					// Fall through
-				}
-			}
-
-			// 3. Playwright Match Centre Navigation (.sw-sub-tabs 2nd tab & [data-testid="fixture-pbp"])
+			// 2. Secondary Source: Playwright LNB Match Centre Page Navigation
 			if (!payload) {
 				try {
 					const { chromium } = await import('playwright');
