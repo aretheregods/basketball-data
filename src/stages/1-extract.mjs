@@ -54,9 +54,30 @@ export async function extractStage(scraper, league, year, options = {}) {
 		return [];
 	}
 
+	// Helper function to extract full game ID from slug (preserving UUID hyphens)
+	const extractGameIdFromSlug = (slug) => {
+		if (!slug || typeof slug !== 'string') return '';
+		const clean = slug.trim();
+		// Match standard competition prefix segment: -L2026_..., -A2025_..., -E2025_..., -BCLA2024_...
+		const prefixMatch = clean.match(/(?:^|-)([A-Za-z]{1,5}\d{2,4}_.+)$/);
+		if (prefixMatch) {
+			return prefixMatch[1];
+		}
+		// If slug contains an underscore, split at last hyphen before underscore
+		const underscoreIdx = clean.indexOf('_');
+		if (underscoreIdx !== -1) {
+			const lastHyphenBeforeUnderscore = clean.lastIndexOf('-', underscoreIdx);
+			if (lastHyphenBeforeUnderscore !== -1) {
+				return clean.substring(lastHyphenBeforeUnderscore + 1);
+			}
+			return clean;
+		}
+		// Fallback for simple slugs without underscores
+		return clean.split('-').pop();
+	};
+
 	// 2. Extract unique game IDs from slugs
-	// Slugs are formatted as cleanMatchup-gameId, so we split by '-' and get the last piece
-	const gameIds = [...new Set(scraper.gameSlugs.map(slug => slug.split('-').pop()))];
+	const gameIds = [...new Set(scraper.gameSlugs.map(extractGameIdFromSlug))].filter(Boolean);
 
 	// Sort game IDs numerically (with fallback to alphabetical localeCompare for alphanumeric IDs)
 	// to ensure extraction runs in actual chronological/numerical order (e.g., October games first).
