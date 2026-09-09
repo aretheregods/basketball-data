@@ -85,7 +85,7 @@ export async function loadStage(league, year, cleanedGamesArray, options = {}) {
 				const placeholders = keys.map(() => '?').join(', ');
 				const insertStmt = db.prepare(`INSERT OR REPLACE INTO game_play_by_play (${keys.join(', ')}) VALUES (${placeholders})`);
 				for (const event of events) {
-					const values = keys.map(k => event[k]);
+					const values = keys.map(k => event[k] === undefined ? null : event[k]);
 					insertStmt.run(...values);
 				}
 			}
@@ -96,7 +96,7 @@ export async function loadStage(league, year, cleanedGamesArray, options = {}) {
 				const placeholders = keys.map(() => '?').join(', ');
 				const insertStmt = db.prepare(`INSERT OR REPLACE INTO game_stints (${keys.join(', ')}) VALUES (${placeholders})`);
 				for (const stint of stints) {
-					const values = keys.map(k => stint[k]);
+					const values = keys.map(k => stint[k] === undefined ? null : stint[k]);
 					insertStmt.run(...values);
 				}
 			}

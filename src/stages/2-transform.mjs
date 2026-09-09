@@ -43,7 +43,7 @@ export async function transformStage(league, year, options = {}) {
 	if (isPbp) {
 		const jsonFilesMap = [];
 		if (league.toLowerCase().startsWith('europe')) {
-			const subFolders = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb'];
+			const subFolders = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba'];
 			for (const sf of subFolders) {
 				const sfDir = path.resolve('data/raw', league.includes('_test') ? league : 'europe', 'pbp', sf, String(year));
 				try {
@@ -92,6 +92,7 @@ export async function transformStage(league, year, options = {}) {
 			const { transformEuroleaguePbp } = await import('../scrapers/europe/pbp/EuroleaguePbpTransformer.mjs');
 			const { transformAcbPbp } = await import('../scrapers/europe/pbp/AcbPbpTransformer.mjs');
 			const { transformLnbPbp } = await import('../scrapers/europe/pbp/LnbPbpTransformer.mjs');
+			const { transformLbaPbp } = await import('../scrapers/europe/pbp/LbaPbpTransformer.mjs');
 
 			transformFn = (gameId, rawData) => {
 				const clean = String(gameId || '').trim();
@@ -102,6 +103,10 @@ export async function transformStage(league, year, options = {}) {
 				const isLnb = clean.startsWith('L') || clean.includes('_lnb_') || clean.includes('-L20') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('lnb'));
 				if (isLnb) {
 					return transformLnbPbp(gameId, rawData);
+				}
+				const isLba = clean.startsWith('I') || clean.includes('_lba_') || clean.includes('-I20') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('lba'));
+				if (isLba) {
+					return transformLbaPbp(gameId, rawData);
 				}
 				return transformEuroleaguePbp(gameId, rawData);
 			};
