@@ -110,6 +110,10 @@ export class AbaScraper extends HTTPClient {
 		}
 
 		if (!htmlContent) {
+			if (process.env.NODE_ENV === 'test' || this.bypassNetwork) {
+				return this.getUnplayedSkeleton(gameId, competitionId, yearPrefix);
+			}
+
 			const matchUrl = this.getGameEndpoint(gameId);
 			console.log(`📡 [AbaScraper] Loading ABA Boxscore from ${matchUrl}...`);
 

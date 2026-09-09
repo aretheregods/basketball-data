@@ -133,7 +133,7 @@ test.describe('Pipeline Stages', () => {
 				db.prepare(`DELETE FROM team_game_stats WHERE league = ? AND season = ?`)
 					.run(league, year);
 			} finally {
-				db.destroy();
+			if (db) db.close();
 			}
 		});
 	});
@@ -192,7 +192,7 @@ test.describe('Pipeline Stages', () => {
 				assert.equal(teamRows.length, 1);
 				assert.equal(teamRows[0].team_name, 'Los Angeles Sparks');
 			} finally {
-				db.destroy();
+				db.close();
 			}
 		});
 	});
@@ -352,7 +352,7 @@ test.describe('Pipeline Stages', () => {
 				assert.equal(teamRows.length, 1);
 				assert.equal(teamRows[0].team_name, 'Seattle Storm');
 			} finally {
-				db.destroy();
+				db.close();
 			}
 		});
 	});
@@ -385,7 +385,7 @@ test.describe('Pipeline Stages', () => {
 					.all(league, year);
 				assert.equal(playerRows[0].synced, 0);
 			} finally {
-				db.destroy();
+				db.close();
 			}
 		});
 	});
@@ -437,7 +437,7 @@ test.describe('Pipeline Stages', () => {
 						.all(league, year);
 					assert.equal(playerRows[0].synced, 1);
 				} finally {
-					db.destroy();
+					db.close();
 				}
 			} finally {
 				// Restore original spawn

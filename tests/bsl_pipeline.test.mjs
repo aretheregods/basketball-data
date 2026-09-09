@@ -16,36 +16,38 @@ const PROJECT_ROOT = path.resolve(__dirname, '../');
 
 test.describe('BSL Turkish Basketball Scraper & Pipeline Integration', () => {
 	const league = 'europe_bsl_test';
-	const year = '2095'; // Unique test year to isolate test runs
+	const year = '2024'; // Realistic test year to avoid BaseNormalizer.isGameUnplayed future year skipping
 
 	test.before(async () => {
 		process.env.NODE_ENV = 'test';
 		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/raw/europe/bsl', year), { recursive: true, force: true });
 	});
 
 	test.after(async () => {
 		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/raw/europe/bsl', year), { recursive: true, force: true });
 	});
 
 	test('BslHarvester should return mock slugs in test mode', async () => {
 		const harvester = new BslHarvester();
-		const slugs = await harvester.getSeasonGameSlugs('2095');
+		const slugs = await harvester.getSeasonGameSlugs('2024');
 
 		assert.ok(slugs.length > 0, 'Should return some slugs');
-		assert.ok(slugs[0].includes('-S2095_'), 'Slugs must be formatted with S season prefix segment');
+		assert.ok(slugs[0].includes('-S2024_'), 'Slugs must be formatted with S season prefix segment');
 		const sampleGameId = slugs[0].split('-').pop();
-		assert.match(sampleGameId, /^S2095_\d+$/, 'gameId Segment must match BSL pattern');
+		assert.match(sampleGameId, /^S2024_\d+$/, 'gameId Segment must match BSL pattern');
 	});
 
 	test('BslScraper should return correct unified schema mock data', async () => {
 		const scraper = new BslScraper();
-		const boxscore = await scraper.getUnifiedBoxScore('besiktas-vs-galatasaray-S2095_412345');
+		const boxscore = await scraper.getUnifiedBoxScore('besiktas-vs-galatasaray-S2024_412345');
 
-		assert.equal(boxscore.gameId, 'besiktas-vs-galatasaray-S2095_412345');
+		assert.equal(boxscore.gameId, 'besiktas-vs-galatasaray-S2024_412345');
 		assert.equal(boxscore.competitionId, 'bsl');
-		assert.equal(boxscore.seasonId, '2095');
+		assert.equal(boxscore.seasonId, '2024');
 
 		// Home team check
 		assert.equal(boxscore.homeTeam.teamName, 'Galatasaray');
@@ -179,7 +181,7 @@ test.describe('BSL Turkish Basketball Scraper & Pipeline Integration', () => {
 		const scraper = new BslScraper();
 
 		// Setup cached raw HTML file so BslScraper reads from it directly instead of fetching
-		const gameId = 'besiktas-vs-galatasaray-S2095_412345';
+		const gameId = 'besiktas-vs-galatasaray-S2024_412345';
 		const { yearPrefix, gameCode } = scraper.parseGameId(gameId);
 		const htmlCacheDir = path.resolve('data/raw/europe/bsl', String(yearPrefix));
 		await fs.mkdir(htmlCacheDir, { recursive: true });
@@ -217,7 +219,7 @@ test.describe('BSL Turkish Basketball Scraper & Pipeline Integration', () => {
 
 	test('EuropeScraper should route gameId prefixed with S to BslScraper', () => {
 		const scraper = new EuropeScraper({ competitions: 'bsl' });
-		const engine = scraper.getEngineForGame('besiktas-vs-galatasaray-S2095_412345');
+		const engine = scraper.getEngineForGame('besiktas-vs-galatasaray-S2024_412345');
 		assert.ok(engine instanceof BslScraper);
 	});
 
@@ -228,7 +230,7 @@ test.describe('BSL Turkish Basketball Scraper & Pipeline Integration', () => {
 			// 1. STAGE 1: Extract
 			const gameIds = await extractStage(scraper, league, year);
 			assert.ok(gameIds.length > 0);
-			assert.ok(gameIds.includes('S2095_412345'));
+			assert.ok(gameIds.includes('S2024_412345'));
 
 			// 2. STAGE 2: Transform
 			const transformed = await transformStage(league, year);
@@ -258,9 +260,9 @@ test.describe('BSL Turkish Basketball Scraper & Pipeline Integration', () => {
 
 				const games = db.prepare('SELECT * FROM games WHERE competition_id = ? AND season_id = ?').all('bsl', year);
 				assert.ok(games.length > 0);
-				assert.ok(games.some(g => g.id === 'S2095_412345'));
+				assert.ok(games.some(g => g.id === 'S2024_412345'));
 			} finally {
-				db.destroy();
+				db.close();
 			}
 		} catch (err) {
 			console.error('DEBUGGING TEST ERROR:', err);

@@ -358,7 +358,7 @@ test.describe('NBAScraper & Pipeline Integration', () => {
 				assert.equal(teamRows.length, 2);
 				assert.equal(teamRows[0].team_name, "Boston Celtics");
 			} finally {
-				db.destroy();
+				db.close();
 			}
 
 		} finally {

@@ -128,6 +128,10 @@ export class LklScraper extends HTTPClient {
 		}
 
 		try {
+			if (process.env.NODE_ENV === 'test' || this.bypassNetwork) {
+				return this.getUnplayedSkeleton(gameId, competitionId, yearPrefix);
+			}
+
 			// Inject 500ms delay to prevent rate limiting
 			console.log(`⏳ [LklScraper] Rate limit protection: sleeping 500ms...`);
 			await new Promise(resolve => setTimeout(resolve, 500));

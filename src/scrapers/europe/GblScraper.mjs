@@ -107,6 +107,10 @@ export class GblScraper extends HTTPClient {
 		}
 
 		if (!htmlContent) {
+			if (process.env.NODE_ENV === 'test' || this.bypassNetwork) {
+				return this.getUnplayedSkeleton(gameId, competitionId, yearPrefix);
+			}
+
 			try {
 				// Inject 5 seconds rate limit delay between successive fetches
 				if (process.env.NODE_ENV !== 'test') {

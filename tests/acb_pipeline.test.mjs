@@ -171,7 +171,7 @@ test.describe('ACB (Liga Endesa) Scraper & Pipeline Integration', () => {
 			assert.ok(games.length > 0);
 			assert.ok(games.some(g => g.id === 'A2098_105373'), 'Should save the targeted final game');
 		} finally {
-			db.destroy();
+			db.close();
 		}
 
 		// Cleanup files generated in this test

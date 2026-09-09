@@ -149,7 +149,7 @@ test.describe('NBL PBP Pipeline Integration Tests', () => {
 			const stintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('O2024_10001');
 			assert.equal(stintsCount.count, 2);
 		} finally {
-			if (db) db.destroy();
+			if (db) db.close();
 		}
 	});
 });

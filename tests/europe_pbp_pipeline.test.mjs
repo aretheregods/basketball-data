@@ -7,6 +7,7 @@ import { EuroleaguePbpHarvester } from '../src/scrapers/europe/pbp/EuroleaguePbp
 import { AcbPbpHarvester } from '../src/scrapers/europe/pbp/AcbPbpHarvester.mjs';
 import { LnbPbpHarvester } from '../src/scrapers/europe/pbp/LnbPbpHarvester.mjs';
 import { LbaPbpHarvester } from '../src/scrapers/europe/pbp/LbaPbpHarvester.mjs';
+import { GblPbpHarvester } from '../src/scrapers/europe/pbp/GblPbpHarvester.mjs';
 import {
 	calculateGameSecondsRemaining,
 	parseEuroClock,
@@ -27,6 +28,11 @@ import {
 	normalizeLbaAction,
 	transformLbaPbp
 } from '../src/scrapers/europe/pbp/LbaPbpTransformer.mjs';
+import {
+	parseGblClock,
+	normalizeGblAction,
+	transformGblPbp
+} from '../src/scrapers/europe/pbp/GblPbpTransformer.mjs';
 import { extractStage } from '../src/stages/1-extract.mjs';
 import { transformStage } from '../src/stages/2-transform.mjs';
 import { loadStage, initDatabase } from '../src/stages/3-load.mjs';
@@ -53,8 +59,8 @@ test.after(async () => {
 	await fs.rm(testDbPath, { force: true });
 });
 
-test('EuroLeague, ACB, LNB & LBA PBP Clock and Helper Unit Tests', async (t) => {
-	await t.test('parseEuroClock, parseAcbClock, parseLnbClock and parseLbaClock should parse clock string MM:SS into remaining period seconds', () => {
+test('EuroLeague, ACB, LNB, LBA & GBL PBP Clock and Helper Unit Tests', async (t) => {
+	await t.test('parseEuroClock, parseAcbClock, parseLnbClock, parseLbaClock and parseGblClock should parse clock string MM:SS into remaining period seconds', () => {
 		assert.equal(parseEuroClock(null, '10:00'), 600);
 		assert.equal(parseEuroClock(null, '08:45'), 525);
 		assert.equal(parseEuroClock(null, '00:00'), 0);
@@ -70,6 +76,10 @@ test('EuroLeague, ACB, LNB & LBA PBP Clock and Helper Unit Tests', async (t) => 
 		assert.equal(parseLbaClock('10:00'), 600);
 		assert.equal(parseLbaClock('09:45'), 585);
 		assert.equal(parseLbaClock('00:00'), 0);
+
+		assert.equal(parseGblClock('10:00'), 600);
+		assert.equal(parseGblClock('09:45'), 585);
+		assert.equal(parseGblClock('00:00'), 0);
 	});
 
 	await t.test('normalizeAcbAction should map Spanish event descriptions to standard event codes', () => {
@@ -112,6 +122,21 @@ test('EuroLeague, ACB, LNB & LBA PBP Clock and Helper Unit Tests', async (t) => 
 		assert.equal(normalizeLbaAction('Ingresso'), 'SUB');
 	});
 
+	await t.test('normalizeGblAction should map English and Greek ESAKE event descriptions to standard event codes', () => {
+		assert.equal(normalizeGblAction('(25) Alec PETERS performed a 3 points jump shot'), '3FGM');
+		assert.equal(normalizeGblAction('Alec PETERS missed a 3 points jump shot'), '3FGA');
+		assert.equal(normalizeGblAction('performed a 2 points lay-up'), '2FGM');
+		assert.equal(normalizeGblAction('missed a 2 points jump shot'), '2FGA');
+		assert.equal(normalizeGblAction('made a free throw'), 'FTM');
+		assert.equal(normalizeGblAction('missed a free throw'), 'FTA');
+		assert.equal(normalizeGblAction('offensive rebound'), 'ORB');
+		assert.equal(normalizeGblAction('defensive rebound'), 'DRB');
+		assert.equal(normalizeGblAction('bad pass / turnover'), 'TOV');
+		assert.equal(normalizeGblAction('commited a personal foul'), 'FOUL');
+		assert.equal(normalizeGblAction('blocked shot'), 'BLK');
+		assert.equal(normalizeGblAction('entered the court'), 'SUB');
+	});
+
 	await t.test('calculateGameSecondsRemaining should accurately calculate total game clock for FIBA regulation and OT', () => {
 		// Q1 (Period 1): 10:00 remaining -> 3*600 + 600 = 2400
 		assert.equal(calculateGameSecondsRemaining(1, 600), 2400);
@@ -119,6 +144,62 @@ test('EuroLeague, ACB, LNB & LBA PBP Clock and Helper Unit Tests', async (t) => 
 		assert.equal(calculateGameSecondsRemaining(4, 120), 120);
 		// OT1 (Period 5): 03:00 remaining -> 180
 		assert.equal(calculateGameSecondsRemaining(5, 180), 180);
+	});
+});
+
+test('Greek GBL PBP Harvester & Transformer Unit Tests', async (t) => {
+	await t.test('GblPbpHarvester parseGameId should parse game codes and season years', () => {
+		const harvester = new GblPbpHarvester();
+		assert.deepEqual(harvester.parseGameId('olympiacos-vs-panathinaikos-G2024_65708E5D'), {
+			competitionId: 'GBL2024',
+			seasonCode: 'GBL2024',
+			gameCode: '65708E5D',
+			seasonYear: '2024'
+		});
+		assert.deepEqual(harvester.parseGameId('G2026_65708E5D', '2026'), {
+			competitionId: 'GBL2026',
+			seasonCode: 'GBL2026',
+			gameCode: '65708E5D',
+			seasonYear: '2026'
+		});
+	});
+
+	await t.test('transformGblPbp should normalize Greek GBL event stream and generate 5-on-5 stints', () => {
+		const rawPayload = {
+			seasonYear: '2024',
+			competitionId: 'GBL2024',
+			events: [
+				{
+					raw_index: 0,
+					clock: "09:45",
+					period: 1,
+					score_line: "2 - 0",
+					description: "(25) Alec PETERS performed a 2 points lay-up",
+					team_code: "OLY",
+					player_name: "Alec PETERS"
+				},
+				{
+					raw_index: 1,
+					clock: "09:30",
+					period: 1,
+					score_line: "2 - 0",
+					description: "(6) Cendi OSMAN entered the court",
+					team_code: "PAN",
+					player_name: "Cendi OSMAN"
+				}
+			]
+		};
+
+		const { events, stints } = transformGblPbp('G2024_65708E5D', rawPayload);
+		assert.equal(events.length, 2);
+		assert.equal(events[0].event_type, '2FGM');
+		assert.equal(events[0].competition_id, 'GBL2024');
+		assert.equal(events[0].is_scoring_play, 1);
+		assert.equal(events[0].game_seconds_remaining, 2385);
+
+		assert.equal(stints.length, 1);
+		assert.equal(stints[0].period, 1);
+		assert.equal(stints[0].duration_seconds, 15);
 	});
 });
 
@@ -456,39 +537,42 @@ test('EuroLeague PBP Harvester & Transformer Unit Tests', async (t) => {
 	});
 });
 
-test('Europe, ACB, LNB & LBA PBP Full Pipeline Integration Test', async (t) => {
+test('Europe, ACB, LNB, LBA & GBL PBP Full Pipeline Integration Test', async (t) => {
 	// Setup clean mock scraper
-	const scraper = new EuropeScraper({ competitions: 'acb,lnb,lba,euroleague', boxscoreType: 'pbp' });
+	const scraper = new EuropeScraper({ competitions: 'acb,lnb,lba,gbl,euroleague', boxscoreType: 'pbp' });
 	scraper.pbpHarvester.bypassNetwork = true;
 	scraper.acbPbpHarvester.bypassNetwork = true;
 	scraper.lnbPbpHarvester.bypassNetwork = true;
 	scraper.lbaPbpHarvester.bypassNetwork = true;
+	scraper.gblPbpHarvester.bypassNetwork = true;
 	scraper.getSeasonGameSlugs = async function() {
 		this.gameSlugs = [
 			'realmadrid-vs-panathinaikos-E2024_1',
 			'barcelona-vs-valencia-A2024_105373',
 			'asvel-vs-monaco-L2024_1001',
-			'unahotels-reggio-emilia-vs-dolomiti-energia-trentino-I2024_24662'
+			'unahotels-reggio-emilia-vs-dolomiti-energia-trentino-I2024_24662',
+			'olympiacos-vs-panathinaikos-G2024_65708E5D'
 		];
 		return this;
 	};
 
-	await t.test('Full Europe, ACB, LNB & LBA PBP Pipeline Execution: Extract -> Transform -> Load -> SQLite Audit', async () => {
+	await t.test('Full Europe, ACB, LNB, LBA & GBL PBP Pipeline Execution: Extract -> Transform -> Load -> SQLite Audit', async () => {
 		// Stage 1: Extract
-		const extractedGameIds = await extractStage(scraper, league, year, { type: 'pbp', competitions: 'acb,lnb,lba,euroleague' });
-		assert.equal(extractedGameIds.length, 4);
+		const extractedGameIds = await extractStage(scraper, league, year, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,euroleague' });
+		assert.equal(extractedGameIds.length, 5);
 		assert.ok(extractedGameIds.includes('E2024_1'));
 		assert.ok(extractedGameIds.includes('A2024_105373'));
 		assert.ok(extractedGameIds.includes('L2024_1001'));
 		assert.ok(extractedGameIds.includes('I2024_24662'));
+		assert.ok(extractedGameIds.includes('G2024_65708E5D'));
 
 		// Stage 2: Transform
-		const transformedData = await transformStage(league, year, { type: 'pbp', competitions: 'acb,lnb,lba,euroleague' });
+		const transformedData = await transformStage(league, year, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,euroleague' });
 		assert.ok(transformedData.events.length > 0);
 		assert.ok(transformedData.stints.length > 0);
 
 		// Stage 3: Load
-		await loadStage(league, year, transformedData, { type: 'pbp', competitions: 'acb,lnb,lba,euroleague' });
+		await loadStage(league, year, transformedData, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,euroleague' });
 
 		// Stage 4: Direct DB verification
 		let db = await initDatabase(league);
@@ -505,6 +589,9 @@ test('Europe, ACB, LNB & LBA PBP Full Pipeline Integration Test', async (t) => {
 			const lbaEventsCount = db.prepare('SELECT COUNT(*) as count FROM game_play_by_play WHERE game_id = ?').get('I2024_24662');
 			assert.equal(lbaEventsCount.count, 2);
 
+			const gblEventsCount = db.prepare('SELECT COUNT(*) as count FROM game_play_by_play WHERE game_id = ?').get('G2024_65708E5D');
+			assert.equal(gblEventsCount.count, 2);
+
 			const elStintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('E2024_1');
 			assert.equal(elStintsCount.count, 1);
 
@@ -516,6 +603,9 @@ test('Europe, ACB, LNB & LBA PBP Full Pipeline Integration Test', async (t) => {
 
 			const lbaStintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('I2024_24662');
 			assert.equal(lbaStintsCount.count, 1);
+
+			const gblStintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('G2024_65708E5D');
+			assert.equal(gblStintsCount.count, 1);
 
 			// Populate team_game_stats record to test AuditEngine PBP stats query
 			db.prepare(`

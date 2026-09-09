@@ -83,14 +83,24 @@ const mockStatsApiPbpResponse = {
 	]
 };
 
-let originalFetch;
+let fetchMock = null;
+const originalFetch = globalThis.fetch;
 
 test.before(async () => {
 	process.env.NODE_ENV = 'test';
-	originalFetch = globalThis.fetch;
+	globalThis.fetch = async (url, config) => {
+		if (fetchMock) {
+			return fetchMock(url, config);
+		}
+		return originalFetch(url, config);
+	};
 	await fs.rm(path.resolve(`data/raw/nba_pbp_test`), { recursive: true, force: true });
 	await fs.rm(path.resolve(`data/transformed/nba_pbp_test`), { recursive: true, force: true });
 	await fs.rm(path.resolve(`data/SQL/NBA_PBP_TEST.sqlite`), { force: true });
+});
+
+test.beforeEach(() => {
+	fetchMock = null;
 });
 
 test.after(async () => {
@@ -148,9 +158,8 @@ test.describe('NBA Play-by-Play Unit Tests', () => {
 
 	test('fetchNbaPbp should fetch from CDN Live endpoint', async () => {
 		let fetchedUrl = null;
-		const prevFetch = globalThis.fetch;
 		try {
-			globalThis.fetch = async (url) => {
+			fetchMock = async (url) => {
 				fetchedUrl = url;
 				return {
 					ok: true,
@@ -165,19 +174,15 @@ test.describe('NBA Play-by-Play Unit Tests', () => {
 			assert.equal(fetchedUrl, 'https://cdn.nba.com/static/json/liveData/playbyplay/playbyplay_0022300001.json');
 			assert.ok(payload);
 		} finally {
-			globalThis.fetch = prevFetch;
 		}
 	});
-});
 
-test.describe('NBA PBP Pipeline Integration Tests', () => {
 	test('Full NBA PBP Pipeline Execution: Extract -> Transform -> Load -> SQLite Audit', async () => {
 		const testLeague = 'nba_pbp_test';
 		const testYear = '2024';
 
-		const prevFetch = globalThis.fetch;
 		try {
-			globalThis.fetch = async (url) => {
+			fetchMock = async (url) => {
 				if (url.includes('playbyplay_0022300001.json')) {
 					return {
 						ok: true,
@@ -225,10 +230,9 @@ test.describe('NBA PBP Pipeline Integration Tests', () => {
 			const stintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('0022300001');
 			assert.equal(stintsCount.count, 2);
 			} finally {
-				if (db) db.destroy();
+				if (db) db.close();
 			}
 		} finally {
-			globalThis.fetch = prevFetch;
 		}
 	});
 });
