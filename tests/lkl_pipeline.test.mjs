@@ -3,9 +3,19 @@ import assert from 'node:assert/strict';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+process.env.NODE_ENV = 'test';
+
 import { EuropeScraper } from '../src/scrapers/europe/europe.mjs';
 import { LklScraper } from '../src/scrapers/europe/LklScraper.mjs';
 import { LklHarvester } from '../src/scrapers/europe/harvesters/LklHarvester.mjs';
+import { LklPbpHarvester } from '../src/scrapers/europe/pbp/LklPbpHarvester.mjs';
+import {
+	transformLklPbp,
+	normalizeLklAction,
+	parseLklClock,
+	calculateGameSecondsRemaining
+} from '../src/scrapers/europe/pbp/LklPbpTransformer.mjs';
 import { extractStage } from '../src/stages/1-extract.mjs';
 import { transformStage } from '../src/stages/2-transform.mjs';
 import { loadStage, initDatabase } from '../src/stages/3-load.mjs';
@@ -19,16 +29,19 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 	const year = '2024'; // Unique test year to isolate test runs
 
 	test.before(async () => {
-		process.env.NODE_ENV = 'test';
 		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/raw/europe/lkl', year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/raw', league, 'pbp', 'lkl', year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/transformed', league, 'pbp', year), { recursive: true, force: true });
 	});
 
 	test.after(async () => {
 		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/raw/europe/lkl', year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/raw', league, 'pbp', 'lkl', year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/transformed', league, 'pbp', year), { recursive: true, force: true });
 	});
 
 	test('LklHarvester should return mock slugs in test mode', async () => {
@@ -148,7 +161,81 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 		assert.ok(engine instanceof LklScraper);
 	});
 
-	test('Full LKL Pipeline Integration: Extract -> Transform -> Load', async () => {
+	test('LKL PBP Clock & Action Normalization Helpers', () => {
+		assert.equal(parseLklClock('09:45'), 585);
+		assert.equal(parseLklClock('00:09:45'), 585);
+		assert.equal(calculateGameSecondsRemaining(1, 585), 2385); // 3*600 + 585 = 2385
+		assert.equal(calculateGameSecondsRemaining(5, 300), 300);
+
+		assert.equal(normalizeLklAction('Dvitaškis metimas pataikytas'), '2FGM');
+		assert.equal(normalizeLklAction('Tritaškis metimas pro šalį'), '3FGA');
+		assert.equal(normalizeLklAction('Baudos metimas pataikytas'), 'FTM');
+		assert.equal(normalizeLklAction('Atkovotas kamuolys puolime'), 'ORB');
+		assert.equal(normalizeLklAction('Atkovotas kamuolys gynyboje'), 'DRB');
+		assert.equal(normalizeLklAction('Klaida'), 'TOV');
+		assert.equal(normalizeLklAction('Perimtas kamuolys'), 'STL');
+		assert.equal(normalizeLklAction('Pražanga'), 'FOUL');
+		assert.equal(normalizeLklAction('Blokas'), 'BLK');
+		assert.equal(normalizeLklAction('Keitimas'), 'SUB');
+	});
+
+	test('LklPbpHarvester should fetch mock PBP in test mode', async () => {
+		const harvester = new LklPbpHarvester({ bypassNetwork: true });
+		const pbp = await harvester.fetchLklPbp('lietkabelis-vs-neptunas-K2024_11574', '2024');
+
+		assert.ok(pbp);
+		assert.equal(pbp.gameId, 'lietkabelis-vs-neptunas-K2024_11574');
+		assert.equal(pbp.competitionId, 'LKL2024');
+		assert.ok(Array.isArray(pbp.actions));
+		assert.ok(pbp.actions.length > 0);
+	});
+
+	test('transformLklPbp should convert raw actions into standardized event rows and stints', () => {
+		const mockPayload = {
+			gameId: 'lietkabelis-vs-neptunas-K2024_11574',
+			competitionId: 'LKL2024',
+			actions: [
+				{
+					actionNumber: 1,
+					period: 1,
+					time: "09:45",
+					actionType: "2FGM",
+					text: "Dovis Bickauskis pataikytas dvitaškis metimas",
+					team: "LIE",
+					personId: "dovis-bickauskis",
+					s1: 2,
+					s2: 0
+				},
+				{
+					actionNumber: 2,
+					period: 1,
+					time: "09:30",
+					actionType: "SUB",
+					text: "Mindaugas Girdziunas išėjo į aikštelę",
+					team: "NEP",
+					personId: "mindaugas-girdziunas",
+					s1: 2,
+					s2: 0
+				}
+			]
+		};
+
+		const { events, stints } = transformLklPbp('lietkabelis-vs-neptunas-K2024_11574', mockPayload);
+
+		assert.equal(events.length, 2);
+		assert.equal(events[0].event_type, '2FGM');
+		assert.equal(events[0].player_id, 'dovis-bickauskis');
+		assert.equal(events[0].home_score, 2);
+		assert.equal(events[0].away_score, 0);
+
+		assert.equal(events[1].event_type, 'SUB');
+		assert.equal(events[1].player_id, 'mindaugas-girdziunas');
+
+		assert.ok(stints.length > 0);
+		assert.equal(stints[0].competition_id, 'LKL2024');
+	});
+
+	test('Full LKL Box Score Pipeline Integration: Extract -> Transform -> Load', async () => {
 		try {
 			const scraper = new EuropeScraper({ competitions: 'lkl' });
 
@@ -192,6 +279,40 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 		} catch (err) {
 			console.error('DEBUGGING TEST ERROR:', err);
 			throw err;
+		}
+	});
+
+	test('Full LKL Play-by-Play Pipeline Integration: Extract -> Transform -> Load', async () => {
+		const scraper = new EuropeScraper({ competitions: 'lkl', boxscoreType: 'pbp' });
+
+		// 1. STAGE 1: Extract (PBP)
+		const gameIds = await extractStage(scraper, league, year, { boxscoreType: 'pbp', competitions: 'lkl' });
+		assert.ok(gameIds.length > 0);
+		assert.ok(gameIds.includes('K2024_11574'));
+
+		// 2. STAGE 2: Transform (PBP)
+		const transformedPbp = await transformStage(league, year, { boxscoreType: 'pbp', competitions: 'lkl' });
+		assert.ok(transformedPbp.events.length > 0);
+		assert.ok(transformedPbp.stints.length > 0);
+
+		const evt = transformedPbp.events.find(e => e.player_id === 'dovis-bickauskis');
+		assert.ok(evt);
+		assert.equal(evt.event_type, '2FGM');
+
+		// 3. STAGE 3: Load (PBP)
+		await loadStage(league, year, transformedPbp, { boxscoreType: 'pbp' });
+
+		// 4. Verify in Database
+		const db = await initDatabase(league);
+		try {
+			const pbpRows = db.prepare('SELECT * FROM game_play_by_play WHERE player_id = ?').all('dovis-bickauskis');
+			assert.ok(pbpRows.length > 0);
+			assert.equal(pbpRows[0].event_type, '2FGM');
+
+			const stintRows = db.prepare('SELECT * FROM game_stints WHERE competition_id = ?').all('LKL2024');
+			assert.ok(stintRows.length > 0);
+		} finally {
+			db.close();
 		}
 	});
 });

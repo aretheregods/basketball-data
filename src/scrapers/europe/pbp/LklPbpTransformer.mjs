@@ -1,0 +1,382 @@
+/**
+ * @file LklPbpTransformer.mjs
+ * @description Transformer for Lithuanian Basketball League (Betsafe LKL) Play-by-Play streams.
+ * Parses FIBA regulation (600s) and overtime (300s) clocks, normalizes Lithuanian play descriptions and
+ * action codes into standard event types, and tracks substitution state machines to generate 5-on-5 stint intervals.
+ */
+
+/**
+ * @description Calculates remaining seconds in total game (FIBA regulation = 2400s total, OT = 300s total per period).
+ * @param {number} period - Period number (1-4 regulation, 5+ overtime)
+ * @param {number} secondsInPeriod - Seconds remaining in current period
+ * @returns {number}
+ */
+export function calculateGameSecondsRemaining(period, secondsInPeriod) {
+	if (period <= 4) {
+		return ((4 - period) * 600) + secondsInPeriod;
+	}
+	return secondsInPeriod;
+}
+
+/**
+ * @description Parses LKL clock string into remaining period seconds (0-600s).
+ * Handles formats like "00:09:45", "09:45", "10:00", or numeric inputs.
+ * @param {string|number} [clockStr] - Clock value
+ * @returns {number} Seconds remaining in period
+ */
+export function parseLklClock(clockStr) {
+	if (!clockStr) return 0;
+	if (typeof clockStr === 'number') return clockStr;
+
+	const str = String(clockStr).trim();
+	const parts = str.split(':');
+
+	if (parts.length === 3) { // e.g. "00:09:45"
+		const mins = parseInt(parts[1], 10);
+		const secs = parseFloat(parts[2]);
+		if (!isNaN(mins) && !isNaN(secs)) {
+			return (mins * 60) + secs;
+		}
+	} else if (parts.length === 2) { // e.g. "09:45"
+		const mins = parseInt(parts[0], 10);
+		const secs = parseFloat(parts[1]);
+		if (!isNaN(mins) && !isNaN(secs)) {
+			return (mins * 60) + secs;
+		}
+	}
+
+	const numeric = parseFloat(str);
+	return isNaN(numeric) ? 0 : numeric;
+}
+
+/**
+ * @description Normalizes Lithuanian LKL action codes and Lithuanian text to standard event codes.
+ * @param {string} textRaw - Description or text
+ * @param {string} [typeCode=''] - Code type
+ * @returns {string} Normalized event code
+ */
+export function normalizeLklAction(textRaw, typeCode = '') {
+	const code = String(typeCode || '').toUpperCase().trim();
+	const text = String(textRaw || '').toLowerCase().trim();
+
+	if (code === '3FGM' || code === '3PT_MADE' || code === '3FGA' || code === '2FGM' || code === '2FGA' || code === 'FTM' || code === 'FTA' || code === 'SUB' || code === 'ORB' || code === 'DRB' || code === 'TOV' || code === 'STL' || code === 'FOUL' || code === 'BLK') {
+		return code;
+	}
+
+	// Code checks
+	if (code.includes('3PT') || code.includes('3FG') || code.includes('THREE')) {
+		if (text.includes('miss') || text.includes('pro šalį') || text.includes('netaiklus')) return '3FGA';
+		return '3FGM';
+	}
+	if (code.includes('2PT') || code.includes('2FG') || code.includes('TWO') || code.includes('LAYUP') || code.includes('DUNK')) {
+		if (text.includes('miss') || text.includes('pro šalį') || text.includes('netaiklus')) return '2FGA';
+		return '2FGM';
+	}
+	if (code.includes('FT') || code.includes('FREE')) {
+		if (text.includes('miss') || text.includes('pro šalį') || text.includes('netaiklus')) return 'FTA';
+		return 'FTM';
+	}
+
+	// Text checks
+	if (text.includes('tritaškis')) {
+		if (text.includes('pataikytas') || text.includes('taiklus') || text.includes('made') || text.includes('įmetė')) return '3FGM';
+		if (text.includes('pro šalį') || text.includes('netaiklus') || text.includes('miss') || text.includes('nepataikė')) return '3FGA';
+		return '3FGM';
+	}
+	if (text.includes('dvitaškis') || text.includes('dedimas') || text.includes('metimas iš po krepšio')) {
+		if (text.includes('pataikytas') || text.includes('taiklus') || text.includes('made') || text.includes('įmetė')) return '2FGM';
+		if (text.includes('pro šalį') || text.includes('netaiklus') || text.includes('miss') || text.includes('nepataikė')) return '2FGA';
+		return '2FGM';
+	}
+	if (text.includes('baudos')) {
+		if (text.includes('pataikytas') || text.includes('taiklus') || text.includes('made') || text.includes('įmetė')) return 'FTM';
+		if (text.includes('pro šalį') || text.includes('netaiklus') || text.includes('miss') || text.includes('nepataikė')) return 'FTA';
+		return 'FTM';
+	}
+	if (text.includes('atkovotas')) {
+		if (text.includes('puolime')) return 'ORB';
+		if (text.includes('gynyboje') || text.includes('kamuolys')) return 'DRB';
+		return 'DRB';
+	}
+	if (text.includes('klaida') || text.includes('žingsniai') || text.includes('praradimas') || text.includes('turnover')) {
+		return 'TOV';
+	}
+	if (text.includes('perimtas') || text.includes('steal')) {
+		return 'STL';
+	}
+	if (text.includes('pražanga') || text.includes('foul')) {
+		return 'FOUL';
+	}
+	if (text.includes('blokas') || text.includes('block')) {
+		return 'BLK';
+	}
+	if (text.includes('keitimas') || text.includes('aikštelę') || text.includes('pakeitė') || text.includes('substi')) {
+		return 'SUB';
+	}
+
+	return code || 'OTHER';
+}
+
+/**
+ * @description Lineup State Machine for Lithuanian LKL PBP events.
+ * Groups events by period and constructs 5-on-5 stint intervals.
+ * @param {string} gameId
+ * @param {string} competitionId
+ * @param {Object[]} events
+ * @returns {Object[]}
+ */
+function buildStintsFromEvents(gameId, competitionId, events) {
+	const stints = [];
+
+	let homeTeamId = null;
+	let awayTeamId = null;
+
+	for (const evt of events) {
+		if (evt.team_id) {
+			if (!homeTeamId) {
+				homeTeamId = evt.team_id;
+			} else if (!awayTeamId && evt.team_id !== homeTeamId) {
+				awayTeamId = evt.team_id;
+			}
+		}
+		if (homeTeamId && awayTeamId) break;
+	}
+
+	const periodMap = new Map();
+	for (const evt of events) {
+		if (!periodMap.has(evt.period)) {
+			periodMap.set(evt.period, []);
+		}
+		periodMap.get(evt.period).push(evt);
+	}
+
+	for (const [period, pEvents] of periodMap.entries()) {
+		let stintIndex = 1;
+		let homeLineup = new Set();
+		let awayLineup = new Set();
+
+		let stintStartClock = pEvents[0]?.clock || (period <= 4 ? "10:00" : "05:00");
+		let stintStartSecs = pEvents[0]?.seconds_remaining ?? (period <= 4 ? 600 : 300);
+		let stintStartHomePts = pEvents[0]?.home_score || 0;
+		let stintStartAwayPts = pEvents[0]?.away_score || 0;
+		let stintFga = 0;
+		let stintFta = 0;
+		let stintOreb = 0;
+		let stintTov = 0;
+
+		let runningHomeScore = stintStartHomePts;
+		let runningAwayScore = stintStartAwayPts;
+
+		for (let i = 0; i < pEvents.length; i++) {
+			const evt = pEvents[i];
+
+			if (evt.home_score > 0) runningHomeScore = evt.home_score;
+			if (evt.away_score > 0) runningAwayScore = evt.away_score;
+
+			const typeUpper = String(evt.event_type || '').toUpperCase();
+
+			if (['2FGM', '2FGA', '3FGM', '3FGA', 'FGM', 'FGA'].some(t => typeUpper.includes(t))) {
+				stintFga++;
+			} else if (['FTM', 'FTA', 'FT'].some(t => typeUpper.includes(t))) {
+				stintFta++;
+			} else if (['ORB', 'OFFENSE_REBOUND'].some(t => typeUpper.includes(t))) {
+				stintOreb++;
+			} else if (['TOV', 'TO', 'TURNOVER'].some(t => typeUpper.includes(t))) {
+				stintTov++;
+			}
+
+			const subTypeUpper = String(evt.sub_type || '').toUpperCase();
+			const descLower = String(evt.description || '').toLowerCase();
+			const isSub = typeUpper === 'SUB' || subTypeUpper === 'IN' || subTypeUpper === 'OUT' ||
+				descLower.includes('keitimas') || descLower.includes('aikštelę') || descLower.includes('pakeitė');
+
+			if (isSub || i === pEvents.length - 1) {
+				const durationSecs = Math.max(0, stintStartSecs - evt.seconds_remaining);
+				const possEst = Math.max(0, Number((stintFga + (0.44 * stintFta) - stintOreb + stintTov).toFixed(1)));
+
+				const homeArray = Array.from(homeLineup).sort();
+				const awayArray = Array.from(awayLineup).sort();
+
+				stints.push({
+					stint_id: `${competitionId}_${gameId}_stint_${period}_${stintIndex}`,
+					game_id: String(gameId),
+					competition_id: competitionId,
+					period: Number(period),
+					start_clock: stintStartClock,
+					end_clock: evt.clock,
+					duration_seconds: durationSecs,
+					home_lineup_hash: JSON.stringify(homeArray),
+					away_lineup_hash: JSON.stringify(awayArray),
+					home_pts: runningHomeScore - stintStartHomePts,
+					away_pts: runningAwayScore - stintStartAwayPts,
+					possessions: possEst
+				});
+
+				stintIndex++;
+				stintStartClock = evt.clock;
+				stintStartSecs = evt.seconds_remaining;
+				stintStartHomePts = runningHomeScore;
+				stintStartAwayPts = runningAwayScore;
+				stintFga = 0;
+				stintFta = 0;
+				stintOreb = 0;
+				stintTov = 0;
+			}
+
+			if (evt.player_id) {
+				const isHome = evt.team_id ? evt.team_id === homeTeamId : homeLineup.has(evt.player_id);
+				const isAway = evt.team_id ? evt.team_id === awayTeamId : awayLineup.has(evt.player_id);
+
+				if (isSub) {
+					const isOut = descLower.includes('paliko') || subTypeUpper === 'OUT';
+					if (isOut) {
+						if (isHome) homeLineup.delete(evt.player_id);
+						if (isAway) awayLineup.delete(evt.player_id);
+					} else {
+						if (isHome && homeLineup.size < 5) homeLineup.add(evt.player_id);
+						else if (isAway && awayLineup.size < 5) awayLineup.add(evt.player_id);
+						else if (!isHome && !isAway) {
+							if (homeLineup.size < 5) homeLineup.add(evt.player_id);
+							else if (awayLineup.size < 5) awayLineup.add(evt.player_id);
+						}
+					}
+				} else {
+					if (isHome) {
+						if (homeLineup.size < 5) homeLineup.add(evt.player_id);
+					} else if (isAway) {
+						if (awayLineup.size < 5) awayLineup.add(evt.player_id);
+					} else {
+						if (homeLineup.size < 5) homeLineup.add(evt.player_id);
+						else if (awayLineup.size < 5) awayLineup.add(evt.player_id);
+					}
+				}
+			}
+		}
+	}
+
+	return stints;
+}
+
+/**
+ * @description Transforms raw Lithuanian LKL play-by-play payload into standardized event rows and stint intervals.
+ * @param {string} gameId - Game identifier
+ * @param {Object} rawPayload - Raw LKL play-by-play payload object
+ * @returns {{ events: Object[], stints: Object[] }}
+ */
+export function transformLklPbp(gameId, rawPayload) {
+	if (!rawPayload) return { events: [], stints: [] };
+
+	const cleanGameId = String(gameId || '').trim();
+	const seasonYear = rawPayload.seasonYear || '2026';
+	const competitionId = rawPayload.competitionId || `LKL${seasonYear}`;
+
+	// Extract raw actions array based on source payload format
+	let rawActions = [];
+
+	if (rawPayload.source === 'fiba_livestats' || (rawPayload.data && rawPayload.data.pbp) || (rawPayload.pbp && Array.isArray(rawPayload.pbp))) {
+		rawActions = rawPayload.data?.pbp || rawPayload.pbp?.Rows || rawPayload.pbp || [];
+	} else if (Array.isArray(rawPayload.actions)) {
+		rawActions = rawPayload.actions;
+	} else if (Array.isArray(rawPayload.events)) {
+		rawActions = rawPayload.events;
+	} else if (rawPayload.pbp && Array.isArray(rawPayload.pbp.Rows)) {
+		rawActions = rawPayload.pbp.Rows;
+	}
+
+	if (!Array.isArray(rawActions)) {
+		return { events: [], stints: [] };
+	}
+
+	// Sort actions chronologically
+	const actions = rawActions.slice().sort((a, b) => {
+		if (a.actionNumber !== undefined && b.actionNumber !== undefined) {
+			return (a.actionNumber ?? 0) - (b.actionNumber ?? 0);
+		}
+		if (a.raw_index !== undefined && b.raw_index !== undefined) {
+			return (a.raw_index ?? 0) - (b.raw_index ?? 0);
+		}
+		const pA = parseInt(a.period || 1, 10);
+		const pB = parseInt(b.period || 1, 10);
+		if (pA !== pB) return pA - pB;
+
+		const clockA = parseLklClock(a.gt || a.time || a.clock);
+		const clockB = parseLklClock(b.gt || b.time || b.clock);
+		return clockB - clockA;
+	});
+
+	const events = [];
+	let runningHomeScore = 0;
+	let runningAwayScore = 0;
+
+	for (let i = 0; i < actions.length; i++) {
+		const action = actions[i];
+
+		const period = parseInt(action.period || 1, 10);
+		const rawClock = action.gt || action.time || action.clock || "10:00";
+		let clockStr = String(rawClock);
+		if (clockStr.startsWith("00:")) {
+			clockStr = clockStr.substring(3);
+		}
+
+		const secondsRemaining = parseLklClock(rawClock);
+		const gameSecondsRemaining = calculateGameSecondsRemaining(period, secondsRemaining);
+
+		if (action.s1 !== undefined && action.s1 !== null) {
+			runningHomeScore = parseInt(action.s1, 10);
+		} else if (action.home_score !== undefined && action.home_score !== null) {
+			runningHomeScore = parseInt(action.home_score, 10);
+		}
+
+		if (action.s2 !== undefined && action.s2 !== null) {
+			runningAwayScore = parseInt(action.s2, 10);
+		} else if (action.away_score !== undefined && action.away_score !== null) {
+			runningAwayScore = parseInt(action.away_score, 10);
+		}
+
+		if (action.score_line && typeof action.score_line === 'string') {
+			const parts = action.score_line.split('-').map(s => s.trim());
+			if (parts.length === 2) {
+				const h = parseInt(parts[0], 10);
+				const a = parseInt(parts[1], 10);
+				if (!isNaN(h)) runningHomeScore = h;
+				if (!isNaN(a)) runningAwayScore = a;
+			}
+		}
+
+		const desc = action.text || action.description || action.desc || '';
+		const eventType = normalizeLklAction(desc, action.actionType || action.type);
+		const isScoring = ['2FGM', '3FGM', 'FTM'].includes(eventType) ? 1 : 0;
+
+		const teamId = action.tno ? String(action.tno) : (action.team ? String(action.team) : (action.team_id ? String(action.team_id) : null));
+		const playerId = action.personId ? String(action.personId) : (action.player_id ? String(action.player_id) : null);
+		const secondaryPlayerId = action.subPersonId || action.secondary_player_id || null;
+
+		const actionNumber = action.actionNumber ?? action.raw_index ?? i;
+
+		events.push({
+			event_id: `${competitionId}_${cleanGameId}_lkl_pbp_${actionNumber}_${i}`,
+			game_id: cleanGameId,
+			competition_id: competitionId,
+			period,
+			clock: String(clockStr),
+			seconds_remaining: secondsRemaining,
+			game_seconds_remaining: gameSecondsRemaining,
+			event_type: eventType,
+			sub_type: action.subType ? String(action.subType) : null,
+			team_id: teamId,
+			player_id: playerId,
+			secondary_player_id: secondaryPlayerId,
+			description: String(desc),
+			home_score: runningHomeScore,
+			away_score: runningAwayScore,
+			loc_x: action.x ?? action.loc_x ?? null,
+			loc_y: action.y ?? action.loc_y ?? null,
+			shot_distance: action.distance ?? action.shot_distance ?? null,
+			is_scoring_play: isScoring
+		});
+	}
+
+	const stints = buildStintsFromEvents(cleanGameId, competitionId, events);
+
+	return { events, stints };
+}
