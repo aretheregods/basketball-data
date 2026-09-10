@@ -36,6 +36,8 @@ export async function extractStage(scraper, league, year, options = {}) {
 				subFolder = 'lba';
 			} else if (comp.includes('gbl')) {
 				subFolder = 'gbl';
+			} else if (comp.includes('bbl')) {
+				subFolder = 'bbl';
 			} else if (comp.includes('eurocup')) {
 				subFolder = 'eurocup';
 			} else if (comp.includes('bcl')) {
@@ -96,11 +98,23 @@ export async function extractStage(scraper, league, year, options = {}) {
 
 	console.log(`🔍 Found ${gameIds.length} unique game IDs to scrape.`);
 
+	// Helper to resolve European PBP subfolder cleanly
+	const resolveEuropePbpSubfolder = (id) => {
+		if (id.startsWith('A') || id.includes('-A20') || id.includes('_acb_')) return 'acb';
+		if (id.startsWith('L') || id.includes('-L20') || id.includes('_lnb_')) return 'lnb';
+		if (id.startsWith('I') || id.includes('-I20') || id.includes('_lba_')) return 'lba';
+		if (id.startsWith('G') || id.includes('-G20') || id.includes('_gbl_')) return 'gbl';
+		if (id.startsWith('D') || id.includes('-D20') || id.includes('_bbl_')) return 'bbl';
+		if (id.startsWith('U') || id.includes('-U20') || id.includes('_eurocup_')) return 'eurocup';
+		if (id.startsWith('B') || id.includes('-B20') || id.includes('_bcl_')) return 'bcl';
+		return 'euroleague';
+	};
+
 	// 3. Download and save raw payload for each game
 	for (const gameId of gameIds) {
 		let targetOutputDir = outputDir;
 		if (isPbp && league.toLowerCase().startsWith('europe')) {
-			const subFolder = (gameId.startsWith('A') || gameId.includes('-A20') || gameId.includes('_acb_')) ? 'acb' : ((gameId.startsWith('L') || gameId.includes('-L20') || gameId.includes('_lnb_')) ? 'lnb' : ((gameId.startsWith('I') || gameId.includes('-I20') || gameId.includes('_lba_')) ? 'lba' : ((gameId.startsWith('G') || gameId.includes('-G20') || gameId.includes('_gbl_')) ? 'gbl' : ((gameId.startsWith('U') || gameId.includes('-U20') || gameId.includes('_eurocup_')) ? 'eurocup' : ((gameId.startsWith('B') || gameId.includes('-B20') || gameId.includes('_bcl_')) ? 'bcl' : 'euroleague')))));
+			const subFolder = resolveEuropePbpSubfolder(gameId);
 			targetOutputDir = path.resolve('data/raw', league.includes('_test') ? league : 'europe', 'pbp', subFolder, String(year));
 			await fs.mkdir(targetOutputDir, { recursive: true });
 		}
