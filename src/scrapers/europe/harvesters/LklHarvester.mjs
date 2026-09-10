@@ -51,8 +51,8 @@ export class LklHarvester extends HTTPClient {
 	 * @returns {Promise<string[]>} List of game slugs
 	 */
 	async getSeasonGameSlugs(year) {
-		// If in test mode, return mock slugs directly to avoid real network/playwright calls
-		if (process.env.NODE_ENV === 'test') {
+		// If in test mode or bypassNetwork set, return mock slugs directly to avoid real network/playwright calls
+		if (process.env.NODE_ENV === 'test' || (this.scraper && this.scraper.bypassNetwork)) {
 			return [
 				`lietkabelis-vs-neptunas-K${year}_11574`,
 				`zalgiris-vs-rytas-K${year}_11572`
