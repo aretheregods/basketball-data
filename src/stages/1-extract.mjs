@@ -34,6 +34,8 @@ export async function extractStage(scraper, league, year, options = {}) {
 				subFolder = 'acb';
 			} else if (comp.includes('lba')) {
 				subFolder = 'lba';
+			} else if (comp.includes('gbl')) {
+				subFolder = 'gbl';
 			} else if (comp.includes('eurocup')) {
 				subFolder = 'eurocup';
 			} else if (comp.includes('bcl')) {
@@ -98,7 +100,7 @@ export async function extractStage(scraper, league, year, options = {}) {
 	for (const gameId of gameIds) {
 		let targetOutputDir = outputDir;
 		if (isPbp && league.toLowerCase().startsWith('europe')) {
-			const subFolder = (gameId.startsWith('A') || gameId.includes('-A20') || gameId.includes('_acb_')) ? 'acb' : ((gameId.startsWith('L') || gameId.includes('-L20') || gameId.includes('_lnb_')) ? 'lnb' : ((gameId.startsWith('I') || gameId.includes('-I20') || gameId.includes('_lba_')) ? 'lba' : ((gameId.startsWith('U') || gameId.includes('-U20') || gameId.includes('_eurocup_')) ? 'eurocup' : ((gameId.startsWith('B') || gameId.includes('-B20') || gameId.includes('_bcl_')) ? 'bcl' : 'euroleague'))));
+			const subFolder = (gameId.startsWith('A') || gameId.includes('-A20') || gameId.includes('_acb_')) ? 'acb' : ((gameId.startsWith('L') || gameId.includes('-L20') || gameId.includes('_lnb_')) ? 'lnb' : ((gameId.startsWith('I') || gameId.includes('-I20') || gameId.includes('_lba_')) ? 'lba' : ((gameId.startsWith('G') || gameId.includes('-G20') || gameId.includes('_gbl_')) ? 'gbl' : ((gameId.startsWith('U') || gameId.includes('-U20') || gameId.includes('_eurocup_')) ? 'eurocup' : ((gameId.startsWith('B') || gameId.includes('-B20') || gameId.includes('_bcl_')) ? 'bcl' : 'euroleague')))));
 			targetOutputDir = path.resolve('data/raw', league.includes('_test') ? league : 'europe', 'pbp', subFolder, String(year));
 			await fs.mkdir(targetOutputDir, { recursive: true });
 		}

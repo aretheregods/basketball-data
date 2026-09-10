@@ -16,36 +16,38 @@ const PROJECT_ROOT = path.resolve(__dirname, '../');
 
 test.describe('BBL German Basketball Scraper & Pipeline Integration', () => {
 	const league = 'europe_bbl_test';
-	const year = '2095'; // Unique test year to isolate test runs
+	const year = '2024'; // Realistic test year to avoid BaseNormalizer.isGameUnplayed future year skipping
 
 	test.before(async () => {
 		process.env.NODE_ENV = 'test';
 		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/raw/europe/bbl', year), { recursive: true, force: true });
 	});
 
 	test.after(async () => {
 		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/raw/europe/bbl', year), { recursive: true, force: true });
 	});
 
 	test('BblHarvester should return mock slugs in test mode', async () => {
 		const harvester = new BblHarvester();
-		const slugs = await harvester.getSeasonGameSlugs('2095');
+		const slugs = await harvester.getSeasonGameSlugs('2024');
 
 		assert.ok(slugs.length > 0, 'Should return some slugs');
-		assert.ok(slugs[0].includes('-D2095_'), 'Slugs must be formatted with D season prefix segment');
+		assert.ok(slugs[0].includes('-D2024_'), 'Slugs must be formatted with D season prefix segment');
 		const sampleGameId = slugs[0].split('-').pop();
-		assert.match(sampleGameId, /^D2095_[A-Z0-9_]+$/, 'gameId Segment must match BBL pattern');
+		assert.match(sampleGameId, /^D2024_[A-Z0-9_]+$/, 'gameId Segment must match BBL pattern');
 	});
 
 	test('BblScraper should return correct unified schema mock data', async () => {
 		const scraper = new BblScraper();
-		const boxscore = await scraper.getUnifiedBoxScore('fc-bayern-vs-alba-berlin-D2095_48210');
+		const boxscore = await scraper.getUnifiedBoxScore('fc-bayern-vs-alba-berlin-D2024_48210');
 
-		assert.equal(boxscore.gameId, 'fc-bayern-vs-alba-berlin-D2095_48210');
+		assert.equal(boxscore.gameId, 'fc-bayern-vs-alba-berlin-D2024_48210');
 		assert.equal(boxscore.competitionId, 'bbl');
-		assert.equal(boxscore.seasonId, '2095');
+		assert.equal(boxscore.seasonId, '2024');
 
 		// Home team check
 		assert.equal(boxscore.homeTeam.teamName, 'FC Bayern München');
@@ -172,7 +174,7 @@ test.describe('BBL German Basketball Scraper & Pipeline Integration', () => {
 		const scraper = new BblScraper();
 
 		// Setup cached raw JSON file so BblScraper reads from it directly instead of fetching
-		const gameId = 'fc-bayern-vs-alba-berlin-D2095_48210';
+		const gameId = 'fc-bayern-vs-alba-berlin-D2024_48210';
 		const { yearPrefix, gameCode } = scraper.parseGameId(gameId);
 		const jsonCacheDir = path.resolve('data/raw/europe/bbl', String(yearPrefix));
 		await fs.mkdir(jsonCacheDir, { recursive: true });
@@ -227,13 +229,12 @@ test.describe('BBL German Basketball Scraper & Pipeline Integration', () => {
 		} finally {
 			// Restore test mode
 			scraper.bypassNetwork = true;
-			await fs.rm(jsonCacheDir, { recursive: true, force: true });
 		}
 	});
 
 	test('EuropeScraper should route gameId prefixed with D to BblScraper', () => {
 		const scraper = new EuropeScraper({ competitions: 'bbl' });
-		const engine = scraper.getEngineForGame('fc-bayern-vs-alba-berlin-D2095_48210');
+		const engine = scraper.getEngineForGame('fc-bayern-vs-alba-berlin-D2024_48210');
 		assert.ok(engine instanceof BblScraper);
 	});
 
@@ -244,7 +245,7 @@ test.describe('BBL German Basketball Scraper & Pipeline Integration', () => {
 			// 1. STAGE 1: Extract
 			const gameIds = await extractStage(scraper, league, year);
 			assert.ok(gameIds.length > 0);
-			assert.ok(gameIds.includes('D2095_48210'));
+			assert.ok(gameIds.includes('D2024_48210'));
 
 			// 2. STAGE 2: Transform
 			const transformed = await transformStage(league, year);
@@ -274,9 +275,9 @@ test.describe('BBL German Basketball Scraper & Pipeline Integration', () => {
 
 				const games = db.prepare('SELECT * FROM games WHERE competition_id = ? AND season_id = ?').all('bbl', year);
 				assert.ok(games.length > 0);
-				assert.ok(games.some(g => g.id === 'D2095_48210'));
+				assert.ok(games.some(g => g.id === 'D2024_48210'));
 			} finally {
-				db.destroy();
+				db.close();
 			}
 		} catch (err) {
 			console.error('DEBUGGING TEST ERROR:', err);

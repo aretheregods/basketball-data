@@ -102,7 +102,7 @@ test.describe('LNB French Basketball Scraper & Pipeline Integration', () => {
 			assert.ok(games.length > 0);
 			assert.ok(games.some(g => g.id.includes('L2093_')));
 		} finally {
-			db.destroy();
+			db.close();
 		}
 	});
 });

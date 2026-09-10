@@ -473,7 +473,7 @@ test('Asia Basketball Pipeline & Scraper Integration', async (t) => {
 			assert.ok(teamStats.some(t => t.team_name === 'RYUKYU GOLDEN KINGS' && t.game_id.includes('BLEAGUE')));
 			assert.ok(teamStats.some(t => t.team_name === 'SEOUL SK KNIGHTS' && t.game_id.includes('KBL')));
 		} finally {
-			if (db) db.destroy();
+			if (db) db.close();
 		}
 	});
 

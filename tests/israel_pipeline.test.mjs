@@ -16,36 +16,38 @@ const PROJECT_ROOT = path.resolve(__dirname, '../');
 
 test.describe('Israeli Basketball (Winner League) Scraper & Pipeline Integration', () => {
 	const league = 'europe_israel_test';
-	const year = '2095'; // Unique test year to isolate test runs
+	const year = '2024'; // Realistic test year to avoid BaseNormalizer.isGameUnplayed future year skipping
 
 	test.before(async () => {
 		process.env.NODE_ENV = 'test';
 		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/raw/europe/israel', year), { recursive: true, force: true });
 	});
 
 	test.after(async () => {
 		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/raw/europe/israel', year), { recursive: true, force: true });
 	});
 
 	test('IsraeliHarvester should return mock slugs in test mode', async () => {
 		const harvester = new IsraeliHarvester();
-		const slugs = await harvester.getSeasonGameSlugs('2095');
+		const slugs = await harvester.getSeasonGameSlugs('2024');
 
 		assert.ok(slugs.length > 0, 'Should return some slugs');
-		assert.ok(slugs[0].includes('-Y2095_'), 'Slugs must be formatted with Y season prefix segment');
+		assert.ok(slugs[0].includes('-Y2024_'), 'Slugs must be formatted with Y season prefix segment');
 		const sampleGameId = slugs[0].split('-').pop();
-		assert.match(sampleGameId, /^Y2095_\d+$/, 'gameId Segment must match Israeli pattern');
+		assert.match(sampleGameId, /^Y2024_\d+$/, 'gameId Segment must match Israeli pattern');
 	});
 
 	test('IsraeliScraper should return correct unified schema mock data', async () => {
 		const scraper = new IsraeliScraper();
-		const boxscore = await scraper.getUnifiedBoxScore('matchup-Y2095_25147');
+		const boxscore = await scraper.getUnifiedBoxScore('matchup-Y2024_25147');
 
-		assert.equal(boxscore.gameId, 'matchup-Y2095_25147');
+		assert.equal(boxscore.gameId, 'matchup-Y2024_25147');
 		assert.equal(boxscore.competitionId, 'israel');
-		assert.equal(boxscore.seasonId, '2095');
+		assert.equal(boxscore.seasonId, '2024');
 
 		// Home/Away team checks
 		assert.equal(boxscore.homeTeam.teamName, 'Hapoel Afula');
@@ -66,7 +68,7 @@ test.describe('Israeli Basketball (Winner League) Scraper & Pipeline Integration
 
 	test('IsraeliScraper HTML Parser should correctly parse team names, scores, and player statistics from basket.co.il cache', async () => {
 		const scraper = new IsraeliScraper();
-		const gameId = 'ironi-lati-kiryat-ata-vs-hapoel-afula-Y2095_25147';
+		const gameId = 'ironi-lati-kiryat-ata-vs-hapoel-afula-Y2024_25147';
 
 		// Load real production HTML from basket.co.il saved during exploration
 		const testHtmlPath = path.resolve(PROJECT_ROOT, 'test_game_zone.html');
@@ -79,10 +81,7 @@ test.describe('Israeli Basketball (Winner League) Scraper & Pipeline Integration
 		await fs.writeFile(htmlCachePath, testHtml, 'utf8');
 
 		try {
-			// Temporarily disable test mode bypass to force IsraeliScraper to parse cache HTML
-			scraper.bypassNetwork = false;
-
-			const boxscore = await scraper.getUnifiedBoxScore(gameId);
+			const boxscore = scraper.parseIsraeliHtml(testHtml, 'hapoel-afula', 'ironi-lati-kiryat-ata', gameId, 'israel', yearPrefix);
 
 			assert.equal(boxscore.competitionId, 'israel');
 			assert.equal(boxscore.homeTeam.teamName, 'Hapoel Afula'); // Note: mapped based on expected vs tables
@@ -123,15 +122,13 @@ test.describe('Israeli Basketball (Winner League) Scraper & Pipeline Integration
 			assert.equal(adam.statistics.pf, 2);
 
 		} finally {
-			// Restore test mode and clean up
-			scraper.bypassNetwork = true;
 			await fs.rm(htmlCacheDir, { recursive: true, force: true });
 		}
 	});
 
 	test('EuropeScraper should route gameId prefixed with Y to IsraeliScraper', () => {
 		const scraper = new EuropeScraper({ competitions: 'israel' });
-		const engine = scraper.getEngineForGame('ironi-lati-kiryat-ata-vs-hapoel-afula-Y2095_25147');
+		const engine = scraper.getEngineForGame('ironi-lati-kiryat-ata-vs-hapoel-afula-Y2024_25147');
 		assert.ok(engine instanceof IsraeliScraper);
 	});
 
@@ -142,7 +139,7 @@ test.describe('Israeli Basketball (Winner League) Scraper & Pipeline Integration
 			// 1. STAGE 1: Extract
 			const gameIds = await extractStage(scraper, league, year);
 			assert.ok(gameIds.length > 0);
-			assert.ok(gameIds.includes('Y2095_25147'));
+			assert.ok(gameIds.includes('Y2024_25147'));
 
 			// 2. STAGE 2: Transform
 			const transformed = await transformStage(league, year);
@@ -172,9 +169,9 @@ test.describe('Israeli Basketball (Winner League) Scraper & Pipeline Integration
 
 				const games = db.prepare('SELECT * FROM games WHERE competition_id = ? AND season_id = ?').all('israel', year);
 				assert.ok(games.length > 0);
-				assert.ok(games.some(g => g.id === 'Y2095_25147'));
+				assert.ok(games.some(g => g.id === 'Y2024_25147'));
 			} finally {
-				db.destroy();
+				db.close();
 			}
 		} catch (err) {
 			console.error('DEBUGGING TEST ERROR:', err);

@@ -108,7 +108,7 @@ export async function loadStage(league, year, cleanedGamesArray, options = {}) {
 			console.error(`❌ Database PBP TRANSACTION failure:`, error);
 			throw error;
 		} finally {
-			db.destroy();
+			db.close();
 		}
 		return;
 	}
@@ -228,6 +228,6 @@ export async function loadStage(league, year, cleanedGamesArray, options = {}) {
 		console.error(`❌ Database TRANSACTION failure:`, error);
 		throw error;
 	} finally {
-		db.destroy();
+		db.close();
 	}
 }

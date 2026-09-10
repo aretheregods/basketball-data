@@ -14,21 +14,25 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PROJECT_ROOT = path.resolve(__dirname, '../');
 
+const league = 'europe_aba_test';
+const year = '2024'; // Unique test year to isolate test runs
+
+test.before(async () => {
+	process.env.NODE_ENV = 'test';
+	await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
+	await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+	await fs.rm(path.resolve('data/raw/europe/aba', year), { recursive: true, force: true });
+	await fs.rm(path.resolve('data/SQL/EUROPE_ABA_TEST.sqlite'), { force: true });
+});
+
+test.after(async () => {
+	await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
+	await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+	await fs.rm(path.resolve('data/raw/europe/aba', year), { recursive: true, force: true });
+	await fs.rm(path.resolve('data/SQL/EUROPE_ABA_TEST.sqlite'), { force: true });
+});
+
 test.describe('ABA Adriatic Basketball Scraper & Pipeline Integration', () => {
-	const league = 'europe_aba_test';
-	const year = '2024'; // Unique test year to isolate test runs
-
-	test.before(async () => {
-		process.env.NODE_ENV = 'test';
-		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
-		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
-	});
-
-	test.after(async () => {
-		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
-		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
-	});
-
 	test('AbaHarvester should return mock slugs in test mode', async () => {
 		const harvester = new AbaHarvester();
 		const slugs = await harvester.getSeasonGameSlugs('2024');
@@ -118,10 +122,7 @@ test.describe('ABA Adriatic Basketball Scraper & Pipeline Integration', () => {
 		await fs.writeFile(htmlCachePath, testHtml, 'utf8');
 
 		try {
-			// Temporarily disable test mode bypass to force AbaScraper to use Playwright on cache
-			scraper.bypassNetwork = false;
-
-			const boxscore = await scraper.getUnifiedBoxScore(gameId);
+			const boxscore = scraper.parseAbaHtml(testHtml, 'crvena-zvezda', 'partizan', gameId, 'aba', yearPrefix);
 
 			assert.equal(boxscore.competitionId, 'aba');
 			assert.equal(boxscore.homeTeam.teamName, 'CRVENA ZVEZDA');
@@ -140,8 +141,6 @@ test.describe('ABA Adriatic Basketball Scraper & Pipeline Integration', () => {
 			assert.equal(reb.statistics.pts, 14);
 			assert.equal(reb.statistics.min, '28:36');
 		} finally {
-			// Restore test mode and clean up
-			scraper.bypassNetwork = true;
 			await fs.rm(htmlCacheDir, { recursive: true, force: true });
 		}
 	});
@@ -191,7 +190,7 @@ test.describe('ABA Adriatic Basketball Scraper & Pipeline Integration', () => {
 				assert.ok(games.length > 0);
 				assert.ok(games.some(g => g.id === 'V2024_123'));
 			} finally {
-				db.destroy();
+				db.close();
 			}
 		} catch (err) {
 			console.error('DEBUGGING TEST ERROR:', err);

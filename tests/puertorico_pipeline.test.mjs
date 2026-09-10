@@ -228,7 +228,7 @@ test.describe('Puerto Rico BSN Scraper & Pipeline Integration', () => {
 				assert.ok(teamStats.length > 0);
 				assert.ok(teamStats.some(t => t.team_name === 'VAQUEROS DE BAYAMON'));
 			} finally {
-				db.destroy();
+				db.close();
 			}
 		} catch (err) {
 			console.error('DEBUGGING TEST ERROR:', err);

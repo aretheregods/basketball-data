@@ -285,7 +285,7 @@ test.describe('South America Multi-Competition Scraper & Pipeline Integration', 
 				assert.ok(teamStats.some(t => t.team_name === 'GLADIADORES DE ANZOATEGUI' && t.game_id.includes('SPB')));
 				assert.ok(teamStats.some(t => t.team_name === 'TROTAMUNDOS DE CARABOBO'));
 			} finally {
-				db.destroy();
+				db.close();
 			}
 		} catch (err) {
 			console.error('DEBUGGING TEST ERROR:', err);

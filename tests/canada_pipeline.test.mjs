@@ -191,7 +191,7 @@ test.describe('Canada CEBL Scraper & Pipeline Integration', () => {
 				assert.ok(teamStats.length > 0);
 				assert.ok(teamStats.some(t => t.team_name === 'VANCOUVER BANDITS'));
 			} finally {
-				db.destroy();
+				db.close();
 			}
 		} catch (err) {
 			console.error('DEBUGGING TEST ERROR:', err);

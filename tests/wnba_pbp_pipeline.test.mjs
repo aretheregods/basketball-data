@@ -84,14 +84,24 @@ const mockStatsApiPbpResponse = {
 	]
 };
 
-let originalFetch;
+let fetchMock = null;
+const originalFetch = globalThis.fetch;
 
 test.before(async () => {
 	process.env.NODE_ENV = 'test';
-	originalFetch = globalThis.fetch;
+	globalThis.fetch = async (url, config) => {
+		if (fetchMock) {
+			return fetchMock(url, config);
+		}
+		return originalFetch(url, config);
+	};
 	await fs.rm(path.resolve(`data/raw/wnba_pbp_test`), { recursive: true, force: true });
 	await fs.rm(path.resolve(`data/transformed/wnba_pbp_test`), { recursive: true, force: true });
 	await fs.rm(path.resolve(`data/SQL/WNBA_PBP_TEST.sqlite`), { force: true });
+});
+
+test.beforeEach(() => {
+	fetchMock = null;
 });
 
 test.after(async () => {
@@ -101,7 +111,7 @@ test.after(async () => {
 	await fs.rm(path.resolve(`data/SQL/WNBA_PBP_TEST.sqlite`), { force: true });
 });
 
-test.describe('WNBA Play-by-Play Unit Tests', () => {
+test.describe('WNBA Play-by-Play Scraper & Pipeline Integration', () => {
 	test('parseClockToSeconds should accurately parse ISO 8601 duration and standard MM:SS strings', () => {
 		assert.equal(parseClockToSeconds('PT10M00.00S', 1), 600);
 		assert.equal(parseClockToSeconds('PT08M45.50S', 1), 525.5);
@@ -138,11 +148,10 @@ test.describe('WNBA Play-by-Play Unit Tests', () => {
 
 	test('fetchWnbaPbp should preserve native 10-prefixed game IDs for WNBA CDN requests', async () => {
 		let fetchedCdnUrl = null;
-		const prevFetch = globalThis.fetch;
 		const cacheFile = path.resolve('data/raw/wnba/pbp/2021/1042100313.json');
 		await fs.rm(cacheFile, { force: true });
 		try {
-			globalThis.fetch = async (url) => {
+			fetchMock = async (url) => {
 				fetchedCdnUrl = url;
 				return {
 					ok: true,
@@ -156,7 +165,6 @@ test.describe('WNBA Play-by-Play Unit Tests', () => {
 
 			assert.equal(fetchedCdnUrl, 'https://cdn.wnba.com/static/json/liveData/playbyplay/playbyplay_1042100313.json');
 		} finally {
-			globalThis.fetch = prevFetch;
 			await fs.rm(cacheFile, { force: true });
 		}
 	});
@@ -183,16 +191,13 @@ test.describe('WNBA Play-by-Play Unit Tests', () => {
 		assert.equal(res2.events[0].away_score, 0);
 		assert.equal(res2.events[0].home_score, 3);
 	});
-});
 
-test.describe('WNBA PBP Pipeline Integration Tests', () => {
 	test('Full WNBA PBP Pipeline Execution: Extract -> Transform -> Load -> SQLite Audit', async () => {
 		const testLeague = 'wnba_pbp_test';
 		const testYear = '2024';
 
-		const prevFetch = globalThis.fetch;
 		try {
-			globalThis.fetch = async (url) => {
+			fetchMock = async (url) => {
 				if (url.includes('playbyplay_0042300101.json')) {
 					return {
 						ok: true,
@@ -240,10 +245,9 @@ test.describe('WNBA PBP Pipeline Integration Tests', () => {
 				const stintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('0042300101');
 				assert.equal(stintsCount.count, 2);
 			} finally {
-				if (db) db.destroy();
+				if (db) db.close();
 			}
 		} finally {
-			globalThis.fetch = prevFetch;
 		}
 	});
 });

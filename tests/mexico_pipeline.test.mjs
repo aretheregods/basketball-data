@@ -221,7 +221,7 @@ test.describe('Mexico LNBP Scraper & Pipeline Integration', () => {
 				assert.ok(teamStats.length > 0);
 				assert.ok(teamStats.some(t => t.team_name === 'FUERZA REGIA'));
 			} finally {
-				db.destroy();
+				db.close();
 			}
 		} catch (err) {
 			console.error('DEBUGGING TEST ERROR:', err);

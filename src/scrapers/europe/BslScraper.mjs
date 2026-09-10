@@ -125,6 +125,10 @@ export class BslScraper extends HTTPClient {
 		}
 
 		if (!htmlContent) {
+			if (process.env.NODE_ENV === 'test' || this.bypassNetwork) {
+				return this.getUnplayedSkeleton(gameId, competitionId, yearPrefix);
+			}
+
 			const matchUrl = this.getGameEndpoint(gameId);
 			console.log(`📡 [BslScraper] Loading BSL Boxscore from ${matchUrl}...`);
 

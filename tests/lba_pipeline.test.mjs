@@ -105,7 +105,7 @@ test.describe('LBA Italian Basketball Scraper & Pipeline Integration', () => {
 				assert.ok(games.length > 0);
 			assert.ok(games.some(g => g.id === 'I2092_24662'));
 			} finally {
-				db.destroy();
+				db.close();
 			}
 		} catch (err) {
 			console.error('DEBUGGING TEST ERROR:', err);

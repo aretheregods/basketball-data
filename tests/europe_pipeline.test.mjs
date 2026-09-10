@@ -14,7 +14,7 @@ const PROJECT_ROOT = path.resolve(__dirname, '../');
 
 test.describe('European ETL Pipeline Integration', () => {
 	const league = 'europe';
-	const year = '2099'; // Unique test year to isolate test runs
+	const year = '2024'; // Realistic test year to avoid BaseNormalizer.isGameUnplayed future year skipping
 
 	test.before(async () => {
 		process.env.NODE_ENV = 'test';
@@ -81,7 +81,7 @@ test.describe('European ETL Pipeline Integration', () => {
 			assert.ok(dbGames.some(g => g.competition_id === 'eurocup'));
 			assert.ok(dbGames.some(g => g.competition_id === 'bcl'));
 		} finally {
-			db.destroy();
+			db.close();
 		}
 	});
 });

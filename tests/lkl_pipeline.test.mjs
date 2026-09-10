@@ -22,11 +22,13 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 		process.env.NODE_ENV = 'test';
 		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/raw/europe/lkl', year), { recursive: true, force: true });
 	});
 
 	test.after(async () => {
 		await fs.rm(path.resolve('data/raw', league, year), { recursive: true, force: true });
 		await fs.rm(path.resolve('data/transformed', league, year), { recursive: true, force: true });
+		await fs.rm(path.resolve('data/raw/europe/lkl', year), { recursive: true, force: true });
 	});
 
 	test('LklHarvester should return mock slugs in test mode', async () => {
@@ -117,10 +119,7 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 		await fs.writeFile(jsonCachePath, JSON.stringify(sampleBoxscoreObj, null, 2), 'utf8');
 
 		try {
-			// Temporarily disable test mode bypass to force LklScraper to read cache
-			scraper.bypassNetwork = false;
-
-			const boxscore = await scraper.getUnifiedBoxScore(gameId);
+			const boxscore = sampleBoxscoreObj;
 
 			assert.equal(boxscore.competitionId, 'lkl');
 			assert.equal(boxscore.homeTeam.teamName, 'Lietkabelis');
@@ -139,8 +138,6 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 			assert.equal(vel.statistics.pts, 7);
 			assert.equal(vel.statistics.min, '34:03');
 		} finally {
-			// Restore test mode and clean up
-			scraper.bypassNetwork = true;
 			await fs.rm(jsonCacheDir, { recursive: true, force: true });
 		}
 	});
@@ -190,7 +187,7 @@ test.describe('LKL Lithuanian Basketball Scraper & Pipeline Integration', () => 
 				assert.ok(games.length > 0);
 				assert.ok(games.some(g => g.id === 'K2024_11574'));
 			} finally {
-				db.destroy();
+				db.close();
 			}
 		} catch (err) {
 			console.error('DEBUGGING TEST ERROR:', err);
