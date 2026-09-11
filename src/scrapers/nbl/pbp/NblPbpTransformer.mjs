@@ -50,7 +50,7 @@ export function calculateGameSecondsRemaining(period, secondsInPeriod) {
  * @param {Object[]} events
  * @returns {Object[]}
  */
-function buildStintsFromEvents(gameId, events) {
+function buildStintsFromEvents(gameId, events, competitionId = null) {
 	const stints = [];
 	const periodMap = new Map();
 
@@ -119,6 +119,7 @@ function buildStintsFromEvents(gameId, events) {
 				stints.push({
 					stint_id: `${gameId}_stint_${period}_${stintIndex}`,
 					game_id: String(gameId),
+					competition_id: competitionId ? String(competitionId) : null,
 					period: Number(period),
 					start_clock: stintStartClock,
 					end_clock: evt.clock,
@@ -172,7 +173,7 @@ function buildStintsFromEvents(gameId, events) {
  * @param {Object} rawJson
  * @returns {{ events: Object[], stints: Object[] }}
  */
-export function transformNblPbp(gameId, rawJson) {
+export function transformNblPbp(gameId, rawJson, competitionId = null) {
 	if (!rawJson) {
 		return { events: [], stints: [] };
 	}
@@ -190,6 +191,7 @@ export function transformNblPbp(gameId, rawJson) {
 		rawEvents = rawJson;
 	}
 
+	const compId = competitionId || (rawJson && (rawJson.competitionId || rawJson.competition_id)) || null;
 	const events = [];
 	let runningHomeScore = 0;
 	let runningAwayScore = 0;
@@ -221,6 +223,7 @@ export function transformNblPbp(gameId, rawJson) {
 		events.push({
 			event_id: `${gameId}_pbp_${actionNum}_${i}`,
 			game_id: String(gameId),
+			competition_id: compId ? String(compId) : null,
 			period,
 			clock: String(clockRaw),
 			seconds_remaining: secondsRemaining,
@@ -240,7 +243,7 @@ export function transformNblPbp(gameId, rawJson) {
 		});
 	}
 
-	const stints = buildStintsFromEvents(gameId, events);
+	const stints = buildStintsFromEvents(gameId, events, compId);
 
 	return { events, stints };
 }
