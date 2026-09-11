@@ -44,7 +44,16 @@ export async function transformStage(league, year, options = {}) {
 	if (isPbp) {
 		const jsonFilesMap = [];
 		if (league.toLowerCase().startsWith('europe')) {
-			const subFolders = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba', 'gbl', 'bbl', 'lkl', 'aba'];
+			let subFolders = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba', 'gbl', 'bbl', 'lkl', 'aba'];
+
+			const requestedComps = (options.competitions || options.competition || '').toLowerCase();
+			if (requestedComps && requestedComps !== 'all') {
+				const compList = requestedComps.split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+				if (compList.length > 0) {
+					subFolders = subFolders.filter(sf => compList.includes(sf));
+				}
+			}
+
 			for (const sf of subFolders) {
 				const sfDir = path.resolve('data/raw', league.includes('_test') ? league : 'europe', 'pbp', sf, String(year));
 				try {

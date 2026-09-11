@@ -168,7 +168,7 @@ async function main() {
 	const databaseName = flags.database || 'likelyhigh_db';
 	const dryRun = flags.dryRun === 'true' || flags['dry-run'] === 'true';
 	const boxscoreType = flags['boxscore-type'] || flags.type || 'traditional';
-	const competitions = flags.competitions || 'euroleague';
+	const competitions = flags.competitions || flags.competition || 'euroleague';
 
 	// Handle direct --step=audit interceptor
 	if (activeSteps.includes('audit')) {
@@ -219,7 +219,7 @@ async function main() {
 			// ------------------------------------------------------------
 			if (activeSteps.includes('extract')) {
 				try {
-					await extractStage(scraper, lowerLeague, year, { boxscoreType });
+					await extractStage(scraper, lowerLeague, year, { boxscoreType, competitions });
 				} catch (err) {
 					console.error(`❌ Stage 1 [EXTRACT] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
 					if (activeSteps.length === 1) throw err; // rethrow if executing only this step
@@ -232,7 +232,7 @@ async function main() {
 			let cleanedGamesArray = { players: [], teams: [] };
 			if (activeSteps.includes('transform')) {
 				try {
-					cleanedGamesArray = await transformStage(lowerLeague, year, { boxscoreType });
+					cleanedGamesArray = await transformStage(lowerLeague, year, { boxscoreType, competitions });
 				} catch (err) {
 					console.error(`❌ Stage 2 [TRANSFORM] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
 					if (activeSteps.length === 1) throw err;
@@ -244,7 +244,7 @@ async function main() {
 			// ------------------------------------------------------------
 			if (activeSteps.includes('load')) {
 				try {
-					await loadStage(lowerLeague, year, cleanedGamesArray, { boxscoreType });
+					await loadStage(lowerLeague, year, cleanedGamesArray, { boxscoreType, competitions });
 				} catch (err) {
 					console.error(`❌ Stage 3 [LOAD] failed for ${lowerLeague.toUpperCase()} - ${year}:`, err.message);
 					if (activeSteps.length === 1) throw err;

@@ -46,7 +46,7 @@ export class EuropeScraper extends HTTPClient {
 		super('https://live.euroleague.net/api');
 
 		// Parse competitions list (can be 'all', or comma-separated list like 'euroleague,eurocup,bcl,acb,lnb,lba,gbl')
-		const rawComps = options.competitions || 'euroleague';
+		const rawComps = options.competitions || options.competition || 'euroleague';
 		if (rawComps === 'all') {
 			this.competitions = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba', 'gbl', 'bbl', 'lkl', 'aba', 'bsl', 'israel'];
 		} else if (Array.isArray(rawComps)) {

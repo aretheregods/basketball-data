@@ -771,7 +771,12 @@ test('Europe, ACB, LNB, LBA, GBL, BBL & ABA PBP Full Pipeline Integration Test',
 		assert.ok(extractedGameIds.includes('D2024_48210'));
 		assert.ok(extractedGameIds.includes('V2024_123'));
 
-		// Stage 2: Transform
+		// Verify competition filtering: transform with --competition=aba should only transform ABA events
+		const abaOnlyData = await transformStage(league, year, { type: 'pbp', competition: 'aba' });
+		assert.equal(abaOnlyData.events.length, 2);
+		assert.ok(abaOnlyData.events.every(e => e.game_id === 'V2024_123'));
+
+		// Stage 2: Transform all competitions
 		const transformedData = await transformStage(league, year, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,bbl,aba,euroleague' });
 		assert.ok(transformedData.events.length > 0);
 		assert.ok(transformedData.stints.length > 0);
