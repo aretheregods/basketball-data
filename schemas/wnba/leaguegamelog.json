@@ -71,16 +71,14 @@
                         "homeTeam": {
                           "type": "object",
                           "properties": {
-                            "teamTricode": { "type": "string" }
-                          },
-                          "required": ["teamTricode"]
+                            "teamTricode": { "type": ["string", "null"] }
+                          }
                         },
                         "awayTeam": {
                           "type": "object",
                           "properties": {
-                            "teamTricode": { "type": "string" }
-                          },
-                          "required": ["teamTricode"]
+                            "teamTricode": { "type": ["string", "null"] }
+                          }
                         }
                       },
                       "required": ["gameId", "homeTeam", "awayTeam"]
