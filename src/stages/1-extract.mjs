@@ -1,6 +1,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { validateSchema } from '#utils';
+import { getEuropeGamePrefix } from '../scrapers/europe/europe.mjs';
 
 /**
  * @description Runs the extraction stage: fetches the season game log, retrieves game IDs,
@@ -40,6 +41,8 @@ export async function extractStage(scraper, league, year, options = {}) {
 				subFolder = 'bbl';
 			} else if (comp.includes('lkl')) {
 				subFolder = 'lkl';
+			} else if (comp.includes('aba')) {
+				subFolder = 'aba';
 			} else if (comp.includes('eurocup')) {
 				subFolder = 'eurocup';
 			} else if (comp.includes('bcl')) {
@@ -102,14 +105,16 @@ export async function extractStage(scraper, league, year, options = {}) {
 
 	// Helper to resolve European PBP subfolder cleanly
 	const resolveEuropePbpSubfolder = (id) => {
-		if (id.startsWith('A') || id.includes('-A20') || id.includes('_acb_')) return 'acb';
-		if (id.startsWith('L') || id.includes('-L20') || id.includes('_lnb_')) return 'lnb';
-		if (id.startsWith('I') || id.includes('-I20') || id.includes('_lba_')) return 'lba';
-		if (id.startsWith('G') || id.includes('-G20') || id.includes('_gbl_')) return 'gbl';
-		if (id.startsWith('D') || id.includes('-D20') || id.includes('_bbl_')) return 'bbl';
-		if (id.startsWith('K') || id.includes('-K20') || id.includes('_lkl_')) return 'lkl';
-		if (id.startsWith('U') || id.includes('-U20') || id.includes('_eurocup_')) return 'eurocup';
-		if (id.startsWith('B') || id.includes('-B20') || id.includes('_bcl_')) return 'bcl';
+		const prefix = getEuropeGamePrefix(id);
+		if (prefix === 'A' || id.includes('_acb_')) return 'acb';
+		if (prefix === 'L' || id.includes('_lnb_')) return 'lnb';
+		if (prefix === 'I' || id.includes('_lba_')) return 'lba';
+		if (prefix === 'G' || id.includes('_gbl_')) return 'gbl';
+		if (prefix === 'D' || id.includes('_bbl_')) return 'bbl';
+		if (prefix === 'K' || id.includes('_lkl_')) return 'lkl';
+		if (prefix === 'V' || id.includes('_aba_')) return 'aba';
+		if (prefix === 'U' || id.includes('_eurocup_')) return 'eurocup';
+		if (prefix === 'B' || id.includes('_bcl_')) return 'bcl';
 		return 'euroleague';
 	};
 
@@ -206,7 +211,24 @@ export async function extractStage(scraper, league, year, options = {}) {
 				let fallback;
 				let schemaFolder = 'europe';
 				if (isPbp) {
-					fallback = { seasonCode: String(year), pbp: { Rows: [] }, points: { Rows: [] } };
+					const subFolder = resolveEuropePbpSubfolder(gameId);
+					if (subFolder === 'aba') {
+						fallback = { gameId, competitionId: `ABA${year}`, seasonYear: String(year), actions: [] };
+					} else if (subFolder === 'acb') {
+						fallback = { gameId, competitionId: `ACB${year}`, seasonYear: String(year), jugadas: [] };
+					} else if (subFolder === 'lnb') {
+						fallback = { gameId, competitionId: `LNB${year}`, seasonYear: String(year), actions: [] };
+					} else if (subFolder === 'lba') {
+						fallback = { gameId, competitionId: `LBA${year}`, seasonYear: String(year), pbp: { actions: [] } };
+					} else if (subFolder === 'gbl') {
+						fallback = { gameId, competitionId: `GBL${year}`, seasonYear: String(year), events: [] };
+					} else if (subFolder === 'bbl') {
+						fallback = { gameId, competitionId: `BBL${year}`, seasonYear: String(year), actions: [] };
+					} else if (subFolder === 'lkl') {
+						fallback = { gameId, competitionId: `LKL${year}`, seasonYear: String(year), actions: [] };
+					} else {
+						fallback = { seasonCode: String(year), pbp: { Rows: [] }, points: { Rows: [] } };
+					}
 					validateSchema(`${schemaFolder}/pbp.json`, fallback);
 				} else {
 					fallback = {

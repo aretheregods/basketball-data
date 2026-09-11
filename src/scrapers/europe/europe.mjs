@@ -16,6 +16,20 @@ import { LbaPbpHarvester } from './pbp/LbaPbpHarvester.mjs';
 import { GblPbpHarvester } from './pbp/GblPbpHarvester.mjs';
 import { BblPbpHarvester } from './pbp/BblPbpHarvester.mjs';
 import { LklPbpHarvester } from './pbp/LklPbpHarvester.mjs';
+import { AbaPbpHarvester } from './pbp/AbaPbpHarvester.mjs';
+
+/**
+ * @description Extracts the competition prefix letter from a European game ID slug.
+ * @param {string} gameId
+ * @returns {string} Single uppercase letter prefix (e.g. 'V' for ABA, 'A' for ACB, 'E' for EuroLeague)
+ */
+export function getEuropeGamePrefix(gameId) {
+	const clean = String(gameId || '').trim().toUpperCase();
+	if (!clean) return 'E';
+	const parts = clean.split('_')[0].split('-');
+	const seasonCode = parts[parts.length - 1] || 'E2025';
+	return seasonCode.charAt(0);
+}
 
 /**
  * @description EuropeScraper is the master orchestrator for European basketball competitions.
@@ -32,7 +46,7 @@ export class EuropeScraper extends HTTPClient {
 		super('https://live.euroleague.net/api');
 
 		// Parse competitions list (can be 'all', or comma-separated list like 'euroleague,eurocup,bcl,acb,lnb,lba,gbl')
-		const rawComps = options.competitions || 'euroleague';
+		const rawComps = options.competitions || options.competition || 'euroleague';
 		if (rawComps === 'all') {
 			this.competitions = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba', 'gbl', 'bbl', 'lkl', 'aba', 'bsl', 'israel'];
 		} else if (Array.isArray(rawComps)) {
@@ -54,6 +68,7 @@ export class EuropeScraper extends HTTPClient {
 		this.gblPbpHarvester = new GblPbpHarvester(options);
 		this.bblPbpHarvester = new BblPbpHarvester(options);
 		this.lklPbpHarvester = new LklPbpHarvester(options);
+		this.abaPbpHarvester = new AbaPbpHarvester(options);
 
 		// Instantiate available engines
 		this.engines = {
@@ -107,29 +122,29 @@ export class EuropeScraper extends HTTPClient {
 	 */
 	async fetchPbp(gameId, year) {
 		const clean = String(gameId || '').trim();
-		const isAcb = clean.startsWith('A') || clean.includes('_acb_') || clean.includes('-A20') || (this.competitions.length === 1 && this.competitions[0] === 'acb');
-		if (isAcb) {
+		const prefix = getEuropeGamePrefix(clean);
+		const compOption = (this.competitions.length === 1 ? this.competitions[0] : '').toLowerCase();
+
+		if (prefix === 'A' || clean.includes('_acb_') || compOption === 'acb') {
 			return this.acbPbpHarvester.fetchAcbPbp(gameId, year);
 		}
-		const isLnb = clean.startsWith('L') || clean.includes('_lnb_') || clean.includes('-L20') || (this.competitions.length === 1 && this.competitions[0] === 'lnb');
-		if (isLnb) {
+		if (prefix === 'L' || clean.includes('_lnb_') || compOption === 'lnb') {
 			return this.lnbPbpHarvester.fetchLnbPbp(gameId, year);
 		}
-		const isLba = clean.startsWith('I') || clean.includes('_lba_') || clean.includes('-I20') || (this.competitions.length === 1 && this.competitions[0] === 'lba');
-		if (isLba) {
+		if (prefix === 'I' || clean.includes('_lba_') || compOption === 'lba') {
 			return this.lbaPbpHarvester.fetchLbaPbp(gameId, year);
 		}
-		const isGbl = clean.startsWith('G') || clean.includes('_gbl_') || clean.includes('-G20') || (this.competitions.length === 1 && this.competitions[0] === 'gbl');
-		if (isGbl) {
+		if (prefix === 'G' || clean.includes('_gbl_') || compOption === 'gbl') {
 			return this.gblPbpHarvester.fetchGblPbp(gameId, year);
 		}
-		const isBbl = clean.startsWith('D') || clean.includes('_bbl_') || clean.includes('-D20') || (this.competitions.length === 1 && this.competitions[0] === 'bbl');
-		if (isBbl) {
+		if (prefix === 'D' || clean.includes('_bbl_') || compOption === 'bbl') {
 			return this.bblPbpHarvester.fetchBblPbp(gameId, year);
 		}
-		const isLkl = clean.startsWith('K') || clean.includes('_lkl_') || clean.includes('-K20') || (this.competitions.length === 1 && this.competitions[0] === 'lkl');
-		if (isLkl) {
+		if (prefix === 'K' || clean.includes('_lkl_') || compOption === 'lkl') {
 			return this.lklPbpHarvester.fetchLklPbp(gameId, year);
+		}
+		if (prefix === 'V' || clean.includes('_aba_') || compOption === 'aba') {
+			return this.abaPbpHarvester.fetchAbaPbp(gameId, year);
 		}
 		return this.pbpHarvester.fetchEuroleaguePbp(gameId, year);
 	}

@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { BaseNormalizer } from '#utils';
 import { transformEurope } from '../scrapers/europe/europe_transform.mjs';
+import { getEuropeGamePrefix } from '../scrapers/europe/europe.mjs';
 
 /**
  * @description Map helper to convert a Stats API result set (headers + rowSet) to objects.
@@ -43,7 +44,16 @@ export async function transformStage(league, year, options = {}) {
 	if (isPbp) {
 		const jsonFilesMap = [];
 		if (league.toLowerCase().startsWith('europe')) {
-			const subFolders = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba', 'gbl', 'bbl', 'lkl'];
+			let subFolders = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba', 'gbl', 'bbl', 'lkl', 'aba'];
+
+			const requestedComps = (options.competitions || options.competition || '').toLowerCase();
+			if (requestedComps && requestedComps !== 'all') {
+				const compList = requestedComps.split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+				if (compList.length > 0) {
+					subFolders = subFolders.filter(sf => compList.includes(sf));
+				}
+			}
+
 			for (const sf of subFolders) {
 				const sfDir = path.resolve('data/raw', league.includes('_test') ? league : 'europe', 'pbp', sf, String(year));
 				try {
@@ -96,32 +106,33 @@ export async function transformStage(league, year, options = {}) {
 			const { transformGblPbp } = await import('../scrapers/europe/pbp/GblPbpTransformer.mjs');
 			const { transformBblPbp } = await import('../scrapers/europe/pbp/BblPbpTransformer.mjs');
 			const { transformLklPbp } = await import('../scrapers/europe/pbp/LklPbpTransformer.mjs');
+			const { transformAbaPbp } = await import('../scrapers/europe/pbp/AbaPbpTransformer.mjs');
 
 			transformFn = (gameId, rawData) => {
 				const clean = String(gameId || '').trim();
-				const isAcb = clean.startsWith('A') || clean.includes('_acb_') || clean.includes('-A20') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('acb'));
-				if (isAcb) {
+				const compId = rawData && rawData.competitionId ? String(rawData.competitionId).toLowerCase() : '';
+				const prefix = getEuropeGamePrefix(clean);
+
+				if (prefix === 'A' || clean.includes('_acb_') || compId.includes('acb')) {
 					return transformAcbPbp(gameId, rawData);
 				}
-				const isLnb = clean.startsWith('L') || clean.includes('_lnb_') || clean.includes('-L20') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('lnb'));
-				if (isLnb) {
+				if (prefix === 'L' || clean.includes('_lnb_') || compId.includes('lnb')) {
 					return transformLnbPbp(gameId, rawData);
 				}
-				const isLba = clean.startsWith('I') || clean.includes('_lba_') || clean.includes('-I20') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('lba'));
-				if (isLba) {
+				if (prefix === 'I' || clean.includes('_lba_') || compId.includes('lba')) {
 					return transformLbaPbp(gameId, rawData);
 				}
-				const isGbl = clean.startsWith('G') || clean.includes('_gbl_') || clean.includes('-G20') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('gbl'));
-				if (isGbl) {
+				if (prefix === 'G' || clean.includes('_gbl_') || compId.includes('gbl')) {
 					return transformGblPbp(gameId, rawData);
 				}
-				const isBbl = clean.startsWith('D') || clean.includes('_bbl_') || clean.includes('-D20') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('bbl'));
-				if (isBbl) {
+				if (prefix === 'D' || clean.includes('_bbl_') || compId.includes('bbl')) {
 					return transformBblPbp(gameId, rawData);
 				}
-				const isLkl = clean.startsWith('K') || clean.includes('_lkl_') || clean.includes('-K20') || (rawData && rawData.competitionId && String(rawData.competitionId).toLowerCase().includes('lkl'));
-				if (isLkl) {
+				if (prefix === 'K' || clean.includes('_lkl_') || compId.includes('lkl')) {
 					return transformLklPbp(gameId, rawData);
+				}
+				if (prefix === 'V' || clean.includes('_aba_') || compId.includes('aba')) {
+					return transformAbaPbp(gameId, rawData);
 				}
 				return transformEuroleaguePbp(gameId, rawData);
 			};
