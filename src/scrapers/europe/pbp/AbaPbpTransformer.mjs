@@ -276,13 +276,11 @@ export function transformAbaPbp(gameId, rawPayload) {
 	let rawActions = [];
 
 	if (rawPayload.source === 'fiba_livestats' || (rawPayload.data && rawPayload.data.pbp) || (rawPayload.pbp && Array.isArray(rawPayload.pbp))) {
-		rawActions = rawPayload.data?.pbp || rawPayload.pbp?.Rows || rawPayload.pbp || [];
+		rawActions = rawPayload.data?.pbp || rawPayload.pbp || [];
 	} else if (Array.isArray(rawPayload.actions)) {
 		rawActions = rawPayload.actions;
 	} else if (Array.isArray(rawPayload.events)) {
 		rawActions = rawPayload.events;
-	} else if (rawPayload.pbp && Array.isArray(rawPayload.pbp.Rows)) {
-		rawActions = rawPayload.pbp.Rows;
 	}
 
 	if (!Array.isArray(rawActions)) {
