@@ -40,6 +40,8 @@ export async function extractStage(scraper, league, year, options = {}) {
 				subFolder = 'bbl';
 			} else if (comp.includes('lkl')) {
 				subFolder = 'lkl';
+			} else if (comp.includes('aba')) {
+				subFolder = 'aba';
 			} else if (comp.includes('eurocup')) {
 				subFolder = 'eurocup';
 			} else if (comp.includes('bcl')) {
@@ -108,6 +110,7 @@ export async function extractStage(scraper, league, year, options = {}) {
 		if (id.startsWith('G') || id.includes('-G20') || id.includes('_gbl_')) return 'gbl';
 		if (id.startsWith('D') || id.includes('-D20') || id.includes('_bbl_')) return 'bbl';
 		if (id.startsWith('K') || id.includes('-K20') || id.includes('_lkl_')) return 'lkl';
+		if (id.startsWith('V') || id.includes('-V20') || id.includes('_aba_')) return 'aba';
 		if (id.startsWith('U') || id.includes('-U20') || id.includes('_eurocup_')) return 'eurocup';
 		if (id.startsWith('B') || id.includes('-B20') || id.includes('_bcl_')) return 'bcl';
 		return 'euroleague';

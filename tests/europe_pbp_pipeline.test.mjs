@@ -9,6 +9,7 @@ import { LnbPbpHarvester } from '../src/scrapers/europe/pbp/LnbPbpHarvester.mjs'
 import { LbaPbpHarvester } from '../src/scrapers/europe/pbp/LbaPbpHarvester.mjs';
 import { GblPbpHarvester } from '../src/scrapers/europe/pbp/GblPbpHarvester.mjs';
 import { BblPbpHarvester } from '../src/scrapers/europe/pbp/BblPbpHarvester.mjs';
+import { AbaPbpHarvester } from '../src/scrapers/europe/pbp/AbaPbpHarvester.mjs';
 import {
 	calculateGameSecondsRemaining,
 	parseEuroClock,
@@ -39,6 +40,11 @@ import {
 	normalizeBblAction,
 	transformBblPbp
 } from '../src/scrapers/europe/pbp/BblPbpTransformer.mjs';
+import {
+	parseAbaClock,
+	normalizeAbaAction,
+	transformAbaPbp
+} from '../src/scrapers/europe/pbp/AbaPbpTransformer.mjs';
 import { extractStage } from '../src/stages/1-extract.mjs';
 import { transformStage } from '../src/stages/2-transform.mjs';
 import { loadStage, initDatabase } from '../src/stages/3-load.mjs';
@@ -65,8 +71,8 @@ test.after(async () => {
 	await fs.rm(testDbPath, { force: true });
 });
 
-test('EuroLeague, ACB, LNB, LBA, GBL & BBL PBP Clock and Helper Unit Tests', async (t) => {
-	await t.test('parseEuroClock, parseAcbClock, parseLnbClock, parseLbaClock, parseGblClock and parseBblClock should parse clock string MM:SS into remaining period seconds', () => {
+test('EuroLeague, ACB, LNB, LBA, GBL, BBL & ABA PBP Clock and Helper Unit Tests', async (t) => {
+	await t.test('parseEuroClock, parseAcbClock, parseLnbClock, parseLbaClock, parseGblClock, parseBblClock and parseAbaClock should parse clock string MM:SS into remaining period seconds', () => {
 		assert.equal(parseEuroClock(null, '10:00'), 600);
 		assert.equal(parseEuroClock(null, '08:45'), 525);
 		assert.equal(parseEuroClock(null, '00:00'), 0);
@@ -91,6 +97,37 @@ test('EuroLeague, ACB, LNB, LBA, GBL & BBL PBP Clock and Helper Unit Tests', asy
 		assert.equal(parseBblClock('00:09:45'), 585);
 		assert.equal(parseBblClock('09:45'), 585);
 		assert.equal(parseBblClock('00:00'), 0);
+
+		assert.equal(parseAbaClock('00:10:00'), 600);
+		assert.equal(parseAbaClock('00:09:45'), 585);
+		assert.equal(parseAbaClock('09:45'), 585);
+		assert.equal(parseAbaClock('00:00'), 0);
+	});
+
+	await t.test('normalizeAbaAction should map English and Serbo-Croatian event descriptions to standard event codes', () => {
+		assert.equal(normalizeAbaAction('Filip Rebraca 3pt made'), '3FGM');
+		assert.equal(normalizeAbaAction('Trojka pogođena'), '3FGM');
+		assert.equal(normalizeAbaAction('3pt miss'), '3FGA');
+		assert.equal(normalizeAbaAction('Trojka promašena'), '3FGA');
+		assert.equal(normalizeAbaAction('2pt made'), '2FGM');
+		assert.equal(normalizeAbaAction('Dvojka pogođena'), '2FGM');
+		assert.equal(normalizeAbaAction('Zakucavanje'), '2FGM');
+		assert.equal(normalizeAbaAction('Free throw made'), 'FTM');
+		assert.equal(normalizeAbaAction('Slobodno bacanje pogođeno'), 'FTM');
+		assert.equal(normalizeAbaAction('Offensive rebound'), 'ORB');
+		assert.equal(normalizeAbaAction('Skok u napadu'), 'ORB');
+		assert.equal(normalizeAbaAction('Defensive rebound'), 'DRB');
+		assert.equal(normalizeAbaAction('Skok u odbrani'), 'DRB');
+		assert.equal(normalizeAbaAction('Turnover'), 'TOV');
+		assert.equal(normalizeAbaAction('Izgubljena lopta'), 'TOV');
+		assert.equal(normalizeAbaAction('Steal'), 'STL');
+		assert.equal(normalizeAbaAction('Osvojena lopta'), 'STL');
+		assert.equal(normalizeAbaAction('Personal foul'), 'FOUL');
+		assert.equal(normalizeAbaAction('Lična greška'), 'FOUL');
+		assert.equal(normalizeAbaAction('Block'), 'BLK');
+		assert.equal(normalizeAbaAction('Blokada'), 'BLK');
+		assert.equal(normalizeAbaAction('Substitution in'), 'SUB');
+		assert.equal(normalizeAbaAction('Izmena'), 'SUB');
 	});
 
 	await t.test('normalizeBblAction should map BBL action types, success flags, qualifiers, and German descriptions to standard event codes', () => {
@@ -174,6 +211,72 @@ test('EuroLeague, ACB, LNB, LBA, GBL & BBL PBP Clock and Helper Unit Tests', asy
 		assert.equal(calculateGameSecondsRemaining(4, 120), 120);
 		// OT1 (Period 5): 03:00 remaining -> 180
 		assert.equal(calculateGameSecondsRemaining(5, 180), 180);
+	});
+});
+
+test('Adriatic ABA PBP Harvester & Transformer Unit Tests', async (t) => {
+	await t.test('AbaPbpHarvester parseGameId should parse game codes and season years', () => {
+		const harvester = new AbaPbpHarvester();
+		assert.deepEqual(harvester.parseGameId('partizan-vs-crvena-zvezda-V2024_123'), {
+			competitionId: 'ABA2024',
+			seasonCode: 'ABA2024',
+			gameCode: '123',
+			seasonYear: '2024'
+		});
+		assert.deepEqual(harvester.parseGameId('V2026_124', '2026'), {
+			competitionId: 'ABA2026',
+			seasonCode: 'ABA2026',
+			gameCode: '124',
+			seasonYear: '2026'
+		});
+	});
+
+	await t.test('transformAbaPbp should normalize Serbo-Croatian/English ABA event stream and generate 5-on-5 stints', () => {
+		const rawPayload = {
+			seasonYear: '2024',
+			competitionId: 'ABA2024',
+			actions: [
+				{
+					actionNumber: 1,
+					period: 1,
+					time: "09:45",
+					gt: "09:45",
+					actionType: "2FGM",
+					text: "Filip Rebraca dvojka pogođena",
+					team: "CRVE",
+					tno: "CRVE",
+					personId: "filip-rebraca",
+					s1: 2,
+					s2: 0,
+					scoring: 1
+				},
+				{
+					actionNumber: 2,
+					period: 1,
+					time: "09:30",
+					gt: "09:30",
+					actionType: "SUB",
+					text: "Antonio Sikiric izmena ulazi",
+					team: "PART",
+					tno: "PART",
+					personId: "antonio-sikiric",
+					s1: 2,
+					s2: 0,
+					scoring: 0
+				}
+			]
+		};
+
+		const { events, stints } = transformAbaPbp('V2024_123', rawPayload);
+		assert.equal(events.length, 2);
+		assert.equal(events[0].event_type, '2FGM');
+		assert.equal(events[0].competition_id, 'ABA2024');
+		assert.equal(events[0].is_scoring_play, 1);
+		assert.equal(events[0].game_seconds_remaining, 2385);
+
+		assert.equal(stints.length, 1);
+		assert.equal(stints[0].period, 1);
+		assert.equal(stints[0].duration_seconds, 15);
 	});
 });
 
@@ -633,15 +736,16 @@ test('EuroLeague PBP Harvester & Transformer Unit Tests', async (t) => {
 	});
 });
 
-test('Europe, ACB, LNB, LBA, GBL & BBL PBP Full Pipeline Integration Test', async (t) => {
+test('Europe, ACB, LNB, LBA, GBL, BBL & ABA PBP Full Pipeline Integration Test', async (t) => {
 	// Setup clean mock scraper
-	const scraper = new EuropeScraper({ competitions: 'acb,lnb,lba,gbl,bbl,euroleague', boxscoreType: 'pbp' });
+	const scraper = new EuropeScraper({ competitions: 'acb,lnb,lba,gbl,bbl,aba,euroleague', boxscoreType: 'pbp' });
 	scraper.pbpHarvester.bypassNetwork = true;
 	scraper.acbPbpHarvester.bypassNetwork = true;
 	scraper.lnbPbpHarvester.bypassNetwork = true;
 	scraper.lbaPbpHarvester.bypassNetwork = true;
 	scraper.gblPbpHarvester.bypassNetwork = true;
 	scraper.bblPbpHarvester.bypassNetwork = true;
+	scraper.abaPbpHarvester.bypassNetwork = true;
 	scraper.getSeasonGameSlugs = async function() {
 		this.gameSlugs = [
 			'realmadrid-vs-panathinaikos-E2024_1',
@@ -649,29 +753,31 @@ test('Europe, ACB, LNB, LBA, GBL & BBL PBP Full Pipeline Integration Test', asyn
 			'asvel-vs-monaco-L2024_1001',
 			'unahotels-reggio-emilia-vs-dolomiti-energia-trentino-I2024_24662',
 			'olympiacos-vs-panathinaikos-G2024_65708E5D',
-			'fc-bayern-vs-alba-berlin-D2024_48210'
+			'fc-bayern-vs-alba-berlin-D2024_48210',
+			'partizan-vs-crvena-zvezda-V2024_123'
 		];
 		return this;
 	};
 
-	await t.test('Full Europe, ACB, LNB, LBA, GBL & BBL PBP Pipeline Execution: Extract -> Transform -> Load -> SQLite Audit', async () => {
+	await t.test('Full Europe, ACB, LNB, LBA, GBL, BBL & ABA PBP Pipeline Execution: Extract -> Transform -> Load -> SQLite Audit', async () => {
 		// Stage 1: Extract
-		const extractedGameIds = await extractStage(scraper, league, year, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,bbl,euroleague' });
-		assert.equal(extractedGameIds.length, 6);
+		const extractedGameIds = await extractStage(scraper, league, year, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,bbl,aba,euroleague' });
+		assert.equal(extractedGameIds.length, 7);
 		assert.ok(extractedGameIds.includes('E2024_1'));
 		assert.ok(extractedGameIds.includes('A2024_105373'));
 		assert.ok(extractedGameIds.includes('L2024_1001'));
 		assert.ok(extractedGameIds.includes('I2024_24662'));
 		assert.ok(extractedGameIds.includes('G2024_65708E5D'));
 		assert.ok(extractedGameIds.includes('D2024_48210'));
+		assert.ok(extractedGameIds.includes('V2024_123'));
 
 		// Stage 2: Transform
-		const transformedData = await transformStage(league, year, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,bbl,euroleague' });
+		const transformedData = await transformStage(league, year, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,bbl,aba,euroleague' });
 		assert.ok(transformedData.events.length > 0);
 		assert.ok(transformedData.stints.length > 0);
 
 		// Stage 3: Load
-		await loadStage(league, year, transformedData, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,bbl,euroleague' });
+		await loadStage(league, year, transformedData, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,bbl,aba,euroleague' });
 
 		// Stage 4: Direct DB verification
 		let db = await initDatabase(league);
@@ -694,6 +800,9 @@ test('Europe, ACB, LNB, LBA, GBL & BBL PBP Full Pipeline Integration Test', asyn
 			const bblEventsCount = db.prepare('SELECT COUNT(*) as count FROM game_play_by_play WHERE game_id = ?').get('D2024_48210');
 			assert.equal(bblEventsCount.count, 2);
 
+			const abaEventsCount = db.prepare('SELECT COUNT(*) as count FROM game_play_by_play WHERE game_id = ?').get('V2024_123');
+			assert.equal(abaEventsCount.count, 2);
+
 			const elStintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('E2024_1');
 			assert.equal(elStintsCount.count, 1);
 
@@ -711,6 +820,9 @@ test('Europe, ACB, LNB, LBA, GBL & BBL PBP Full Pipeline Integration Test', asyn
 
 			const bblStintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('D2024_48210');
 			assert.equal(bblStintsCount.count, 1);
+
+			const abaStintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('V2024_123');
+			assert.equal(abaStintsCount.count, 1);
 
 			// Populate team_game_stats record to test AuditEngine PBP stats query
 			db.prepare(`
