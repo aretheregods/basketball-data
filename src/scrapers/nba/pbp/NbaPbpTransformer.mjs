@@ -63,7 +63,7 @@ function formatSecondsToClock(totalSeconds) {
  * @param {Record<string, number>} [headerMap] - Optional map if action is Stats API array row
  * @returns {Object}
  */
-function parseRawAction(gameId, action, index, headerMap = null) {
+function parseRawAction(gameId, action, index, headerMap = null, competitionId = null) {
 	let actionNumber, period, clock, eventType, subType, teamId, playerId, secondaryPlayerId;
 	let description, homeScore, awayScore, locX, locY, shotDistance, isScoringPlay;
 
@@ -213,6 +213,7 @@ function parseRawAction(gameId, action, index, headerMap = null) {
 	return {
 		event_id: `${gameId}_${actionNumber ?? (index + 1)}_${index}`,
 		game_id: String(gameId),
+		competition_id: competitionId ? String(competitionId) : null,
 		period: safePeriod,
 		clock: String(clock || "00:00"),
 		seconds_remaining: isNaN(secsRemaining) ? 0 : secsRemaining,
@@ -238,7 +239,7 @@ function parseRawAction(gameId, action, index, headerMap = null) {
  * @param {Object[]} events - Cleaned event records sorted by period & time
  * @returns {Object[]} - Array of derived stint records
  */
-function buildStintsFromEvents(gameId, events) {
+function buildStintsFromEvents(gameId, events, competitionId = null) {
 	const stints = [];
 
 	// Group events by period
@@ -299,6 +300,7 @@ function buildStintsFromEvents(gameId, events) {
 				stints.push({
 					stint_id: `${gameId}_${period}_${stintIndex}`,
 					game_id: String(gameId),
+					competition_id: competitionId ? String(competitionId) : null,
 					period: Number(period),
 					start_clock: stintStartClock,
 					end_clock: evt.clock,
@@ -353,7 +355,7 @@ function buildStintsFromEvents(gameId, events) {
  * @param {Object} rawJson
  * @returns {{ events: Object[], stints: Object[] }}
  */
-export function transformNbaPbp(gameId, rawJson) {
+export function transformNbaPbp(gameId, rawJson, competitionId = null) {
 	let rawActions = [];
 	let headerMap = null;
 
@@ -408,7 +410,8 @@ export function transformNbaPbp(gameId, rawJson) {
 		}
 	}
 
-	const events = rawActions.map((action, index) => parseRawAction(gameId, action, index, headerMap));
+	const compId = competitionId || (rawJson && (rawJson.competitionId || rawJson.competition_id)) || null;
+	const events = rawActions.map((action, index) => parseRawAction(gameId, action, index, headerMap, compId));
 
 	// Carry over cumulative score if raw payload actions omit score on non-scoring plays
 	let currentHomeScore = 0;
@@ -421,7 +424,7 @@ export function transformNbaPbp(gameId, rawJson) {
 		else evt.away_score = currentAwayScore;
 	}
 
-	const stints = buildStintsFromEvents(gameId, events);
+	const stints = buildStintsFromEvents(gameId, events, compId);
 
 	return { events, stints };
 }

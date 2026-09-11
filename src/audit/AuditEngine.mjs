@@ -129,22 +129,30 @@ export class AuditEngine {
 			const tableCheck = this.db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='game_play_by_play'`).get();
 			if (!tableCheck) return res;
 
+			const seasonStr = String(season);
+
 			const pbpGamesStmt = this.db.prepare(`
 				SELECT COUNT(DISTINCT p.game_id) as cnt
 				FROM game_play_by_play p
-				LEFT JOIN team_game_stats t ON p.game_id = t.game_id
-				WHERE COALESCE(t.season, p.competition_id) LIKE '%' || ? || '%' OR p.event_id LIKE '%' || ? || '%'
+				LEFT JOIN (SELECT DISTINCT game_id, season FROM team_game_stats) t ON p.game_id = t.game_id
+				WHERE t.season = ?
+				   OR p.competition_id LIKE '%' || ? || '%'
+				   OR p.event_id LIKE '%' || ? || '%'
+				   OR p.game_id IN (SELECT DISTINCT game_id FROM team_game_stats WHERE season = ?)
 			`);
-			const pbpGamesRow = pbpGamesStmt.get(season, season);
+			const pbpGamesRow = pbpGamesStmt.get(seasonStr, seasonStr, seasonStr, seasonStr);
 			res.pbpGamesCount = pbpGamesRow ? pbpGamesRow.cnt : 0;
 
 			const pbpEventsStmt = this.db.prepare(`
 				SELECT COUNT(*) as cnt
 				FROM game_play_by_play p
-				LEFT JOIN team_game_stats t ON p.game_id = t.game_id
-				WHERE COALESCE(t.season, p.competition_id) LIKE '%' || ? || '%' OR p.event_id LIKE '%' || ? || '%'
+				LEFT JOIN (SELECT DISTINCT game_id, season FROM team_game_stats) t ON p.game_id = t.game_id
+				WHERE t.season = ?
+				   OR p.competition_id LIKE '%' || ? || '%'
+				   OR p.event_id LIKE '%' || ? || '%'
+				   OR p.game_id IN (SELECT DISTINCT game_id FROM team_game_stats WHERE season = ?)
 			`);
-			const pbpEventsRow = pbpEventsStmt.get(season, season);
+			const pbpEventsRow = pbpEventsStmt.get(seasonStr, seasonStr, seasonStr, seasonStr);
 			res.pbpEventsCount = pbpEventsRow ? pbpEventsRow.cnt : 0;
 
 			// Check if game_stints table exists
@@ -153,10 +161,13 @@ export class AuditEngine {
 				const pbpStintsStmt = this.db.prepare(`
 					SELECT COUNT(*) as cnt
 					FROM game_stints s
-					LEFT JOIN team_game_stats t ON s.game_id = t.game_id
-					WHERE COALESCE(t.season, s.competition_id) LIKE '%' || ? || '%' OR s.stint_id LIKE '%' || ? || '%'
+					LEFT JOIN (SELECT DISTINCT game_id, season FROM team_game_stats) t ON s.game_id = t.game_id
+					WHERE t.season = ?
+					   OR s.competition_id LIKE '%' || ? || '%'
+					   OR s.stint_id LIKE '%' || ? || '%'
+					   OR s.game_id IN (SELECT DISTINCT game_id FROM team_game_stats WHERE season = ?)
 				`);
-				const pbpStintsRow = pbpStintsStmt.get(season, season);
+				const pbpStintsRow = pbpStintsStmt.get(seasonStr, seasonStr, seasonStr, seasonStr);
 				res.pbpStintsCount = pbpStintsRow ? pbpStintsRow.cnt : 0;
 			}
 
