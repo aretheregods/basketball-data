@@ -4,8 +4,8 @@ import { HTTPClient } from '#utils';
 
 /**
  * @description Multi-tier Harvester & Network scraper for NBL Play-By-Play feeds.
- * Supports NBL Microservice REST API (Tier 1), Webflow Page Hydration State (Tier 2),
- * and Genius Sports FIBA LiveStats CDN (Tier 3).
+ * Targets official NBL Rosetta API endpoints, Genius Sports FIBA LiveStats CDN,
+ * and dynamic game resolution for legacy slugs.
  */
 export class NblPbpHarvester extends HTTPClient {
 	/**
@@ -13,15 +13,16 @@ export class NblPbpHarvester extends HTTPClient {
 	 * @param {Object} [options={}]
 	 */
 	constructor(options = {}) {
-		super('https://prod.nbl.com.au', {
+		super('https://prod.rosetta.nbl.com.au', {
 			'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
 			'accept': 'application/json'
 		});
 		this.bypassNetwork = options.bypassNetwork ?? (process.env.NODE_ENV === 'test');
+		this.seasonMatchCache = {};
 	}
 
 	/**
-	 * @description Extracts numeric match ID from NBL game ID slug.
+	 * @description Extracts clean match ID from game ID slug.
 	 * e.g., "melbourne-united-vs-sydney-kings-O2025_10001" -> "10001"
 	 * @param {string} gameId
 	 * @returns {string}
@@ -41,6 +42,10 @@ export class NblPbpHarvester extends HTTPClient {
 	 * @returns {Promise<Object>} - Raw PBP JSON payload
 	 */
 	async fetchNblPbp(gameId, year) {
+		if (this.bypassNetwork) {
+			return this.getMockPbpPayload(gameId);
+		}
+
 		const fibaMatchId = this.parseFibaMatchId(gameId);
 		const cacheDir = path.resolve(`data/raw/nbl/pbp/${year}`);
 		const cachePath = path.join(cacheDir, `${gameId}.json`);
@@ -58,117 +63,32 @@ export class NblPbpHarvester extends HTTPClient {
 			// Cache miss, proceed
 		}
 
-		if (this.bypassNetwork) {
-			return this.getMockPbpPayload(gameId);
-		}
-
 		let payload = null;
 
-		// Tier 1: NBL Microservice REST Endpoint
+		// Tier 1: Rosetta Official Live Match Endpoint
 		try {
-			const apiUrls = [
-				`https://prod.nbl.com.au/api/v1/matches/${gameId}/pbp`,
-				`https://prod.nbl.com.au/api/v1/games/${gameId}/pbp`,
-				`https://api.nbl.com.au/v1/games/${gameId}/play-by-play`
-			];
+			const rosettaUrl = `https://prod.rosetta.nbl.com.au/get/match/${fibaMatchId}/live/all`;
+			const res = await fetch(rosettaUrl, {
+				headers: {
+					'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+					'Accept': 'application/json',
+					'Origin': 'https://www.nbl.com.au',
+					'Referer': 'https://www.nbl.com.au/'
+				}
+			});
 
-			for (const url of apiUrls) {
-				const res = await fetch(url, {
-					headers: {
-						'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-						'Accept': 'application/json'
-					}
-				});
-
-				if (res.ok) {
-					const data = await res.json();
-					if (data && (Array.isArray(data.actions) || Array.isArray(data.plays) || Array.isArray(data.pbp) || Array.isArray(data))) {
-						payload = { source: 'nbl_api', data };
-						break;
-					}
+			if (res.ok) {
+				const json = await res.json();
+				const matchData = Array.isArray(json?.data) ? json.data[0] : json?.data;
+				if (matchData && (Array.isArray(matchData.play_by_play) && matchData.play_by_play.length > 0)) {
+					payload = { source: 'rosetta_live', data: matchData };
 				}
 			}
 		} catch (err) {
-			console.warn(`⚠️ [NblPbpHarvester] Tier 1 API fetch failed for Game ID ${gameId}: ${err.message}. Fallback to Tier 2...`);
+			console.warn(`⚠️ [NblPbpHarvester] Tier 1 Rosetta Live fetch failed for Game ID ${gameId}: ${err.message}. Trying Tier 2...`);
 		}
 
-		// Tier 2: Fetch Webflow Game Page HTML & Extract Embedded Hydration State or DOM
-		if (!payload) {
-			try {
-				const webflowUrls = [
-					`https://www.nbl.com.au/games/${gameId}`,
-					`https://www.nbl.com.au/match-center/${gameId}`
-				];
-
-				for (const url of webflowUrls) {
-					const res = await fetch(url, {
-						headers: {
-							'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-							'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-						}
-					});
-
-					if (res.ok) {
-						const html = await res.text();
-
-						// Check for embedded JSON state script tags (__NEXT_DATA__, __NBL_STATE__, initialData)
-						const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
-						if (nextDataMatch) {
-							try {
-								const nextData = JSON.parse(nextDataMatch[1]);
-								const pageProps = nextData?.props?.pageProps;
-								if (pageProps && (pageProps.pbp || pageProps.actions || pageProps.game?.actions)) {
-									payload = { source: 'webflow_state', data: pageProps };
-									break;
-								}
-							} catch (e) {}
-						}
-
-						const stateMatch = html.match(/(?:__NBL_STATE__|initialData)\s*=\s*({.*?});/s);
-						if (stateMatch) {
-							try {
-								const stateData = JSON.parse(stateMatch[1]);
-								if (stateData && (stateData.actions || stateData.pbp || stateData.events)) {
-									payload = { source: 'webflow_state', data: stateData };
-									break;
-								}
-							} catch (e) {}
-						}
-
-						// Fallback: DOM Extraction via regex matching on table rows
-						const domActions = [];
-						const rowRegex = /<tr[^>]*class="[^"]*(?:pbp|event|match)[^"]*"[^>]*>(.*?)<\/tr>/gis;
-						let rowMatch;
-						let idx = 0;
-						while ((rowMatch = rowRegex.exec(html)) !== null) {
-							const rowInner = rowMatch[1];
-							const timeMatch = rowInner.match(/class="[^"]*(?:time|clock)[^"]*"[^>]*>(.*?)<\//i);
-							const scoreMatch = rowInner.match(/class="[^"]*score[^"]*"[^>]*>(.*?)<\//i);
-							const descMatch = rowInner.match(/class="[^"]*(?:description|text)[^"]*"[^>]*>(.*?)<\//i);
-							const teamMatch = rowInner.match(/class="[^"]*team[^"]*"[^>]*>(.*?)<\//i);
-
-							const time = timeMatch ? timeMatch[1].replace(/<[^>]+>/g, '').trim() : '';
-							const score = scoreMatch ? scoreMatch[1].replace(/<[^>]+>/g, '').trim() : '';
-							const desc = descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim() : '';
-							const team = teamMatch ? teamMatch[1].replace(/<[^>]+>/g, '').trim() : '';
-
-							if (desc || time) {
-								domActions.push({ index: idx++, time, score, desc, team });
-							}
-						}
-
-						if (domActions.length > 0) {
-							payload = { source: 'html_dom', data: domActions };
-							break;
-						}
-					}
-				}
-			} catch (err) {
-				console.warn(`⚠️ [NblPbpHarvester] Tier 2 Webflow scrape failed for Game ID ${gameId}: ${err.message}. Fallback to Tier 3...`);
-			}
-		}
-
-		// Tier 3: Genius Sports / FIBA LiveStats CDN Fallback
+		// Tier 2: Genius Sports FIBA LiveStats CDN Fallback
 		if (!payload && fibaMatchId) {
 			try {
 				const fibaUrl = `https://fibalivestats.dcd.shared.geniussports.com/data/${fibaMatchId}/data.json`;
@@ -181,12 +101,95 @@ export class NblPbpHarvester extends HTTPClient {
 
 				if (res.ok) {
 					const fibaData = await res.json();
-					if (fibaData && (fibaData.pbp || fibaData.actions)) {
-						payload = fibaData;
+					if (fibaData && (Array.isArray(fibaData.pbp) || Array.isArray(fibaData.actions))) {
+						payload = { source: 'fiba_livestats', data: fibaData };
 					}
 				}
 			} catch (err) {
-				console.warn(`⚠️ [NblPbpHarvester] Tier 3 FIBA LiveStats CDN fetch failed for Game ID ${gameId} (FIBA ID ${fibaMatchId}): ${err.message}`);
+				console.warn(`⚠️ [NblPbpHarvester] Tier 2 FIBA LiveStats CDN fetch failed for Game ID ${gameId}: ${err.message}. Trying Tier 3...`);
+			}
+		}
+
+		// Tier 3: Season Matches Index Lookup (Mapping legacy Proballers IDs / slugs to Rosetta IDs / external_media_id)
+		if (!payload) {
+			try {
+				let seasonMatches = this.seasonMatchCache[String(year)];
+				if (!seasonMatches) {
+					const indexUrl = `https://prod.rosetta.nbl.com.au/get/nbl/matches/in/season/${year}/all`;
+					const idxRes = await fetch(indexUrl, {
+						headers: {
+							'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+							'Accept': 'application/json',
+							'Origin': 'https://www.nbl.com.au',
+							'Referer': 'https://www.nbl.com.au/'
+						}
+					});
+
+					if (idxRes.ok) {
+						const idxJson = await idxRes.json();
+						seasonMatches = Array.isArray(idxJson?.data) ? idxJson.data : [];
+						this.seasonMatchCache[String(year)] = seasonMatches;
+					}
+				}
+
+				if (seasonMatches && seasonMatches.length > 0) {
+					const slugClean = String(gameId).toLowerCase().replace(/[^a-z0-9]/g, '');
+					let matched = seasonMatches.find(m => m.id === fibaMatchId || m.external_media_id === fibaMatchId);
+
+					if (!matched) {
+						// Match by team names or slug fragments
+						matched = seasonMatches.find(m => {
+							const mSlug = String(m.match_slug || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+							const homeName = String(m.home_team?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+							const awayName = String(m.away_team?.name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+							if (slugClean.includes(mSlug) || mSlug.includes(slugClean)) return true;
+							if (homeName && awayName && slugClean.includes(homeName) && slugClean.includes(awayName)) return true;
+							return false;
+						});
+					}
+
+					if (matched) {
+						const targetIds = [matched.id, matched.external_media_id].filter(Boolean);
+						for (const targetId of targetIds) {
+							// Try Rosetta Live first
+							try {
+								const targetUrl = `https://prod.rosetta.nbl.com.au/get/match/${targetId}/live/all`;
+								const res = await fetch(targetUrl, {
+									headers: {
+										'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)',
+										'Accept': 'application/json',
+										'Origin': 'https://www.nbl.com.au',
+										'Referer': 'https://www.nbl.com.au/'
+									}
+								});
+								if (res.ok) {
+									const json = await res.json();
+									const matchData = Array.isArray(json?.data) ? json.data[0] : json?.data;
+									if (matchData && (Array.isArray(matchData.play_by_play) && matchData.play_by_play.length > 0)) {
+										payload = { source: 'rosetta_live', data: matchData };
+										break;
+									}
+								}
+							} catch (e) {}
+
+							// Try FIBA CDN
+							try {
+								const fibaUrl = `https://fibalivestats.dcd.shared.geniussports.com/data/${targetId}/data.json`;
+								const res = await fetch(fibaUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+								if (res.ok) {
+									const fibaData = await res.json();
+									if (fibaData && (Array.isArray(fibaData.pbp) || Array.isArray(fibaData.actions))) {
+										payload = { source: 'fiba_livestats', data: fibaData };
+										break;
+									}
+								}
+							} catch (e) {}
+						}
+					}
+				}
+			} catch (err) {
+				console.warn(`⚠️ [NblPbpHarvester] Tier 3 season match index lookup failed for Game ID ${gameId}: ${err.message}`);
 			}
 		}
 

@@ -117,6 +117,11 @@ const mockTier2WebflowPayload = {
 
 test.before(async () => {
 	process.env.NODE_ENV = 'test';
+	for (const key of Object.keys(process.env)) {
+		if (key.startsWith('NODE_TEST_') || key === 'NODE_CHANNEL_FD') {
+			delete process.env[key];
+		}
+	}
 	await fs.rm(path.resolve(`data/raw/nbl_pbp_test`), { recursive: true, force: true });
 	await fs.rm(path.resolve(`data/transformed/nbl_pbp_test`), { recursive: true, force: true });
 	await fs.rm(path.resolve(`data/SQL/NBL_PBP_TEST.sqlite`), { force: true });

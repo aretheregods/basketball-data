@@ -48,24 +48,41 @@ export function calculateGameSecondsRemaining(period, secondsInPeriod) {
  * @description Normalizes raw action text / type into standard event codes.
  * @param {string} textRaw
  * @param {string} actionType
+ * @param {boolean} [success=false]
  * @returns {string}
  */
-export function normalizeNblAction(textRaw, actionType) {
+export function normalizeNblAction(textRaw, actionType, success = false) {
 	const text = String(textRaw || '').toLowerCase();
 	const type = String(actionType || '').toLowerCase();
 
-	if (type.includes('3pt') || type === '3fgm' || (text.includes('3pt') && (text.includes('made') || text.includes('make')))) return '3FGM';
+	if (type === '3pt' || type.includes('3pt') || type === '3fgm') {
+		return success || text.includes('made') || text.includes('make') ? '3FGM' : '3FGA';
+	}
+	if (type === '2pt' || type.includes('2pt') || type === '2fgm' || type === 'dunk' || type === 'layup') {
+		return success || text.includes('made') || text.includes('make') ? '2FGM' : '2FGA';
+	}
+	if (type === 'freethrow' || type.includes('freethrow') || type.includes('free throw') || type === 'ftm') {
+		return success || text.includes('made') || text.includes('make') ? 'FTM' : 'FTA';
+	}
+
 	if (type.includes('3fga') || (text.includes('3pt') && text.includes('miss'))) return '3FGA';
-	if (type.includes('2pt') || type === '2fgm' || text.includes('dunk') || ((text.includes('2pt') || text.includes('layup') || text.includes('jump shot') || text.includes('shot')) && (text.includes('made') || text.includes('make')))) return '2FGM';
+	if (text.includes('3pt') && (text.includes('made') || text.includes('make'))) return '3FGM';
 	if (type.includes('2fga') || ((text.includes('2pt') || text.includes('layup') || text.includes('jump shot') || text.includes('shot')) && text.includes('miss'))) return '2FGA';
-	if (type.includes('ftm') || (text.includes('free throw') && (text.includes('made') || text.includes('make')))) return 'FTM';
+	if (text.includes('dunk') || ((text.includes('2pt') || text.includes('layup') || text.includes('jump shot') || text.includes('shot')) && (text.includes('made') || text.includes('make')))) return '2FGM';
 	if (type.includes('fta') || (text.includes('free throw') && text.includes('miss'))) return 'FTA';
+	if (text.includes('free throw') && (text.includes('made') || text.includes('make'))) return 'FTM';
+
+	if (type.includes('rebound') || text.includes('rebound')) {
+		if (text.includes('offensive') || text.includes('off')) return 'ORB';
+		return 'DRB';
+	}
 	if (type.includes('orb') || text.includes('offensive rebound')) return 'ORB';
-	if (type.includes('drb') || text.includes('defensive rebound') || text.includes('rebound')) return 'DRB';
-	if (type.includes('tov') || text.includes('turnover') || text.includes('bad pass') || text.includes('out of bounds')) return 'TOV';
-	if (type.includes('stl') || text.includes('steal')) return 'STL';
+	if (type.includes('drb') || text.includes('defensive rebound')) return 'DRB';
+
+	if (type.includes('turnover') || type === 'tov' || text.includes('turnover') || text.includes('bad pass') || text.includes('out of bounds')) return 'TOV';
+	if (type.includes('steal') || type === 'stl' || text.includes('steal')) return 'STL';
 	if (type.includes('foul') || text.includes('foul')) return 'FOUL';
-	if (type.includes('blk') || text.includes('block')) return 'BLK';
+	if (type.includes('block') || type === 'blk' || text.includes('block')) return 'BLK';
 	if (type.includes('sub') || text.includes('substitution') || text.includes('sub in') || text.includes('sub out')) return 'SUB';
 
 	return actionType || 'OTHER';
@@ -196,7 +213,7 @@ function buildStintsFromEvents(gameId, events, competitionId = null) {
 
 /**
  * @description Main transformer for NBL play-by-play raw JSON data.
- * Supports payloads from Tier 1 API, Tier 2 Webflow embedded state / DOM, and Tier 3 FIBA LiveStats.
+ * Supports payloads from Rosetta Live API, Genius Sports FIBA LiveStats, and Webflow formats.
  * @param {string} gameId
  * @param {Object} rawJson
  * @param {string} [competitionId=null]
@@ -208,10 +225,15 @@ export function transformNblPbp(gameId, rawJson, competitionId = null) {
 	}
 
 	// Unwrap wrapper objects if nested in { source, data }
-	const dataPayload = rawJson.data ? rawJson.data : rawJson;
+	let dataPayload = rawJson.data ? rawJson.data : rawJson;
+	if (dataPayload.play_by_play && Array.isArray(dataPayload.play_by_play)) {
+		dataPayload = dataPayload.play_by_play;
+	}
 
 	let rawEvents = [];
-	if (Array.isArray(dataPayload.pbp)) {
+	if (Array.isArray(dataPayload)) {
+		rawEvents = dataPayload;
+	} else if (Array.isArray(dataPayload.pbp)) {
 		rawEvents = dataPayload.pbp;
 	} else if (Array.isArray(dataPayload.actions)) {
 		rawEvents = dataPayload.actions;
@@ -221,8 +243,6 @@ export function transformNblPbp(gameId, rawJson, competitionId = null) {
 		rawEvents = dataPayload.events;
 	} else if (dataPayload.game && (Array.isArray(dataPayload.game.actions) || Array.isArray(dataPayload.game.plays) || Array.isArray(dataPayload.game.pbp))) {
 		rawEvents = dataPayload.game.actions || dataPayload.game.plays || dataPayload.game.pbp;
-	} else if (Array.isArray(dataPayload)) {
-		rawEvents = dataPayload;
 	}
 
 	const compId = competitionId || (rawJson && (rawJson.competitionId || rawJson.competition_id)) || null;
@@ -238,30 +258,38 @@ export function transformNblPbp(gameId, rawJson, competitionId = null) {
 		const secondsRemaining = parseFibaClockToSeconds(clockRaw, period);
 		const gameSecondsRemaining = calculateGameSecondsRemaining(period, secondsRemaining);
 
-		// Handle score extraction across FIBA (s1/s2), NBL API (scoreHome/scoreAway), and Webflow/DOM (score string "10 - 8")
-		if (action.s1 !== undefined && action.s1 !== null) runningHomeScore = parseInt(action.s1, 10);
+		// Handle score extraction across FIBA (s1/s2), Rosetta (score_1/score_2), NBL API (scoreHome/scoreAway), and Webflow/DOM (score string "10 - 8")
+		if (action.score_1 !== undefined && action.score_1 !== null) runningHomeScore = parseInt(action.score_1, 10);
+		else if (action.s1 !== undefined && action.s1 !== null) runningHomeScore = parseInt(action.s1, 10);
 		else if (action.scoreHome !== undefined) runningHomeScore = parseInt(action.scoreHome, 10);
 		else if (action.homeScore !== undefined) runningHomeScore = parseInt(action.homeScore, 10);
 
-		if (action.s2 !== undefined && action.s2 !== null) runningAwayScore = parseInt(action.s2, 10);
+		if (action.score_2 !== undefined && action.score_2 !== null) runningAwayScore = parseInt(action.score_2, 10);
+		else if (action.s2 !== undefined && action.s2 !== null) runningAwayScore = parseInt(action.s2, 10);
 		else if (action.scoreAway !== undefined) runningAwayScore = parseInt(action.scoreAway, 10);
 		else if (action.awayScore !== undefined) runningAwayScore = parseInt(action.awayScore, 10);
 
-		if ((action.scoreHome === undefined && action.s1 === undefined) && typeof action.score === 'string' && action.score.includes('-')) {
+		if ((action.scoreHome === undefined && action.s1 === undefined && action.score_1 === undefined) && typeof action.score === 'string' && action.score.includes('-')) {
 			const parts = action.score.split('-').map(s => parseInt(s.trim(), 10));
 			if (!isNaN(parts[0])) runningHomeScore = parts[0];
 			if (!isNaN(parts[1])) runningAwayScore = parts[1];
 		}
 
-		const eventTypeRaw = action.actionType || action.type || action.eventType || action.desc || action.description || '';
-		const normalizedType = normalizeNblAction(action.text || action.desc || action.description, eventTypeRaw);
-		const isScoring = action.scoring === 1 || action.success === 1 || action.isFieldGoal === 1 || action.isScoringPlay === 1 || ['2FGM', '3FGM', 'FTM'].includes(normalizedType);
+		const isSuccess = action.success === true || action.success === 1 || action.scoring === 1;
+		const eventTypeRaw = action.action_type || action.actionType || action.type || action.eventType || action.desc || action.description || '';
+		const textDesc = action.readable_action_type || action.text || action.description || action.desc || '';
 
-		const teamId = action.tno ? String(action.tno) : (action.teamId ? String(action.teamId) : (action.team ? String(action.team) : null));
-		const playerId = action.personId ? String(action.personId) : (action.playerId ? String(action.playerId) : null);
+		const normalizedType = normalizeNblAction(textDesc, eventTypeRaw, isSuccess);
+		const isScoring = isSuccess || action.isFieldGoal === 1 || action.isScoringPlay === 1 || ['2FGM', '3FGM', 'FTM'].includes(normalizedType);
+
+		const teamId = action.team ? String(action.team) : (action.tno ? String(action.tno) : (action.teamId ? String(action.teamId) : null));
+		const playerId = action.player ? String(action.player) : (action.personId ? String(action.personId) : (action.playerId ? String(action.playerId) : null));
 		const secondaryPlayerId = action.subPersonId || action.secondaryPlayerId || action.assistPersonId || null;
 
-		const actionNum = action.actionNumber ?? action.actionId ?? action.eventNum ?? (i + 1);
+		const actionNum = action.action_id ?? action.actionNumber ?? action.actionId ?? action.eventNum ?? (i + 1);
+
+		const locX = (action.coordinates && action.coordinates.x !== undefined) ? Number(action.coordinates.x) : ((action.x !== undefined && action.x !== null) ? Number(action.x) : null);
+		const locY = (action.coordinates && action.coordinates.y !== undefined) ? Number(action.coordinates.y) : ((action.y !== undefined && action.y !== null) ? Number(action.y) : null);
 
 		events.push({
 			event_id: `${gameId}_pbp_${actionNum}_${i}`,
@@ -272,15 +300,15 @@ export function transformNblPbp(gameId, rawJson, competitionId = null) {
 			seconds_remaining: secondsRemaining,
 			game_seconds_remaining: gameSecondsRemaining,
 			event_type: normalizedType,
-			sub_type: action.subType ? String(action.subType) : null,
+			sub_type: action.sub_type || action.subType ? String(action.sub_type || action.subType) : null,
 			team_id: teamId,
 			player_id: playerId,
 			secondary_player_id: secondaryPlayerId ? String(secondaryPlayerId) : null,
-			description: action.text || action.description || action.desc || '',
+			description: String(textDesc),
 			home_score: runningHomeScore,
 			away_score: runningAwayScore,
-			loc_x: (action.x !== undefined && action.x !== null) ? Number(action.x) : null,
-			loc_y: (action.y !== undefined && action.y !== null) ? Number(action.y) : null,
+			loc_x: locX,
+			loc_y: locY,
 			shot_distance: (action.distance !== undefined && action.distance !== null) ? Number(action.distance) : null,
 			is_scoring_play: isScoring ? 1 : 0
 		});
