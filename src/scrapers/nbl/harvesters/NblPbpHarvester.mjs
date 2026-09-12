@@ -3,7 +3,9 @@ import path from 'path';
 import { HTTPClient } from '#utils';
 
 /**
- * @description Harvester & Network scraper for NBL FIBA LiveStats Play-By-Play feeds.
+ * @description Multi-tier Harvester & Network scraper for NBL Play-By-Play feeds.
+ * Supports NBL Microservice REST API (Tier 1), Webflow Page Hydration State (Tier 2),
+ * and Genius Sports FIBA LiveStats CDN (Tier 3).
  */
 export class NblPbpHarvester extends HTTPClient {
 	/**
@@ -11,8 +13,8 @@ export class NblPbpHarvester extends HTTPClient {
 	 * @param {Object} [options={}]
 	 */
 	constructor(options = {}) {
-		super('https://fibalivestats.dcd.shared.geniussports.com', {
-			'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+		super('https://prod.nbl.com.au', {
+			'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
 			'accept': 'application/json'
 		});
 		this.bypassNetwork = options.bypassNetwork ?? (process.env.NODE_ENV === 'test');
@@ -33,14 +35,15 @@ export class NblPbpHarvester extends HTTPClient {
 	}
 
 	/**
-	 * @description Fetches raw NBL Play-by-play payload for a given game ID from FIBA LiveStats CDN.
+	 * @description Fetches raw NBL Play-by-play payload using a multi-tier strategy.
 	 * @param {string} gameId - NBL game ID or FIBA match code
 	 * @param {string|number} year - Season year
 	 * @returns {Promise<Object>} - Raw PBP JSON payload
 	 */
 	async fetchNblPbp(gameId, year) {
 		const fibaMatchId = this.parseFibaMatchId(gameId);
-		const cachePath = path.resolve(`data/raw/nbl/pbp/${year}/${gameId}.json`);
+		const cacheDir = path.resolve(`data/raw/nbl/pbp/${year}`);
+		const cachePath = path.join(cacheDir, `${gameId}.json`);
 
 		// 1. Check local disk cache
 		try {
@@ -52,40 +55,147 @@ export class NblPbpHarvester extends HTTPClient {
 				}
 			}
 		} catch (e) {
-			// Cache miss, proceed to fetch
+			// Cache miss, proceed
 		}
 
 		if (this.bypassNetwork) {
 			return this.getMockPbpPayload(gameId);
 		}
 
-		const url = `https://fibalivestats.dcd.shared.geniussports.com/data/${fibaMatchId}/data.json`;
 		let payload = null;
 
+		// Tier 1: NBL Microservice REST Endpoint
 		try {
-			const res = await fetch(url, {
-				headers: {
-					'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-					'Accept': 'application/json'
-				}
-			});
+			const apiUrls = [
+				`https://prod.nbl.com.au/api/v1/matches/${gameId}/pbp`,
+				`https://prod.nbl.com.au/api/v1/games/${gameId}/pbp`,
+				`https://api.nbl.com.au/v1/games/${gameId}/play-by-play`
+			];
 
-			if (res.ok) {
-				const json = await res.json();
-				if (json && typeof json === 'object' && Object.keys(json).length > 0) {
-					payload = json;
+			for (const url of apiUrls) {
+				const res = await fetch(url, {
+					headers: {
+						'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+						'Accept': 'application/json'
+					}
+				});
+
+				if (res.ok) {
+					const data = await res.json();
+					if (data && (Array.isArray(data.actions) || Array.isArray(data.plays) || Array.isArray(data.pbp) || Array.isArray(data))) {
+						payload = { source: 'nbl_api', data };
+						break;
+					}
 				}
 			}
 		} catch (err) {
-			console.warn(`⚠️ [NblPbpHarvester] Network fetch failed for Game ID ${gameId} (FIBA ID ${fibaMatchId}): ${err.message}`);
+			console.warn(`⚠️ [NblPbpHarvester] Tier 1 API fetch failed for Game ID ${gameId}: ${err.message}. Fallback to Tier 2...`);
+		}
+
+		// Tier 2: Fetch Webflow Game Page HTML & Extract Embedded Hydration State or DOM
+		if (!payload) {
+			try {
+				const webflowUrls = [
+					`https://www.nbl.com.au/games/${gameId}`,
+					`https://www.nbl.com.au/match-center/${gameId}`
+				];
+
+				for (const url of webflowUrls) {
+					const res = await fetch(url, {
+						headers: {
+							'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+							'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+						}
+					});
+
+					if (res.ok) {
+						const html = await res.text();
+
+						// Check for embedded JSON state script tags (__NEXT_DATA__, __NBL_STATE__, initialData)
+						const nextDataMatch = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+						if (nextDataMatch) {
+							try {
+								const nextData = JSON.parse(nextDataMatch[1]);
+								const pageProps = nextData?.props?.pageProps;
+								if (pageProps && (pageProps.pbp || pageProps.actions || pageProps.game?.actions)) {
+									payload = { source: 'webflow_state', data: pageProps };
+									break;
+								}
+							} catch (e) {}
+						}
+
+						const stateMatch = html.match(/(?:__NBL_STATE__|initialData)\s*=\s*({.*?});/s);
+						if (stateMatch) {
+							try {
+								const stateData = JSON.parse(stateMatch[1]);
+								if (stateData && (stateData.actions || stateData.pbp || stateData.events)) {
+									payload = { source: 'webflow_state', data: stateData };
+									break;
+								}
+							} catch (e) {}
+						}
+
+						// Fallback: DOM Extraction via regex matching on table rows
+						const domActions = [];
+						const rowRegex = /<tr[^>]*class="[^"]*(?:pbp|event|match)[^"]*"[^>]*>(.*?)<\/tr>/gis;
+						let rowMatch;
+						let idx = 0;
+						while ((rowMatch = rowRegex.exec(html)) !== null) {
+							const rowInner = rowMatch[1];
+							const timeMatch = rowInner.match(/class="[^"]*(?:time|clock)[^"]*"[^>]*>(.*?)<\//i);
+							const scoreMatch = rowInner.match(/class="[^"]*score[^"]*"[^>]*>(.*?)<\//i);
+							const descMatch = rowInner.match(/class="[^"]*(?:description|text)[^"]*"[^>]*>(.*?)<\//i);
+							const teamMatch = rowInner.match(/class="[^"]*team[^"]*"[^>]*>(.*?)<\//i);
+
+							const time = timeMatch ? timeMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+							const score = scoreMatch ? scoreMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+							const desc = descMatch ? descMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+							const team = teamMatch ? teamMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+							if (desc || time) {
+								domActions.push({ index: idx++, time, score, desc, team });
+							}
+						}
+
+						if (domActions.length > 0) {
+							payload = { source: 'html_dom', data: domActions };
+							break;
+						}
+					}
+				}
+			} catch (err) {
+				console.warn(`⚠️ [NblPbpHarvester] Tier 2 Webflow scrape failed for Game ID ${gameId}: ${err.message}. Fallback to Tier 3...`);
+			}
+		}
+
+		// Tier 3: Genius Sports / FIBA LiveStats CDN Fallback
+		if (!payload && fibaMatchId) {
+			try {
+				const fibaUrl = `https://fibalivestats.dcd.shared.geniussports.com/data/${fibaMatchId}/data.json`;
+				const res = await fetch(fibaUrl, {
+					headers: {
+						'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+						'Accept': 'application/json'
+					}
+				});
+
+				if (res.ok) {
+					const fibaData = await res.json();
+					if (fibaData && (fibaData.pbp || fibaData.actions)) {
+						payload = fibaData;
+					}
+				}
+			} catch (err) {
+				console.warn(`⚠️ [NblPbpHarvester] Tier 3 FIBA LiveStats CDN fetch failed for Game ID ${gameId} (FIBA ID ${fibaMatchId}): ${err.message}`);
+			}
 		}
 
 		if (!payload) {
-			throw new Error(`No FIBA LiveStats PBP feed available on CDN for Game ID ${gameId} (FIBA ID ${fibaMatchId})`);
+			throw new Error(`No PBP feed available across Tier 1, Tier 2, or Tier 3 for Game ID ${gameId} (FIBA ID ${fibaMatchId})`);
 		}
 
 		try {
-			await fs.mkdir(path.dirname(cachePath), { recursive: true });
+			await fs.mkdir(cacheDir, { recursive: true });
 			await fs.writeFile(cachePath, JSON.stringify(payload, null, 2), 'utf8');
 		} catch (e) {
 			// Cache write error ignore
