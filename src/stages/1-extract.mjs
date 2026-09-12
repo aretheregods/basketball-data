@@ -69,7 +69,7 @@ export async function extractStage(scraper, league, year, options = {}) {
 	const extractGameIdFromSlug = (slug) => {
 		if (!slug || typeof slug !== 'string') return '';
 		const clean = slug.trim();
-		// Match standard competition prefix segment: -L2026_..., -A2025_..., -E2025_..., -BCLA2024_...
+		// Match standard competition prefix segment: -L2026_..., -A2025_..., -E2025_..., -BCLA2024_..., -O2021_...
 		const prefixMatch = clean.match(/(?:^|-)([A-Za-z]{1,5}\d{2,4}_.+)$/);
 		if (prefixMatch) {
 			return prefixMatch[1];
@@ -136,7 +136,7 @@ export async function extractStage(scraper, league, year, options = {}) {
 				const parsed = JSON.parse(content);
 				if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
 					// Verify that for PBP runs, the cached payload is a PBP payload
-					if (!isPbp || (parsed.pbp || parsed.game || parsed.actions || parsed.Rows || parsed.resultSets || parsed.jugadas)) {
+					if (!isPbp || (parsed.pbp || parsed.game || parsed.actions || parsed.Rows || parsed.resultSets || parsed.jugadas || parsed.data?.play_by_play)) {
 						console.log(`⏭️ Game ID: ${gameId} already exists in raw cache. Skipping...`);
 						continue;
 					}
@@ -201,7 +201,8 @@ export async function extractStage(scraper, league, year, options = {}) {
 
 			// Add a short randomized delay to prevent rate-limiting (skipped in testing)
 			if (process.env.NODE_ENV !== 'test') {
-				const delay = 1000 + Math.floor(Math.random() * 1000);
+				const baseDelay = league.toLowerCase().startsWith('nbl') ? 1500 : 1000;
+				const delay = baseDelay + Math.floor(Math.random() * 1000);
 				await new Promise(resolve => setTimeout(resolve, delay));
 			}
 		} catch (error) {

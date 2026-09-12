@@ -4,8 +4,8 @@ import { HTTPClient } from '#utils';
 
 /**
  * @description Multi-tier Harvester & Network scraper for NBL Play-By-Play feeds.
- * Supports official NBL Rosetta API endpoints, Playwright NBL Match Page navigation & response interception,
- * Genius Sports FIBA LiveStats CDN, and Rosetta season match index resolution.
+ * Includes explicit rate-limiting protection, backoff retries, and multi-tier fallbacks
+ * (official Rosetta API, Playwright Match Page navigation, FIBA LiveStats CDN, season index resolution).
  */
 export class NblPbpHarvester extends HTTPClient {
 	/**
@@ -19,6 +19,51 @@ export class NblPbpHarvester extends HTTPClient {
 		});
 		this.bypassNetwork = options.bypassNetwork ?? (process.env.NODE_ENV === 'test');
 		this.seasonMatchCache = {};
+	}
+
+	/**
+	 * @description Helper to fetch JSON with rate-limiting backoff (HTTP 429 / 403 / 5xx)
+	 * @param {string} url
+	 * @param {Object} [headers={}]
+	 * @param {number} [retries=3]
+	 * @param {number} [backoffMs=2000]
+	 * @returns {Promise<Object|null>}
+	 */
+	async fetchWithRateLimitBackoff(url, headers = {}, retries = 3, backoffMs = 2000) {
+		const reqHeaders = {
+			'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+			'Accept': 'application/json',
+			'Origin': 'https://www.nbl.com.au',
+			'Referer': 'https://www.nbl.com.au/',
+			...headers
+		};
+
+		for (let attempt = 0; attempt <= retries; attempt++) {
+			try {
+				const res = await fetch(url, { headers: reqHeaders });
+
+				if (res.status === 429 || res.status === 403 || res.status >= 500) {
+					if (attempt < retries) {
+						const delay = backoffMs * Math.pow(2, attempt) + Math.floor(Math.random() * 500);
+						console.warn(`⚠️ [NblPbpHarvester] Rate limit/HTTP ${res.status} from ${url}. Backing off for ${delay}ms... (attempt ${attempt + 1}/${retries})`);
+						await new Promise(resolve => setTimeout(resolve, delay));
+						continue;
+					}
+				}
+
+				if (res.ok) {
+					return await res.json();
+				}
+			} catch (err) {
+				if (attempt < retries) {
+					const delay = backoffMs * Math.pow(2, attempt);
+					console.warn(`⚠️ [NblPbpHarvester] Fetch error for ${url}: ${err.message}. Retrying in ${delay}ms...`);
+					await new Promise(resolve => setTimeout(resolve, delay));
+				}
+			}
+		}
+
+		return null;
 	}
 
 	/**
@@ -36,7 +81,7 @@ export class NblPbpHarvester extends HTTPClient {
 	}
 
 	/**
-	 * @description Fetches raw NBL Play-by-play payload using a multi-tier strategy.
+	 * @description Fetches raw NBL Play-by-play payload using a multi-tier rate-limit aware strategy.
 	 * @param {string} gameId - NBL game ID or FIBA match code
 	 * @param {string|number} year - Season year
 	 * @returns {Promise<Object>} - Raw PBP JSON payload
@@ -65,30 +110,25 @@ export class NblPbpHarvester extends HTTPClient {
 
 		let payload = null;
 
-		// Tier 1: Rosetta Official Live Match Endpoint
+		// Inject polite rate limit delay before hitting NBL APIs
+		if (process.env.NODE_ENV !== 'test') {
+			const pacingDelay = 1000 + Math.floor(Math.random() * 1000);
+			await new Promise(resolve => setTimeout(resolve, pacingDelay));
+		}
+
+		// Tier 1: Rosetta Official Live Match Endpoint with rate-limiting backoff
 		try {
 			const rosettaUrl = `https://prod.rosetta.nbl.com.au/get/match/${fibaMatchId}/live/all`;
-			const res = await fetch(rosettaUrl, {
-				headers: {
-					'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-					'Accept': 'application/json',
-					'Origin': 'https://www.nbl.com.au',
-					'Referer': 'https://www.nbl.com.au/'
-				}
-			});
-
-			if (res.ok) {
-				const json = await res.json();
-				const matchData = Array.isArray(json?.data) ? json.data[0] : json?.data;
-				if (matchData && (Array.isArray(matchData.play_by_play) && matchData.play_by_play.length > 0)) {
-					payload = { source: 'rosetta_live', data: matchData };
-				}
+			const json = await this.fetchWithRateLimitBackoff(rosettaUrl);
+			const matchData = Array.isArray(json?.data) ? json.data[0] : json?.data;
+			if (matchData && (Array.isArray(matchData.play_by_play) && matchData.play_by_play.length > 0)) {
+				payload = { source: 'rosetta_live', data: matchData };
 			}
 		} catch (err) {
 			console.warn(`⚠️ [NblPbpHarvester] Tier 1 Rosetta Live fetch failed for Game ID ${gameId}: ${err.message}. Trying Tier 2...`);
 		}
 
-		// Tier 2: Playwright NBL Match Page Navigation & Response Interception (lnb.fr style)
+		// Tier 2: Playwright NBL Match Page Navigation & Response Interception (rate-limit aware)
 		if (!payload) {
 			try {
 				const { chromium } = await import('playwright');
@@ -147,18 +187,9 @@ export class NblPbpHarvester extends HTTPClient {
 		if (!payload && fibaMatchId) {
 			try {
 				const fibaUrl = `https://fibalivestats.dcd.shared.geniussports.com/data/${fibaMatchId}/data.json`;
-				const res = await fetch(fibaUrl, {
-					headers: {
-						'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-						'Accept': 'application/json'
-					}
-				});
-
-				if (res.ok) {
-					const fibaData = await res.json();
-					if (fibaData && (Array.isArray(fibaData.pbp) || Array.isArray(fibaData.actions))) {
-						payload = { source: 'fiba_livestats', data: fibaData };
-					}
+				const fibaData = await this.fetchWithRateLimitBackoff(fibaUrl, { Origin: '', Referer: '' });
+				if (fibaData && (Array.isArray(fibaData.pbp) || Array.isArray(fibaData.actions))) {
+					payload = { source: 'fiba_livestats', data: fibaData };
 				}
 			} catch (err) {
 				console.warn(`⚠️ [NblPbpHarvester] Tier 3 FIBA LiveStats CDN fetch failed for Game ID ${gameId}: ${err.message}`);
@@ -171,20 +202,9 @@ export class NblPbpHarvester extends HTTPClient {
 				let seasonMatches = this.seasonMatchCache[String(year)];
 				if (!seasonMatches) {
 					const indexUrl = `https://prod.rosetta.nbl.com.au/get/nbl/matches/in/season/${year}/all`;
-					const idxRes = await fetch(indexUrl, {
-						headers: {
-							'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-							'Accept': 'application/json',
-							'Origin': 'https://www.nbl.com.au',
-							'Referer': 'https://www.nbl.com.au/'
-						}
-					});
-
-					if (idxRes.ok) {
-						const idxJson = await idxRes.json();
-						seasonMatches = Array.isArray(idxJson?.data) ? idxJson.data : [];
-						this.seasonMatchCache[String(year)] = seasonMatches;
-					}
+					const idxJson = await this.fetchWithRateLimitBackoff(indexUrl);
+					seasonMatches = Array.isArray(idxJson?.data) ? idxJson.data : [];
+					this.seasonMatchCache[String(year)] = seasonMatches;
 				}
 
 				if (seasonMatches && seasonMatches.length > 0) {
@@ -210,34 +230,21 @@ export class NblPbpHarvester extends HTTPClient {
 							// Try Rosetta Live first
 							try {
 								const targetUrl = `https://prod.rosetta.nbl.com.au/get/match/${targetId}/live/all`;
-								const res = await fetch(targetUrl, {
-									headers: {
-										'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64)',
-										'Accept': 'application/json',
-										'Origin': 'https://www.nbl.com.au',
-										'Referer': 'https://www.nbl.com.au/'
-									}
-								});
-								if (res.ok) {
-									const json = await res.json();
-									const matchData = Array.isArray(json?.data) ? json.data[0] : json?.data;
-									if (matchData && (Array.isArray(matchData.play_by_play) && matchData.play_by_play.length > 0)) {
-										payload = { source: 'rosetta_live', data: matchData };
-										break;
-									}
+								const json = await this.fetchWithRateLimitBackoff(targetUrl);
+								const matchData = Array.isArray(json?.data) ? json.data[0] : json?.data;
+								if (matchData && (Array.isArray(matchData.play_by_play) && matchData.play_by_play.length > 0)) {
+									payload = { source: 'rosetta_live', data: matchData };
+									break;
 								}
 							} catch (e) {}
 
 							// Try FIBA CDN
 							try {
 								const fibaUrl = `https://fibalivestats.dcd.shared.geniussports.com/data/${targetId}/data.json`;
-								const res = await fetch(fibaUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-								if (res.ok) {
-									const fibaData = await res.json();
-									if (fibaData && (Array.isArray(fibaData.pbp) || Array.isArray(fibaData.actions))) {
-										payload = { source: 'fiba_livestats', data: fibaData };
-										break;
-									}
+								const fibaData = await this.fetchWithRateLimitBackoff(fibaUrl, { Origin: '', Referer: '' });
+								if (fibaData && (Array.isArray(fibaData.pbp) || Array.isArray(fibaData.actions))) {
+									payload = { source: 'fiba_livestats', data: fibaData };
+									break;
 								}
 							} catch (e) {}
 						}
