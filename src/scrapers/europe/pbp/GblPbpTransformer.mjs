@@ -239,10 +239,27 @@ function buildStintsFromEvents(gameId, competitionId, events) {
  * @param {Object} rawJson
  * @returns {{ events: Object[], stints: Object[] }}
  */
+/**
+ * @description Extracts 4-digit season year from a game ID slug or code.
+ * @param {string} gameId
+ * @param {string} [defaultYear='2026']
+ * @returns {string}
+ */
+function extractSeasonYear(gameId, defaultYear = '2026') {
+	const str = String(gameId || '').trim();
+	const match = str.match(/(?:^|[-_])[A-Za-z](\d{2,4})(?:_|$)/i);
+	if (match) {
+		let yr = match[1];
+		if (yr.length === 2) yr = '20' + yr;
+		return yr;
+	}
+	return String(defaultYear);
+}
+
 export function transformGblPbp(gameId, rawJson) {
 	if (!rawJson) return { events: [], stints: [] };
 
-	const seasonYear = rawJson.seasonYear || '2026';
+	const seasonYear = rawJson.seasonYear || extractSeasonYear(gameId, '2026');
 	const competitionId = rawJson.competitionId || `GBL${seasonYear}`;
 
 	let rawEvents = [];
