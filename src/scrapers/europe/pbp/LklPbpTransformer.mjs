@@ -263,11 +263,28 @@ function buildStintsFromEvents(gameId, competitionId, events) {
  * @param {Object} rawPayload - Raw LKL play-by-play payload object
  * @returns {{ events: Object[], stints: Object[] }}
  */
+/**
+ * @description Extracts 4-digit season year from a game ID slug or code.
+ * @param {string} gameId
+ * @param {string} [defaultYear='2026']
+ * @returns {string}
+ */
+function extractSeasonYear(gameId, defaultYear = '2026') {
+	const str = String(gameId || '').trim();
+	const match = str.match(/(?:^|[-_])[A-Za-z](\d{2,4})(?:_|$)/i);
+	if (match) {
+		let yr = match[1];
+		if (yr.length === 2) yr = '20' + yr;
+		return yr;
+	}
+	return String(defaultYear);
+}
+
 export function transformLklPbp(gameId, rawPayload) {
 	if (!rawPayload) return { events: [], stints: [] };
 
 	const cleanGameId = String(gameId || '').trim();
-	const seasonYear = rawPayload.seasonYear || '2026';
+	const seasonYear = rawPayload.seasonYear || extractSeasonYear(cleanGameId, '2026');
 	const competitionId = rawPayload.competitionId || `LKL${seasonYear}`;
 
 	// Extract raw actions array based on source payload format

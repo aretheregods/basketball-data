@@ -237,10 +237,27 @@ function buildStintsFromEvents(gameId, competitionId, events) {
  * @param {Object} rawJson
  * @returns {{ events: Object[], stints: Object[] }}
  */
+/**
+ * @description Extracts 4-digit season year from a game ID slug or code.
+ * @param {string} gameId
+ * @param {string} [defaultYear='2025']
+ * @returns {string}
+ */
+function extractSeasonYear(gameId, defaultYear = '2025') {
+	const str = String(gameId || '').trim();
+	const match = str.match(/(?:^|[-_])[A-Za-z](\d{2,4})(?:_|$)/i);
+	if (match) {
+		let yr = match[1];
+		if (yr.length === 2) yr = '20' + yr;
+		return yr;
+	}
+	return String(defaultYear);
+}
+
 export function transformLnbPbp(gameId, rawJson) {
 	if (!rawJson) return { events: [], stints: [] };
 
-	const seasonYear = rawJson.seasonYear || '2025';
+	const seasonYear = rawJson.seasonYear || extractSeasonYear(gameId, '2025');
 	const competitionId = rawJson.competitionId || `LNB${seasonYear}`;
 
 	// Check if rawJson contains period-keyed PBP object (e.g., rawJson.pbp["1"], rawJson.pbp["2"]) or rawJson.data.pbp
