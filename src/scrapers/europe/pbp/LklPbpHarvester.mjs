@@ -40,11 +40,15 @@ export class LklPbpHarvester extends HTTPClient {
 			const keyPart = parts[0] || 'K2026';
 			gameCode = parts[1] || '1';
 
-			const match = keyPart.match(/(?:-)?K(\d{4})$/i);
+			const match = keyPart.match(/(?:-)?K(\d{2,4})$/i);
 			if (match) {
 				seasonYear = match[1];
 			} else if (keyPart.startsWith('K')) {
 				seasonYear = keyPart.substring(1);
+			}
+
+			if (seasonYear.length === 2) {
+				seasonYear = `20${seasonYear}`;
 			}
 		} else if (clean.includes('-')) {
 			const parts = clean.split('-');
