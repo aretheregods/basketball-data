@@ -7,7 +7,7 @@ import { NblScraper } from '../src/scrapers/nbl/NblScraper.mjs';
 import { extractStage } from '../src/stages/1-extract.mjs';
 import { transformStage } from '../src/stages/2-transform.mjs';
 import { loadStage, initDatabase } from '../src/stages/3-load.mjs';
-import { transformNblPbp, parseFibaClockToSeconds, calculateGameSecondsRemaining } from '../src/scrapers/nbl/pbp/NblPbpTransformer.mjs';
+import { transformNblPbp, parseFibaClockToSeconds, calculateGameSecondsRemaining, normalizeNblAction } from '../src/scrapers/nbl/pbp/NblPbpTransformer.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -66,8 +66,62 @@ const mockFibaPbpResponse = {
 	]
 };
 
+const mockTier1ApiPayload = {
+	source: 'nbl_api',
+	data: {
+		actions: [
+			{
+				actionId: 101,
+				period: 1,
+				clock: "09:50",
+				type: "3pt jump shot made",
+				teamId: "MELB",
+				playerId: "chris-goulding",
+				description: "Chris Goulding 3pt jump shot made",
+				scoreHome: 3,
+				scoreAway: 0
+			},
+			{
+				actionId: 102,
+				period: 1,
+				clock: "09:20",
+				type: "substitution",
+				teamId: "MELB",
+				playerId: "chris-goulding",
+				secondaryPlayerId: "shea-ili",
+				description: "Substitution: Shea Ili in for Chris Goulding",
+				scoreHome: 3,
+				scoreAway: 0
+			}
+		]
+	}
+};
+
+const mockTier2WebflowPayload = {
+	source: 'webflow_state',
+	data: {
+		pbp: [
+			{
+				eventNum: 1,
+				quarter: 1,
+				time: "08:10",
+				eventType: "2pt made",
+				team: "SYDN",
+				playerId: "jaylen-adams",
+				desc: "Jaylen Adams 2pt layup made",
+				score: "3 - 2"
+			}
+		]
+	}
+};
+
 test.before(async () => {
 	process.env.NODE_ENV = 'test';
+	for (const key of Object.keys(process.env)) {
+		if (key.startsWith('NODE_TEST_') || key === 'NODE_CHANNEL_FD') {
+			delete process.env[key];
+		}
+	}
 	await fs.rm(path.resolve(`data/raw/nbl_pbp_test`), { recursive: true, force: true });
 	await fs.rm(path.resolve(`data/transformed/nbl_pbp_test`), { recursive: true, force: true });
 	await fs.rm(path.resolve(`data/SQL/NBL_PBP_TEST.sqlite`), { force: true });
@@ -93,11 +147,17 @@ test.describe('NBL Play-by-Play Unit Tests', () => {
 		assert.equal(calculateGameSecondsRemaining(5, 300), 300); // OT1 05:00 = 300
 	});
 
+	test('normalizeNblAction should map action descriptions to standard event types', () => {
+		assert.equal(normalizeNblAction('Chris Goulding 3pt jump shot made', '3pt'), '3FGM');
+		assert.equal(normalizeNblAction('Substitution: Shea Ili in for Chris Goulding', 'sub'), 'SUB');
+		assert.equal(normalizeNblAction('Jaylen Adams offensive rebound', 'reb'), 'ORB');
+	});
+
 	test('transformNblPbp should clean raw FIBA LiveStats PBP JSON and generate derived 5-on-5 stints', () => {
 		const result = transformNblPbp('melbourne-united-vs-sydney-kings-O2024_10001', mockFibaPbpResponse);
 
 		assert.equal(result.events.length, 4);
-		assert.equal(result.events[1].event_type, 'shot');
+		assert.equal(result.events[1].event_type, '3FGM');
 		assert.equal(result.events[1].home_score, 3);
 		assert.equal(result.events[1].loc_x, 12.5);
 		assert.equal(result.events[1].loc_y, 25.0);
@@ -107,6 +167,20 @@ test.describe('NBL Play-by-Play Unit Tests', () => {
 		assert.equal(result.stints[0].game_id, 'melbourne-united-vs-sydney-kings-O2024_10001');
 		assert.equal(result.stints[0].period, 1);
 		assert.equal(result.stints[0].duration_seconds, 75);
+	});
+
+	test('transformNblPbp should handle Tier 1 API payload and Tier 2 Webflow payload formats', () => {
+		const t1Result = transformNblPbp('O2024_10002', mockTier1ApiPayload);
+		assert.equal(t1Result.events.length, 2);
+		assert.equal(t1Result.events[0].event_type, '3FGM');
+		assert.equal(t1Result.events[0].home_score, 3);
+		assert.equal(t1Result.events[1].event_type, 'SUB');
+
+		const t2Result = transformNblPbp('O2024_10003', mockTier2WebflowPayload);
+		assert.equal(t2Result.events.length, 1);
+		assert.equal(t2Result.events[0].event_type, '2FGM');
+		assert.equal(t2Result.events[0].home_score, 3);
+		assert.equal(t2Result.events[0].away_score, 2);
 	});
 });
 
