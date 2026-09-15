@@ -59,7 +59,7 @@ export async function transformStage(league, year, options = {}) {
 				try {
 					const sfFiles = await fs.readdir(sfDir);
 					for (const f of sfFiles.filter(file => file.endsWith('.json'))) {
-						jsonFilesMap.push({ dir: sfDir, fileName: f });
+						jsonFilesMap.push({ dir: sfDir, fileName: f, subFolder: sf });
 					}
 				} catch (e) {
 					// Subfolder doesn't exist
@@ -70,7 +70,7 @@ export async function transformStage(league, year, options = {}) {
 			try {
 				const files = await fs.readdir(dir);
 				for (const f of files.filter(file => file.endsWith('.json'))) {
-					jsonFilesMap.push({ dir, fileName: f });
+					jsonFilesMap.push({ dir, fileName: f, subFolder: league.toLowerCase() });
 				}
 			} catch (e) {
 				// Directory doesn't exist
@@ -108,30 +108,31 @@ export async function transformStage(league, year, options = {}) {
 			const { transformLklPbp } = await import('../scrapers/europe/pbp/LklPbpTransformer.mjs');
 			const { transformAbaPbp } = await import('../scrapers/europe/pbp/AbaPbpTransformer.mjs');
 
-			transformFn = (gameId, rawData) => {
+			transformFn = (gameId, rawData, subFolder) => {
 				const clean = String(gameId || '').trim();
 				const compId = rawData && rawData.competitionId ? String(rawData.competitionId).toLowerCase() : '';
+				const sf = String(subFolder || '').toLowerCase();
 				const prefix = getEuropeGamePrefix(clean);
 
-				if (prefix === 'A' || clean.includes('_acb_') || compId.includes('acb')) {
+				if (sf === 'acb' || prefix === 'A' || clean.includes('_acb_') || compId.includes('acb')) {
 					return transformAcbPbp(gameId, rawData);
 				}
-				if (prefix === 'L' || clean.includes('_lnb_') || compId.includes('lnb')) {
+				if (sf === 'lnb' || prefix === 'L' || clean.includes('_lnb_') || compId.includes('lnb')) {
 					return transformLnbPbp(gameId, rawData);
 				}
-				if (prefix === 'I' || clean.includes('_lba_') || compId.includes('lba')) {
+				if (sf === 'lba' || prefix === 'I' || clean.includes('_lba_') || compId.includes('lba')) {
 					return transformLbaPbp(gameId, rawData);
 				}
-				if (prefix === 'G' || clean.includes('_gbl_') || compId.includes('gbl')) {
+				if (sf === 'gbl' || prefix === 'G' || clean.includes('_gbl_') || compId.includes('gbl')) {
 					return transformGblPbp(gameId, rawData);
 				}
-				if (prefix === 'D' || clean.includes('_bbl_') || compId.includes('bbl')) {
+				if (sf === 'bbl' || prefix === 'D' || clean.includes('_bbl_') || compId.includes('bbl')) {
 					return transformBblPbp(gameId, rawData);
 				}
-				if (prefix === 'K' || clean.includes('_lkl_') || compId.includes('lkl')) {
+				if (sf === 'lkl' || prefix === 'K' || clean.includes('_lkl_') || compId.includes('lkl')) {
 					return transformLklPbp(gameId, rawData);
 				}
-				if (prefix === 'V' || clean.includes('_aba_') || compId.includes('aba')) {
+				if (sf === 'aba' || prefix === 'V' || clean.includes('_aba_') || compId.includes('aba')) {
 					return transformAbaPbp(gameId, rawData);
 				}
 				return transformEuroleaguePbp(gameId, rawData);
@@ -140,14 +141,14 @@ export async function transformStage(league, year, options = {}) {
 			throw new Error(`PBP transformation not implemented for league: ${league}`);
 		}
 
-		for (const { dir, fileName } of jsonFilesMap) {
+		for (const { dir, fileName, subFolder } of jsonFilesMap) {
 			const filePath = path.join(dir, fileName);
 			try {
 				const content = await fs.readFile(filePath, 'utf8');
 				const rawData = JSON.parse(content);
 				if (!rawData) continue;
 				const gameId = fileName.replace('.json', '');
-				const result = transformFn(gameId, rawData);
+				const result = transformFn(gameId, rawData, subFolder);
 				if (result && Array.isArray(result.events)) {
 					allEvents.push(...result.events);
 				}

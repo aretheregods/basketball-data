@@ -254,6 +254,44 @@ export class BaseNormalizer {
 	}
 
 	/**
+	 * @description Checks if a raw PBP payload contains actual non-empty play-by-play actions or events.
+	 * @param {Object} parsed - The raw play-by-play payload object
+	 * @returns {boolean} True if payload contains non-empty actions/events, false otherwise
+	 */
+	static isNonEmptyPbpPayload(parsed) {
+		if (!parsed || typeof parsed !== 'object') return false;
+		if (Array.isArray(parsed.actions) && parsed.actions.length > 0) return true;
+		if (Array.isArray(parsed.events) && parsed.events.length > 0) return true;
+		if (Array.isArray(parsed.jugadas) && parsed.jugadas.length > 0) return true;
+		if (Array.isArray(parsed.plays) && parsed.plays.length > 0) return true;
+		if (Array.isArray(parsed.pbp) && parsed.pbp.length > 0) return true;
+		if (Array.isArray(parsed.Rows) && parsed.Rows.length > 0) return true;
+		if (Array.isArray(parsed.pbp?.Rows) && parsed.pbp.Rows.length > 0) return true;
+		if (Array.isArray(parsed.pbp?.actions) && parsed.pbp.actions.length > 0) return true;
+		if (Array.isArray(parsed.game?.actions) && parsed.game.actions.length > 0) return true;
+		if (Array.isArray(parsed.game?.plays) && parsed.game.plays.length > 0) return true;
+		if (Array.isArray(parsed.resultSets) && parsed.resultSets.length > 0) return true;
+		if (Array.isArray(parsed.data?.pbp) && parsed.data.pbp.length > 0) return true;
+		if (Array.isArray(parsed.data?.play_by_play) && parsed.data.play_by_play.length > 0) return true;
+		if (parsed.pbp && typeof parsed.pbp === 'object') {
+			if ((Array.isArray(parsed.pbp.FirstQuarter) && parsed.pbp.FirstQuarter.length > 0) ||
+				(Array.isArray(parsed.pbp['1']) && parsed.pbp['1'].length > 0)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * @description Checks if a raw PBP payload contains actual non-empty play-by-play actions or events.
+	 * @param {Object} parsed - The raw play-by-play payload object
+	 * @returns {boolean} True if payload contains non-empty actions/events, false otherwise
+	 */
+	isNonEmptyPbpPayload(parsed) {
+		return BaseNormalizer.isNonEmptyPbpPayload(parsed);
+	}
+
+	/**
 	 * @description Checks if a raw game JSON payload represents an unplayed/future game.
 	 * @param {Object} raw - The raw game JSON object
 	 * @param {string} [leagueKey] - The lowercase league key

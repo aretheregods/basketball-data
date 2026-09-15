@@ -11,11 +11,22 @@ export class IsraeliScraper extends HTTPClient {
 	/**
 	 * @constructor
 	 */
-	constructor() {
+	constructor(options = {}) {
 		super('https://www.basket.co.il');
 		this.harvester = new IsraeliHarvester(this);
 		this.gameSlugs = [];
-		this.bypassNetwork = process.env.NODE_ENV === 'test';
+		this._bypassNetwork = options.bypassNetwork;
+	}
+
+	get bypassNetwork() {
+		if (this._bypassNetwork !== undefined) {
+			return Boolean(this._bypassNetwork);
+		}
+		return process.env.NODE_ENV === 'test';
+	}
+
+	set bypassNetwork(val) {
+		this._bypassNetwork = val;
 	}
 
 	/**

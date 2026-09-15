@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { validateSchema } from '#utils';
+import { validateSchema, BaseNormalizer } from '#utils';
 import { getEuropeGamePrefix } from '../scrapers/europe/europe.mjs';
 
 /**
@@ -135,8 +135,8 @@ export async function extractStage(scraper, league, year, options = {}) {
 				const content = await fs.readFile(filePath, 'utf8');
 				const parsed = JSON.parse(content);
 				if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-					// Verify that for PBP runs, the cached payload is a PBP payload
-					if (!isPbp || (parsed.pbp || parsed.game || parsed.actions || parsed.Rows || parsed.resultSets || parsed.jugadas || parsed.data?.play_by_play)) {
+					// Verify that for PBP runs, the cached payload is a PBP payload with actual events
+					if (!isPbp || BaseNormalizer.isNonEmptyPbpPayload(parsed)) {
 						console.log(`⏭️ Game ID: ${gameId} already exists in raw cache. Skipping...`);
 						continue;
 					}

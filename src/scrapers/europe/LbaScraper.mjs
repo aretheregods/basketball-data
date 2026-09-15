@@ -11,11 +11,22 @@ export class LbaScraper extends HTTPClient {
 	/**
 	 * @constructor
 	 */
-	constructor() {
+	constructor(options = {}) {
 		super('https://www.legabasket.it');
 		this.harvester = new LbaHarvester(this);
 		this.gameSlugs = [];
-		this.bypassNetwork = process.env.NODE_ENV === 'test';
+		this._bypassNetwork = options.bypassNetwork;
+	}
+
+	get bypassNetwork() {
+		if (this._bypassNetwork !== undefined) {
+			return Boolean(this._bypassNetwork);
+		}
+		return process.env.NODE_ENV === 'test';
+	}
+
+	set bypassNetwork(val) {
+		this._bypassNetwork = val;
 	}
 
 	/**

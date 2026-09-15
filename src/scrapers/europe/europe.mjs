@@ -70,45 +70,47 @@ export class EuropeScraper extends HTTPClient {
 		this.lklPbpHarvester = new LklPbpHarvester(options);
 		this.abaPbpHarvester = new AbaPbpHarvester(options);
 
+		const engineOptions = { ...options };
+
 		// Instantiate available engines
 		this.engines = {
-			euroleague: new EuroleagueEngine(),
-			eurocup: new EuroleagueEngine(), // Shared engine for Euroleague API
-			bcl: new EuroleagueEngine(),      // Shared engine for BCL API
-			acb: new AcbEngine(),
-			lnb: new LnbScraper(),
-			lba: new LbaScraper(),
-			gbl: new GblScraper(),
-			bbl: new BblScraper(),
-			lkl: new LklScraper(),
-			aba: new AbaScraper(),
-			bsl: new BslScraper(),
-			israel: new IsraeliScraper()
+			euroleague: new EuroleagueEngine(engineOptions),
+			eurocup: new EuroleagueEngine(engineOptions), // Shared engine for Euroleague API
+			bcl: new EuroleagueEngine(engineOptions),      // Shared engine for BCL API
+			acb: new AcbEngine(engineOptions),
+			lnb: new LnbScraper(engineOptions),
+			lba: new LbaScraper(engineOptions),
+			gbl: new GblScraper(engineOptions),
+			bbl: new BblScraper(engineOptions),
+			lkl: new LklScraper(engineOptions),
+			aba: new AbaScraper(engineOptions),
+			bsl: new BslScraper(engineOptions),
+			israel: new IsraeliScraper(engineOptions)
 		};
 
 		// Dynamically register any other requested competitions/domestic leagues to share the EuroleagueEngine
 		for (const comp of this.competitions) {
 			if (!this.engines[comp]) {
 				if (comp === 'acb') {
-					this.engines[comp] = new AcbEngine();
+					this.engines[comp] = new AcbEngine(engineOptions);
 				} else if (comp === 'lnb') {
-					this.engines[comp] = new LnbScraper();
+					this.engines[comp] = new LnbScraper(engineOptions);
 				} else if (comp === 'lba') {
-					this.engines[comp] = new LbaScraper();
+					this.engines[comp] = new LbaScraper(engineOptions);
 				} else if (comp === 'gbl') {
-					this.engines[comp] = new GblScraper();
+					this.engines[comp] = new GblScraper(engineOptions);
 				} else if (comp === 'bbl') {
-					this.engines[comp] = new BblScraper();
+					this.engines[comp] = new BblScraper(engineOptions);
 				} else if (comp === 'lkl') {
-					this.engines[comp] = new LklScraper();
+					this.engines[comp] = new LklScraper(engineOptions);
 				} else if (comp === 'aba') {
-					this.engines[comp] = new AbaScraper();
+					this.engines[comp] = new AbaScraper(engineOptions);
 				} else if (comp === 'bsl') {
-					this.engines[comp] = new BslScraper();
+					this.engines[comp] = new BslScraper(engineOptions);
 				} else if (comp === 'israel') {
-					this.engines[comp] = new IsraeliScraper();
+					this.engines[comp] = new IsraeliScraper(engineOptions);
 				} else {
-					this.engines[comp] = new EuroleagueEngine();
+					this.engines[comp] = new EuroleagueEngine(engineOptions);
 				}
 			}
 		}
