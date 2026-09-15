@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { HTTPClient } from '#utils';
+import { HTTPClient, BaseNormalizer } from '#utils';
 
 /**
  * @description Harvester for EuroLeague and EuroCup Play-by-Play and Points API endpoints.
@@ -71,7 +71,7 @@ export class EuroleaguePbpHarvester extends HTTPClient {
 		try {
 			const cached = await fs.readFile(cachePath, 'utf-8');
 			const parsed = JSON.parse(cached);
-			if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+			if (BaseNormalizer.isNonEmptyPbpPayload(parsed)) {
 				return parsed;
 			}
 		} catch (e) {

@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { HTTPClient } from '#utils';
+import { HTTPClient, BaseNormalizer } from '#utils';
 
 /**
  * @description Harvester for Lithuanian Basketball (Betsafe LKL) Play-by-Play data.
@@ -40,11 +40,12 @@ export class LklPbpHarvester extends HTTPClient {
 			const keyPart = parts[0] || 'K2026';
 			gameCode = parts[1] || '1';
 
-			const match = keyPart.match(/(?:-)?K(\d{4})$/i);
+			const match = keyPart.match(/(?:-)?K(\d{2,4})$/i);
 			if (match) {
-				seasonYear = match[1];
-			} else if (keyPart.startsWith('K')) {
-				seasonYear = keyPart.substring(1);
+				seasonYear = match[1].length === 2 ? `20${match[1]}` : match[1];
+			} else if (keyPart.toUpperCase().startsWith('K')) {
+				const y = keyPart.substring(1);
+				seasonYear = y.length === 2 ? `20${y}` : y;
 			}
 		} else if (clean.includes('-')) {
 			const parts = clean.split('-');
@@ -52,6 +53,10 @@ export class LklPbpHarvester extends HTTPClient {
 			if (lastPart.includes('_')) {
 				return this.parseGameId(lastPart, defaultYear);
 			}
+		}
+
+		if (seasonYear.length === 2) {
+			seasonYear = `20${seasonYear}`;
 		}
 
 		return {
@@ -137,10 +142,8 @@ export class LklPbpHarvester extends HTTPClient {
 		try {
 			const cached = await fs.readFile(cachePath, 'utf-8');
 			const parsed = JSON.parse(cached);
-			if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-				if (Array.isArray(parsed.actions) || Array.isArray(parsed.events) || parsed.pbp || parsed.data) {
-					return parsed;
-				}
+			if (BaseNormalizer.isNonEmptyPbpPayload(parsed)) {
+				return parsed;
 			}
 		} catch (e) {
 			// Cache miss or invalid JSON, proceed

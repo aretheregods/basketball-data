@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { HTTPClient } from '#utils';
+import { HTTPClient, BaseNormalizer } from '#utils';
 
 /**
  * @description Harvester for French LNB Élite (Pro A) Play-by-Play endpoints.
@@ -17,7 +17,18 @@ export class LnbPbpHarvester extends HTTPClient {
 			'accept': 'application/json, text/plain, */*',
 			'referer': 'https://lnb.fr/en/calendar'
 		});
-		this.bypassNetwork = options.bypassNetwork || false;
+		this._bypassNetwork = options.bypassNetwork;
+	}
+
+	get bypassNetwork() {
+		if (this._bypassNetwork !== undefined) {
+			return Boolean(this._bypassNetwork);
+		}
+		return process.env.NODE_ENV === 'test';
+	}
+
+	set bypassNetwork(val) {
+		this._bypassNetwork = val;
 	}
 
 	/**
@@ -36,13 +47,14 @@ export class LnbPbpHarvester extends HTTPClient {
 		let seasonYear = String(defaultYear);
 
 		if (clean.includes('-L') || clean.includes('_L')) {
-			const lIndex = clean.search(/[-_]L\d{4}/);
+			const lIndex = clean.search(/[-_]L\d{2,4}/i);
 			if (lIndex !== -1) {
 				const afterL = clean.substring(lIndex + 1); // e.g. "L2025_b9da0426-6d55-11f0-9f79-8bb582d8f542"
 				const firstUnderscore = afterL.indexOf('_');
 				if (firstUnderscore !== -1) {
 					const keyPart = afterL.substring(0, firstUnderscore);
-					seasonYear = keyPart.substring(1);
+					const y = keyPart.substring(1);
+					seasonYear = y.length === 2 ? `20${y}` : y;
 					gameCode = afterL.substring(firstUnderscore + 1);
 				}
 			}
@@ -50,7 +62,16 @@ export class LnbPbpHarvester extends HTTPClient {
 			const parts = clean.split('_');
 			const keyPart = parts[0] || 'L2025';
 			gameCode = parts.slice(1).join('_');
-			seasonYear = keyPart.startsWith('L') ? keyPart.substring(1) : keyPart;
+			if (keyPart.toUpperCase().startsWith('L')) {
+				const y = keyPart.substring(1);
+				seasonYear = y.length === 2 ? `20${y}` : y;
+			} else {
+				seasonYear = keyPart;
+			}
+		}
+
+		if (seasonYear.length === 2) {
+			seasonYear = `20${seasonYear}`;
 		}
 
 		// Extract numeric match ID if present
@@ -95,7 +116,7 @@ export class LnbPbpHarvester extends HTTPClient {
 		try {
 			const cached = await fs.readFile(cachePath, 'utf-8');
 			const parsed = JSON.parse(cached);
-			if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+			if (BaseNormalizer.isNonEmptyPbpPayload(parsed)) {
 				return parsed;
 			}
 		} catch (e) {

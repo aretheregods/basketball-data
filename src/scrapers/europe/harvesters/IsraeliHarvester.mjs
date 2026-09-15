@@ -20,8 +20,8 @@ export class IsraeliHarvester extends HTTPClient {
 	 * @returns {Promise<string[]>} List of game slugs
 	 */
 	async getSeasonGameSlugs(year) {
-		// If in test mode, return mock slugs directly to avoid real network/playwright calls
-		if (process.env.NODE_ENV === 'test') {
+		// If in test mode or bypassNetwork set, return mock slugs directly to avoid real network/playwright calls
+		if (process.env.NODE_ENV === 'test' || (this.scraper && this.scraper.bypassNetwork)) {
 			return [
 				`maccabi-playtika-tel-aviv-vs-hapoel-bank-yahav-jerusalem-Y${year}_25237`,
 				`ironi-lati-kiryat-ata-vs-hapoel-afula-Y${year}_25147`

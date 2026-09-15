@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { HTTPClient } from '#utils';
+import { HTTPClient, BaseNormalizer } from '#utils';
 
 /**
  * @description Harvester for Italian Lega Basket Serie A (LBA) Play-by-Play API endpoints.
@@ -37,11 +37,12 @@ export class LbaPbpHarvester extends HTTPClient {
 			gameCode = parts[1] || '1';
 
 			// Extract 4-digit season year from keyPart, e.g. "I2024" or "matchup-I2024"
-			const match = keyPart.match(/(?:-)?I(\d{4})$/i);
+			const match = keyPart.match(/(?:-)?I(\d{2,4})$/i);
 			if (match) {
-				seasonYear = match[1];
-			} else if (keyPart.startsWith('I')) {
-				seasonYear = keyPart.substring(1);
+				seasonYear = match[1].length === 2 ? `20${match[1]}` : match[1];
+			} else if (keyPart.toUpperCase().startsWith('I')) {
+				const y = keyPart.substring(1);
+				seasonYear = y.length === 2 ? `20${y}` : y;
 			}
 		} else if (clean.includes('-')) {
 			const parts = clean.split('-');
@@ -49,6 +50,10 @@ export class LbaPbpHarvester extends HTTPClient {
 			if (lastPart.includes('_')) {
 				return this.parseGameId(lastPart, defaultYear);
 			}
+		}
+
+		if (seasonYear.length === 2) {
+			seasonYear = `20${seasonYear}`;
 		}
 
 		return {
@@ -76,7 +81,7 @@ export class LbaPbpHarvester extends HTTPClient {
 		try {
 			const cached = await fs.readFile(cachePath, 'utf-8');
 			const parsed = JSON.parse(cached);
-			if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+			if (BaseNormalizer.isNonEmptyPbpPayload(parsed)) {
 				return parsed;
 			}
 		} catch (e) {

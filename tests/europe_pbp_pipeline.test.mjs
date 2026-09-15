@@ -45,6 +45,7 @@ import {
 	normalizeAbaAction,
 	transformAbaPbp
 } from '../src/scrapers/europe/pbp/AbaPbpTransformer.mjs';
+import { BaseNormalizer } from '#utils';
 import { extractStage } from '../src/stages/1-extract.mjs';
 import { transformStage } from '../src/stages/2-transform.mjs';
 import { loadStage, initDatabase } from '../src/stages/3-load.mjs';
@@ -211,6 +212,32 @@ test('EuroLeague, ACB, LNB, LBA, GBL, BBL & ABA PBP Clock and Helper Unit Tests'
 		assert.equal(calculateGameSecondsRemaining(4, 120), 120);
 		// OT1 (Period 5): 03:00 remaining -> 180
 		assert.equal(calculateGameSecondsRemaining(5, 180), 180);
+	});
+});
+
+test('PBP Cache Invalidation for Empty Skeleton Objects', async (t) => {
+	await t.test('BaseNormalizer.isNonEmptyPbpPayload should identify empty vs non-empty PBP payloads', () => {
+		const empty1 = { actions: [] };
+		const empty2 = { jugadas: [] };
+		const empty3 = { events: [] };
+		const empty4 = { pbp: { Rows: [] } };
+		const empty5 = { pbp: { actions: [] } };
+
+		assert.equal(BaseNormalizer.isNonEmptyPbpPayload(empty1), false);
+		assert.equal(BaseNormalizer.isNonEmptyPbpPayload(empty2), false);
+		assert.equal(BaseNormalizer.isNonEmptyPbpPayload(empty3), false);
+		assert.equal(BaseNormalizer.isNonEmptyPbpPayload(empty4), false);
+		assert.equal(BaseNormalizer.isNonEmptyPbpPayload(empty5), false);
+
+		const valid1 = { actions: [{ actionNumber: 1 }] };
+		const valid2 = { jugadas: [{ id: 1 }] };
+		const valid3 = { events: [{ raw_index: 0 }] };
+		const valid4 = { pbp: { Rows: [{ NUMBEROFPLAY: 1 }] } };
+
+		assert.equal(BaseNormalizer.isNonEmptyPbpPayload(valid1), true);
+		assert.equal(BaseNormalizer.isNonEmptyPbpPayload(valid2), true);
+		assert.equal(BaseNormalizer.isNonEmptyPbpPayload(valid3), true);
+		assert.equal(BaseNormalizer.isNonEmptyPbpPayload(valid4), true);
 	});
 });
 

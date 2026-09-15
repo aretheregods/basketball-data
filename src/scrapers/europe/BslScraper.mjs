@@ -11,12 +11,23 @@ export class BslScraper extends HTTPClient {
 	/**
 	 * @constructor
 	 */
-	constructor() {
+	constructor(options = {}) {
 		super('https://www.proballers.com');
 		this.harvester = new BslHarvester(this);
 		this.gameSlugs = [];
 		this.gameUrlMap = new Map();
-		this.bypassNetwork = process.env.NODE_ENV === 'test';
+		this._bypassNetwork = options.bypassNetwork;
+	}
+
+	get bypassNetwork() {
+		if (this._bypassNetwork !== undefined) {
+			return Boolean(this._bypassNetwork);
+		}
+		return process.env.NODE_ENV === 'test';
+	}
+
+	set bypassNetwork(val) {
+		this._bypassNetwork = val;
 	}
 
 	/**
