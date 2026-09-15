@@ -264,6 +264,12 @@ function buildStintsFromEvents(gameId, competitionId, events) {
  * @returns {{ events: Object[], stints: Object[] }}
  */
 /**
+ * @description Normalizes game ID to standard format (e.g. K2026_11574 or matchup-K2026_11574)
+ * @param {string} gameId
+ * @param {string} seasonYear
+ * @returns {string}
+ */
+/**
  * @description Extracts 4-digit season year from a game ID slug or code.
  * @param {string} gameId
  * @param {string} [defaultYear='2026']
@@ -280,12 +286,21 @@ function extractSeasonYear(gameId, defaultYear = '2026') {
 	return String(defaultYear);
 }
 
-export function transformLklPbp(gameId, rawPayload) {
+function normalizeEuropeGameId(gameId, seasonYear) {
+	const str = String(gameId || '').trim();
+	if (str.includes('_')) {
+		return str;
+	}
+	return `K${seasonYear}_${str}`;
+}
+
+export function transformLklPbp(gameId, rawPayload, fallbackYear = '2026') {
 	if (!rawPayload) return { events: [], stints: [] };
 
 	const cleanGameId = String(gameId || '').trim();
-	const seasonYear = rawPayload.seasonYear || extractSeasonYear(cleanGameId, '2026');
+	const seasonYear = rawPayload.seasonYear || extractSeasonYear(cleanGameId, fallbackYear);
 	const competitionId = rawPayload.competitionId || `LKL${seasonYear}`;
+	const normalizedGameId = normalizeEuropeGameId(cleanGameId, seasonYear);
 
 	// Extract raw actions array based on source payload format
 	let rawActions = [];
@@ -371,8 +386,8 @@ export function transformLklPbp(gameId, rawPayload) {
 		const actionNumber = action.actionNumber ?? action.raw_index ?? i;
 
 		events.push({
-			event_id: `${competitionId}_${cleanGameId}_lkl_pbp_${actionNumber}_${i}`,
-			game_id: cleanGameId,
+			event_id: `${competitionId}_${normalizedGameId}_lkl_pbp_${actionNumber}_${i}`,
+			game_id: normalizedGameId,
 			competition_id: competitionId,
 			period,
 			clock: String(clockStr),
@@ -393,7 +408,7 @@ export function transformLklPbp(gameId, rawPayload) {
 		});
 	}
 
-	const stints = buildStintsFromEvents(cleanGameId, competitionId, events);
+	const stints = buildStintsFromEvents(normalizedGameId, competitionId, events);
 
 	return { events, stints };
 }

@@ -40,15 +40,11 @@ export class AbaPbpHarvester extends HTTPClient {
 			const keyPart = parts[0] || 'V2025';
 			gameCode = parts[1] || '1';
 
-			const match = keyPart.match(/(?:-)?V(\d{2,4})$/i);
+			const match = keyPart.match(/(?:-)?V(\d{4})$/i);
 			if (match) {
 				seasonYear = match[1];
 			} else if (keyPart.startsWith('V')) {
 				seasonYear = keyPart.substring(1);
-			}
-
-			if (seasonYear.length === 2) {
-				seasonYear = `20${seasonYear}`;
 			}
 		} else if (clean.includes('-')) {
 			const parts = clean.split('-');

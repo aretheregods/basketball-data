@@ -254,11 +254,27 @@ function extractSeasonYear(gameId, defaultYear = '2025') {
 	return String(defaultYear);
 }
 
-export function transformLnbPbp(gameId, rawJson) {
+/**
+ * @description Normalizes game ID to standard format (e.g. L2025_1 or matchup-L2025_1)
+ * @param {string} gameId
+ * @param {string} seasonYear
+ * @returns {string}
+ */
+function normalizeEuropeGameId(gameId, seasonYear) {
+	const str = String(gameId || '').trim();
+	if (str.includes('_')) {
+		return str;
+	}
+	return `L${seasonYear}_${str}`;
+}
+
+export function transformLnbPbp(gameId, rawJson, fallbackYear = '2025') {
 	if (!rawJson) return { events: [], stints: [] };
 
-	const seasonYear = rawJson.seasonYear || extractSeasonYear(gameId, '2025');
+	const cleanGameId = String(gameId || '').trim();
+	const seasonYear = rawJson.seasonYear || extractSeasonYear(cleanGameId, fallbackYear);
 	const competitionId = rawJson.competitionId || `LNB${seasonYear}`;
+	const normalizedGameId = normalizeEuropeGameId(cleanGameId, seasonYear);
 
 	// Check if rawJson contains period-keyed PBP object (e.g., rawJson.pbp["1"], rawJson.pbp["2"]) or rawJson.data.pbp
 	const pbpObj = rawJson.pbp || rawJson.data?.pbp;
@@ -293,8 +309,8 @@ export function transformLnbPbp(gameId, rawJson) {
 				const actionId = action.id ?? action.eventId ?? globalIndex;
 
 				events.push({
-					event_id: `${competitionId}_${gameId}_lnb_pbp_${actionId}_${globalIndex}`,
-					game_id: String(gameId),
+					event_id: `${competitionId}_${normalizedGameId}_lnb_pbp_${actionId}_${globalIndex}`,
+					game_id: normalizedGameId,
 					competition_id: competitionId,
 					period,
 					clock: String(clockRaw),
@@ -316,7 +332,7 @@ export function transformLnbPbp(gameId, rawJson) {
 			}
 		}
 
-		const stints = buildStintsFromEvents(gameId, competitionId, events);
+		const stints = buildStintsFromEvents(normalizedGameId, competitionId, events);
 		return { events, stints };
 	}
 
@@ -371,8 +387,8 @@ export function transformLnbPbp(gameId, rawJson) {
 			const actionId = action.actionNumber ?? (i + 1);
 
 			events.push({
-				event_id: `${competitionId}_${gameId}_lnb_pbp_${actionId}_${i}`,
-				game_id: String(gameId),
+				event_id: `${competitionId}_${normalizedGameId}_lnb_pbp_${actionId}_${i}`,
+				game_id: normalizedGameId,
 				competition_id: competitionId,
 				period,
 				clock: String(clockRaw),
@@ -393,7 +409,7 @@ export function transformLnbPbp(gameId, rawJson) {
 			});
 		}
 
-		const stints = buildStintsFromEvents(gameId, competitionId, events);
+		const stints = buildStintsFromEvents(normalizedGameId, competitionId, events);
 		return { events, stints };
 	}
 
@@ -440,8 +456,8 @@ export function transformLnbPbp(gameId, rawJson) {
 		const actionId = action.id ?? action.action_id ?? action.playNumber ?? action.actionNumber ?? (i + 1);
 
 		events.push({
-			event_id: `${competitionId}_${gameId}_lnb_pbp_${actionId}_${i}`,
-			game_id: String(gameId),
+			event_id: `${competitionId}_${normalizedGameId}_lnb_pbp_${actionId}_${i}`,
+			game_id: normalizedGameId,
 			competition_id: competitionId,
 			period,
 			clock: String(clockRaw),
@@ -462,7 +478,7 @@ export function transformLnbPbp(gameId, rawJson) {
 		});
 	}
 
-	const stints = buildStintsFromEvents(gameId, competitionId, events);
+	const stints = buildStintsFromEvents(normalizedGameId, competitionId, events);
 
 	return { events, stints };
 }

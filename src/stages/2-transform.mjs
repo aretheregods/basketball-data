@@ -113,27 +113,28 @@ export async function transformStage(league, year, options = {}) {
 				const compId = rawData && rawData.competitionId ? String(rawData.competitionId).toLowerCase() : '';
 				const prefix = getEuropeGamePrefix(clean);
 				const sf = String(subFolder || '').toLowerCase();
+				const targetYear = String(year);
 
 				if (sf === 'acb' || prefix === 'A' || clean.includes('_acb_') || compId.includes('acb')) {
-					return transformAcbPbp(gameId, rawData);
+					return transformAcbPbp(gameId, rawData, targetYear);
 				}
 				if (sf === 'lnb' || prefix === 'L' || clean.includes('_lnb_') || compId.includes('lnb')) {
-					return transformLnbPbp(gameId, rawData);
+					return transformLnbPbp(gameId, rawData, targetYear);
 				}
 				if (sf === 'lba' || prefix === 'I' || clean.includes('_lba_') || compId.includes('lba')) {
-					return transformLbaPbp(gameId, rawData);
+					return transformLbaPbp(gameId, rawData, targetYear);
 				}
 				if (sf === 'gbl' || prefix === 'G' || clean.includes('_gbl_') || compId.includes('gbl')) {
-					return transformGblPbp(gameId, rawData);
+					return transformGblPbp(gameId, rawData, targetYear);
 				}
 				if (sf === 'bbl' || prefix === 'D' || clean.includes('_bbl_') || compId.includes('bbl')) {
-					return transformBblPbp(gameId, rawData);
+					return transformBblPbp(gameId, rawData, targetYear);
 				}
 				if (sf === 'lkl' || prefix === 'K' || clean.includes('_lkl_') || compId.includes('lkl')) {
-					return transformLklPbp(gameId, rawData);
+					return transformLklPbp(gameId, rawData, targetYear);
 				}
 				if (sf === 'aba' || prefix === 'V' || clean.includes('_aba_') || compId.includes('aba')) {
-					return transformAbaPbp(gameId, rawData);
+					return transformAbaPbp(gameId, rawData, targetYear);
 				}
 				return transformEuroleaguePbp(gameId, rawData);
 			};

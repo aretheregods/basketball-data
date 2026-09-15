@@ -20,8 +20,8 @@ export class AbaHarvester extends HTTPClient {
 	 * @returns {Promise<string[]>} List of game slugs
 	 */
 	async getSeasonGameSlugs(year) {
-		// If in test mode, return mock slugs directly to avoid real network/playwright calls
-		if (process.env.NODE_ENV === 'test') {
+		// If in test mode or bypassNetwork is set, return mock slugs directly to avoid real network/playwright calls
+		if (process.env.NODE_ENV === 'test' || (this.scraper && this.scraper.bypassNetwork)) {
 			return [
 				`partizan-vs-crvena-zvezda-V${year}_123`,
 				`buducnost-vs-cedevita-olimpija-V${year}_124`

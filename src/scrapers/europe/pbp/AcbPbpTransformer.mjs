@@ -242,11 +242,27 @@ function extractSeasonYear(gameId, defaultYear = '2025') {
 	return String(defaultYear);
 }
 
-export function transformAcbPbp(gameId, rawJson) {
+/**
+ * @description Normalizes game ID to standard format (e.g. A2025_105373 or matchup-A2025_105373)
+ * @param {string} gameId
+ * @param {string} seasonYear
+ * @returns {string}
+ */
+function normalizeEuropeGameId(gameId, seasonYear) {
+	const str = String(gameId || '').trim();
+	if (str.includes('_')) {
+		return str;
+	}
+	return `A${seasonYear}_${str}`;
+}
+
+export function transformAcbPbp(gameId, rawJson, fallbackYear = '2025') {
 	if (!rawJson) return { events: [], stints: [] };
 
-	const seasonYear = rawJson.seasonYear || extractSeasonYear(gameId, '2025');
+	const cleanGameId = String(gameId || '').trim();
+	const seasonYear = rawJson.seasonYear || extractSeasonYear(cleanGameId, fallbackYear);
 	const competitionId = rawJson.competitionId || `ACB${seasonYear}`;
+	const normalizedGameId = normalizeEuropeGameId(cleanGameId, seasonYear);
 
 	let rawEvents = [];
 	if (Array.isArray(rawJson.jugadas)) {
@@ -287,8 +303,8 @@ export function transformAcbPbp(gameId, rawJson) {
 		const actionId = action.id ?? action.action_id ?? action.playNumber ?? (i + 1);
 
 		events.push({
-			event_id: `${competitionId}_${gameId}_acb_pbp_${actionId}_${i}`,
-			game_id: String(gameId),
+			event_id: `${competitionId}_${normalizedGameId}_acb_pbp_${actionId}_${i}`,
+			game_id: normalizedGameId,
 			competition_id: competitionId,
 			period,
 			clock: String(clockRaw),
@@ -309,7 +325,7 @@ export function transformAcbPbp(gameId, rawJson) {
 		});
 	}
 
-	const stints = buildStintsFromEvents(gameId, competitionId, events);
+	const stints = buildStintsFromEvents(normalizedGameId, competitionId, events);
 
 	return { events, stints };
 }

@@ -265,12 +265,27 @@ function extractSeasonYear(gameId, defaultYear = '2025') {
 	return String(defaultYear);
 }
 
-export function transformBblPbp(gameId, rawPayload) {
+/**
+ * @description Normalizes game ID to standard format (e.g. D2025_1 or matchup-D2025_1)
+ * @param {string} gameId
+ * @param {string} seasonYear
+ * @returns {string}
+ */
+function normalizeEuropeGameId(gameId, seasonYear) {
+	const str = String(gameId || '').trim();
+	if (str.includes('_')) {
+		return str;
+	}
+	return `D${seasonYear}_${str}`;
+}
+
+export function transformBblPbp(gameId, rawPayload, fallbackYear = '2025') {
 	if (!rawPayload) return { events: [], stints: [] };
 
 	const cleanGameId = String(gameId || '').trim();
-	const seasonYear = rawPayload.seasonYear || extractSeasonYear(cleanGameId, '2025');
+	const seasonYear = rawPayload.seasonYear || extractSeasonYear(cleanGameId, fallbackYear);
 	const competitionId = rawPayload.competitionId || `BBL${seasonYear}`;
+	const normalizedGameId = normalizeEuropeGameId(cleanGameId, seasonYear);
 
 	let rawActions = rawPayload.actions || rawPayload.events || (rawPayload.data && rawPayload.data.pbp) || [];
 
@@ -328,8 +343,8 @@ export function transformBblPbp(gameId, rawPayload) {
 		const actionId = action.id || action.actionIdentifier || i;
 
 		events.push({
-			event_id: `${competitionId}_${cleanGameId}_bbl_pbp_${actionId}_${i}`,
-			game_id: cleanGameId,
+			event_id: `${competitionId}_${normalizedGameId}_bbl_pbp_${actionId}_${i}`,
+			game_id: normalizedGameId,
 			competition_id: competitionId,
 			period,
 			clock: String(clockStr),
@@ -350,7 +365,7 @@ export function transformBblPbp(gameId, rawPayload) {
 		});
 	}
 
-	const stints = buildStintsFromEvents(cleanGameId, competitionId, events);
+	const stints = buildStintsFromEvents(normalizedGameId, competitionId, events);
 
 	return { events, stints };
 }

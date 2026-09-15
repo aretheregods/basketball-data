@@ -168,7 +168,7 @@ async function main() {
 	const databaseName = flags.database || 'likelyhigh_db';
 	const dryRun = flags.dryRun === 'true' || flags['dry-run'] === 'true';
 	const boxscoreType = flags['boxscore-type'] || flags.type || 'traditional';
-	const competitions = flags.competitions || flags.competition || 'euroleague';
+	const competitions = flags.competitions || flags.competition || (targetLeagues.includes('europe') ? 'all' : 'euroleague');
 
 	// Handle direct --step=audit interceptor
 	if (activeSteps.includes('audit')) {

@@ -35,17 +35,7 @@ export class AcbPbpHarvester extends HTTPClient {
 			const parts = clean.split('_');
 			const keyPart = parts[0] || 'A2025';
 			gameCode = parts[1] || '1';
-
-			const match = keyPart.match(/(?:-)?A(\d{2,4})$/i);
-			if (match) {
-				seasonYear = match[1];
-			} else if (keyPart.startsWith('A')) {
-				seasonYear = keyPart.substring(1);
-			}
-
-			if (seasonYear.length === 2) {
-				seasonYear = `20${seasonYear}`;
-			}
+			seasonYear = keyPart.startsWith('A') ? keyPart.substring(1) : keyPart;
 		} else if (clean.includes('-')) {
 			const parts = clean.split('-');
 			const lastPart = parts[parts.length - 1];
