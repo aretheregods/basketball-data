@@ -43,7 +43,7 @@ node run.js --league=southamerica --competitions=all --years=2024
 ### Supported CLI Flags
 
 | Flag | Format | Default | Description |
-|---|---|---|---|
+|---|---|---|---|---
 | `--league` | `--league=nba,europe` | `wnba` | Comma-separated target leagues (`nba`, `wnba`, `europe`, `mexico`, `canada`, `puertorico`, `southamerica`, `nbl`, `asia`). |
 | `--competitions` | `--competitions=easl,bleague` | `euroleague` (Europe), `bcla` (South America), `bcl_asia` (Asia) | Comma-separated list or `all` for sub-competitions within Europe, South America, or Asia. |
 | `--years` | `--years=2024,2025` | Current Year | Comma-separated list of target season years. |
@@ -85,9 +85,11 @@ LEAGUE=asia node src/db/migrate.mjs
 ### Programmatic Migrations in the ETL
 
 When running the loader stage of the ETL:
+
 ```bash
 node run.js --step=load
 ```
+
 The loader automatically executes any pending migrations dynamically on database initialization, ensuring the target database schema is fully up-to-date.
 
 ---
