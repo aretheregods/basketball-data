@@ -22,7 +22,7 @@ export class NBAScraper extends HTTPClient {
 		super(
 			'https://www.nba.com',
 			{
-				'referrer': 'https://www.nba.com',
+				'referer': 'https://www.nba.com',
 				'origin': 'https://www.nba.com',
 				'accept': 'application/json, text/plain, */*',
 				'accept-language': 'en-US,en;q=0.9'
