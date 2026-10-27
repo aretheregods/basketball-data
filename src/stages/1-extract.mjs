@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { validateSchema } from '#utils';
+import { validateSchema, BaseNormalizer } from '#utils';
 import { getEuropeGamePrefix } from '../scrapers/europe/europe.mjs';
 
 /**
@@ -128,17 +128,28 @@ export async function extractStage(scraper, league, year, options = {}) {
 		}
 		const filePath = path.join(targetOutputDir, `${gameId}.json`);
 
-		// Cache check: skip if the file already exists, is non-empty, and contains valid non-empty data
+		// Cache check: skip if the file already exists, is non-empty, and contains valid played data
 		try {
 			const stats = await fs.stat(filePath);
 			if (stats.size > 0) {
 				const content = await fs.readFile(filePath, 'utf8');
 				const parsed = JSON.parse(content);
 				if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-					// Verify that for PBP runs, the cached payload is a PBP payload
-					if (!isPbp || (parsed.pbp || parsed.game || parsed.actions || parsed.Rows || parsed.resultSets || parsed.jugadas || parsed.data?.play_by_play)) {
-						console.log(`⏭️ Game ID: ${gameId} already exists in raw cache. Skipping...`);
-						continue;
+					// Verify that for PBP runs, the cached payload is a valid non-empty PBP payload
+					if (isPbp) {
+						const actions = parsed.game?.actions || parsed.game?.plays || parsed.actions || parsed.plays || parsed.pbp?.Rows || parsed.Rows || parsed.jugadas || parsed.events || parsed.pbp?.actions;
+						const hasActions = Array.isArray(actions) && actions.length > 0;
+						const hasResultSets = Array.isArray(parsed.resultSets) && parsed.resultSets.some(r => Array.isArray(r.rowSet) && r.rowSet.length > 0);
+						if (hasActions || hasResultSets || parsed.pbp || parsed.data?.play_by_play) {
+							console.log(`⏭️ Game ID: ${gameId} already exists in raw PBP cache. Skipping...`);
+							continue;
+						}
+					} else {
+						// For boxscore runs, verify that the game is NOT unplayed
+						if (!BaseNormalizer.isGameUnplayed(parsed, league)) {
+							console.log(`⏭️ Game ID: ${gameId} already exists in raw cache. Skipping...`);
+							continue;
+						}
 					}
 				}
 			}
@@ -196,8 +207,12 @@ export async function extractStage(scraper, league, year, options = {}) {
 				validateSchema(`${schemaFolder}/boxscore.json`, rawData);
 			}
 
-			await fs.writeFile(filePath, JSON.stringify(rawData, null, 2), 'utf8');
-			console.log(`💾 Saved raw data to ${filePath}`);
+			if (BaseNormalizer.isGameUnplayed(rawData, league)) {
+				console.log(`⚠️ Game ID: ${gameId} is currently unplayed. Skipping cache file creation.`);
+			} else {
+				await fs.writeFile(filePath, JSON.stringify(rawData, null, 2), 'utf8');
+				console.log(`💾 Saved raw data to ${filePath}`);
+			}
 
 			// Add a short randomized delay to prevent rate-limiting (skipped in testing)
 			if (process.env.NODE_ENV !== 'test') {

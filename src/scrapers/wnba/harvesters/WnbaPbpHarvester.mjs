@@ -35,7 +35,14 @@ export class WnbaPbpHarvester extends HTTPClient {
 			if (cached && cached.trim().length > 0) {
 				const parsed = JSON.parse(cached);
 				if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-					return parsed;
+					// Ensure cached payload is not an unplayed/empty PBP
+					const actions = parsed.game?.actions || parsed.game?.plays || parsed.actions || parsed.plays;
+					if (Array.isArray(actions) && actions.length > 0) {
+						return parsed;
+					}
+					if (Array.isArray(parsed.resultSets) && parsed.resultSets.some(r => Array.isArray(r.rowSet) && r.rowSet.length > 0)) {
+						return parsed;
+					}
 				}
 			}
 		} catch (e) {
@@ -115,11 +122,17 @@ export class WnbaPbpHarvester extends HTTPClient {
 			throw new Error(`HTTP Error on CDN, Stats API, and Webpage fallback for ${cleanGameId}`);
 		}
 
-		try {
-			await fs.mkdir(path.dirname(cachePath), { recursive: true });
-			await fs.writeFile(cachePath, JSON.stringify(payload, null, 2));
-		} catch (e) {
-			// Cache write error ignore
+		const actions = payload?.game?.actions || payload?.game?.plays || payload?.actions || payload?.plays;
+		const hasActions = Array.isArray(actions) && actions.length > 0;
+		const hasResultSets = Array.isArray(payload?.resultSets) && payload.resultSets.some(r => Array.isArray(r.rowSet) && r.rowSet.length > 0);
+
+		if (hasActions || hasResultSets) {
+			try {
+				await fs.mkdir(path.dirname(cachePath), { recursive: true });
+				await fs.writeFile(cachePath, JSON.stringify(payload, null, 2));
+			} catch (e) {
+				// Cache write error ignore
+			}
 		}
 
 		return payload;
