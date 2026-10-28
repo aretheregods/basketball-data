@@ -29,7 +29,14 @@ export class NbaPbpHarvester extends HTTPClient {
 			if (cached && cached.trim().length > 0) {
 				const parsed = JSON.parse(cached);
 				if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
-					return parsed;
+					// Ensure cached payload is not an unplayed/empty PBP
+					const actions = parsed.game?.actions || parsed.game?.plays || parsed.actions || parsed.plays;
+					if (Array.isArray(actions) && actions.length > 0) {
+						return parsed;
+					}
+					if (Array.isArray(parsed.resultSets) && parsed.resultSets.some(r => Array.isArray(r.rowSet) && r.rowSet.length > 0)) {
+						return parsed;
+					}
 				}
 			}
 		} catch (e) {

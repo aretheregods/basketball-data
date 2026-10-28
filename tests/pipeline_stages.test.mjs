@@ -235,6 +235,35 @@ test.describe('Pipeline Stages', () => {
 		});
 	});
 
+	test('Stage 1 [EXTRACT] should skip creating cache file if the returned payload is unplayed', async () => {
+		await runWithCleanErrors(async () => {
+			const scraper = new WNBAScraper();
+			scraper.getSeasonGameSlugs = async () => {
+				scraper.gameSlugs = ['nyl-vs-con-0012300099'];
+				return scraper;
+			};
+			const unplayedBoxScore = {
+				resource: "boxscore",
+				gameStatus: 1,
+				parameters: { GameID: "0012300099" },
+				resultSets: [
+					{ name: "PlayerStats", headers: ["GAME_ID"], rowSet: [] },
+					{ name: "TeamStats", headers: ["GAME_ID"], rowSet: [] }
+				]
+			};
+			scraper.request = async (url) => {
+				return unplayedBoxScore;
+			};
+
+			const gameIds = await extractStage(scraper, league, year);
+			assert.deepEqual(gameIds, ['0012300099']);
+
+			const expectedFile = path.resolve('data/raw', league, year, '0012300099.json');
+			const fileExists = await fs.access(expectedFile).then(() => true).catch(() => false);
+			assert.equal(fileExists, false);
+		});
+	});
+
 	test('Stage 1 [EXTRACT] fail-soft error handling: should continue on individual game failure for non-European leagues', async () => {
 		await runWithCleanErrors(async () => {
 			const scraper = new WNBAScraper();
