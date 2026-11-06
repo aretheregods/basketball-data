@@ -287,14 +287,6 @@ export class BaseNormalizer {
 				return true;
 			}
 
-			// Or if game date is in the future
-			if (raw.gameDateUTC || raw.gameDate) {
-				const gameDate = new Date(raw.gameDateUTC || raw.gameDate);
-				if (!isNaN(gameDate.getTime()) && gameDate > new Date()) {
-					return true;
-				}
-			}
-
 			return false;
 		}
 
@@ -303,6 +295,13 @@ export class BaseNormalizer {
 		const awayTeam = raw.awayTeam;
 
 		if (homeTeam && awayTeam) {
+			// If teams have non-empty player rosters or recorded scores, the game has been played
+			const hasPlayers = (Array.isArray(homeTeam.players) && homeTeam.players.length > 0) ||
+				(Array.isArray(awayTeam.players) && awayTeam.players.length > 0);
+			if (hasPlayers) {
+				return false;
+			}
+
 			// Empty players roster represents future game (only if arrays are explicitly present)
 			if (Array.isArray(homeTeam.players) && homeTeam.players.length === 0 &&
 				Array.isArray(awayTeam.players) && awayTeam.players.length === 0) {

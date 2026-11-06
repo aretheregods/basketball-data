@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import child_process from 'child_process';
 import { initDatabase } from './3-load.mjs';
+import { isEuropeanLeague, getAllEuropeanLeagueIds } from '../db/europe_league_registry.mjs';
 
 /**
  * @description Escapes any unsafe characters in a value for raw SQL insertion.
@@ -83,46 +84,41 @@ function runWranglerSync(dbName, sqlFilePath) {
 }
 
 /**
- * @description Runs the synchronization stage: queries the local staging database for unsynced rows,
- * packages them into a temporary SQL file, spawns Wrangler to execute it against Cloudflare D1,
- * and marks the local rows as synced upon successful completion.
- *
- * @param {string} league - The lowercase league identifier (e.g., 'wnba')
- * @param {string|number} year - The season year (e.g., '2023')
- * @param {Object} [options] - Optional configurations
- * @param {string} [options.databaseName='likelyhigh_db'] - The Cloudflare D1 database name to sync with
- * @param {boolean} [options.dryRun=false] - If true, generates the delta file but does not execute wrangler
- * @returns {Promise<void>}
- * @throws {Error} - If database queries or Wrangler sync fail
+ * @description Syncs unsynced rows from a single league database.
+ * @param {string} leagueId - The league identifier
+ * @param {string|number} year - The season year
+ * @param {Object} options - Sync options (databaseName, dryRun)
+ * @returns {Promise<{ players: number, teams: number }>} Count of synced rows
+ * @throws {Error} - If sync fails
  */
-export async function syncStage(league, year, options = {}) {
+async function syncSingleLeague(leagueId, year, options) {
 	const dbName = options.databaseName || process.env.D1_DATABASE_NAME || 'likelyhigh_db';
 	const dryRun = options.dryRun || false;
 
-	console.log(`🚀 Starting Stage 4 [SYNC] for ${league.toUpperCase()} - ${year}`);
+	console.log(`🚀 Starting Stage 4 [SYNC] for ${leagueId.toUpperCase()} - ${year}`);
 
-	console.log(`💾 Querying local staging database [data/SQL/${league.toUpperCase()}.sqlite] for unsynced rows...`);
-	const db = await initDatabase(league);
+	console.log(`💾 Querying local staging database [data/SQL/${leagueId.toUpperCase()}.sqlite] for unsynced rows...`);
+	const db = await initDatabase(leagueId);
 
 	let playersToSync = [];
 	let teamsToSync = [];
 
 	try {
 		playersToSync = db.prepare(`SELECT * FROM player_game_stats WHERE league = ? AND season = ? AND synced = 0`)
-			.all(league, String(year));
+			.all(leagueId, String(year));
 
 		teamsToSync = db.prepare(`SELECT * FROM team_game_stats WHERE league = ? AND season = ? AND synced = 0`)
-			.all(league, String(year));
+			.all(leagueId, String(year));
 	} catch (error) {
 		console.warn(`⚠️ Failed to query local database. Have you run the load stage first?`);
 		db.destroy();
-		return;
+		return { players: 0, teams: 0 };
 	}
 
 	if (playersToSync.length === 0 && teamsToSync.length === 0) {
-		console.log(`✅ Everything is already synced! 0 unsynced rows found for ${league.toUpperCase()} - ${year}.\n`);
+		console.log(`✅ Everything is already synced! 0 unsynced rows found for ${leagueId.toUpperCase()} - ${year}.\n`);
 		db.destroy();
-		return;
+		return { players: 0, teams: 0 };
 	}
 
 	console.log(`📦 Found ${playersToSync.length} unsynced players and ${teamsToSync.length} unsynced teams.`);
@@ -130,7 +126,7 @@ export async function syncStage(league, year, options = {}) {
 	// Create temp SQL file
 	const tempDir = path.resolve('data/temp');
 	await fs.mkdir(tempDir, { recursive: true });
-	const tempFileName = `temp_delta_${league}_${year}_${Date.now()}.sql`;
+	const tempFileName = `temp_delta_${leagueId}_${year}_${Date.now()}.sql`;
 	const tempFilePath = path.join(tempDir, tempFileName);
 
 	const playerStatements = generateInsertStatements('player_game_stats', playersToSync);
@@ -143,7 +139,7 @@ export async function syncStage(league, year, options = {}) {
 	if (dryRun) {
 		console.log(`🧪 [DRY RUN] Skipping Wrangler sync execution.`);
 		db.destroy();
-		return;
+		return { players: playersToSync.length, teams: teamsToSync.length };
 	}
 
 	try {
@@ -156,11 +152,11 @@ export async function syncStage(league, year, options = {}) {
 		try {
 			if (playersToSync.length > 0) {
 				db.prepare(`UPDATE player_game_stats SET synced = 1 WHERE league = ? AND season = ? AND synced = 0`)
-					.run(league, String(year));
+					.run(leagueId, String(year));
 			}
 			if (teamsToSync.length > 0) {
 				db.prepare(`UPDATE team_game_stats SET synced = 1 WHERE league = ? AND season = ? AND synced = 0`)
-					.run(league, String(year));
+					.run(leagueId, String(year));
 			}
 			db.exec('COMMIT');
 		} catch (trxError) {
@@ -168,9 +164,10 @@ export async function syncStage(league, year, options = {}) {
 			throw trxError;
 		}
 
-		console.log(`✅ Stage 4 [SYNC] complete. Cloudflare D1 is now fully synced.`);
+		console.log(`✅ Stage 4 [SYNC] complete for ${leagueId.toUpperCase()}. Cloudflare D1 is now fully synced.`);
+		return { players: playersToSync.length, teams: teamsToSync.length };
 	} catch (error) {
-		console.error(`❌ Wrangler Sync Failure:`, error.message);
+		console.error(`❌ Wrangler Sync Failure for ${leagueId.toUpperCase()}:`, error.message);
 		console.warn(`⚠️ The delta SQL file has been preserved at ${tempFilePath} for manual inspection.`);
 		throw error;
 	} finally {
@@ -186,4 +183,52 @@ export async function syncStage(league, year, options = {}) {
 		}
 		db.destroy();
 	}
+}
+
+/**
+ * @description Runs the synchronization stage: queries local staging databases for unsynced rows,
+ * packages them into temporary SQL files, spawns Wrangler to execute against Cloudflare D1,
+ * and marks local rows as synced upon successful completion.
+ *
+ * For European leagues, syncs from each individual league database (euroleague.sqlite, acb.sqlite, etc.).
+ *
+ * @param {string} league - The lowercase league identifier (e.g., 'wnba')
+ * @param {string|number} year - The season year (e.g., '2023')
+ * @param {Object} [options] - Optional configurations
+ * @param {string} [options.databaseName='likelyhigh_db'] - The Cloudflare D1 database name to sync with
+ * @param {boolean} [options.dryRun=false] - If true, generates the delta file but does not execute wrangler
+ * @returns {Promise<void>}
+ * @throws {Error} - If database queries or Wrangler sync fail
+ */
+export async function syncStage(league, year, options = {}) {
+	const dryRun = options.dryRun || false;
+
+	// ------------------------------------------------------------
+	// EUROPE LEAGUE SPLIT SYNC
+	// ------------------------------------------------------------
+	if (league.toLowerCase().startsWith('europe')) {
+		console.log(`🌍 Detected European league. Syncing from per-league databases...`);
+
+		const leagueIds = getAllEuropeanLeagueIds();
+		let totalPlayers = 0;
+		let totalTeams = 0;
+
+		for (const leagueId of leagueIds) {
+			try {
+				const result = await syncSingleLeague(leagueId, year, options);
+				totalPlayers += result.players;
+				totalTeams += result.teams;
+			} catch (error) {
+				console.error(`❌ Sync failed for ${leagueId.toUpperCase()}:`, error.message);
+			}
+		}
+
+		console.log(`✅ Stage 4 [SYNC] complete. Synced ${totalPlayers} players and ${totalTeams} teams across European databases.\n`);
+		return;
+	}
+
+	// ------------------------------------------------------------
+	// ORIGINAL SINGLE LEAGUE SYNC
+	// ------------------------------------------------------------
+	await syncSingleLeague(league, year, options);
 }

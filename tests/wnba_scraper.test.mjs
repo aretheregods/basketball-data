@@ -341,6 +341,96 @@ test.describe('WNBAScraper', () => {
 		]);
 	});
 
+	test('getSeasonGameSlugs should filter out unplayed future games from leagueSchedule format', async () => {
+		const scraper = new WNBAScraper();
+		const mockScheduleLeagueV2 = {
+			leagueSchedule: {
+				seasonYear: "2099",
+				gameDates: [
+					{
+						gameDate: "05/19/2099",
+						games: [
+							{
+								gameId: "0049900101",
+								gameStatus: 3,
+								gameStatusText: "Final",
+								gameDateTimeUTC: "2024-05-19T23:00:00Z",
+								homeTeam: { teamTricode: "CON" },
+								awayTeam: { teamTricode: "NYL" }
+							},
+							{
+								gameId: "0049900102",
+								gameStatus: 1,
+								gameStatusText: "7:00 pm ET",
+								gameDateTimeUTC: "2099-05-19T23:00:00Z",
+								homeTeam: { teamTricode: "MIN" },
+								awayTeam: { teamTricode: "LAS" }
+							}
+						]
+					}
+				]
+			}
+		};
+
+		fetchMock = async (url, config) => {
+			if (url.includes('full_schedule.json')) {
+				return { ok: false, status: 404 };
+			}
+			return {
+				ok: true,
+				status: 200,
+				json: async () => mockScheduleLeagueV2
+			};
+		};
+
+		await scraper.getSeasonGameSlugs('2099');
+		assert.deepEqual(scraper.gameSlugs, ['nyl-vs-con-0049900101']);
+	});
+
+	test('getSeasonGameSlugs should filter out unplayed future games from lscd format', async () => {
+		const scraper = new WNBAScraper();
+		const mockHistorical = {
+			lscd: [
+				{
+					mscd: {
+						mon: "May",
+						g: [
+							{
+								gid: "0049800101",
+								gcode: "20240519/NYLCON",
+								st: "3",
+								stt: "Final",
+								gdte: "2024-05-19",
+								v: { ta: "NYL", s: "80" },
+								h: { ta: "CON", s: "85" }
+							},
+							{
+								gid: "0049800102",
+								gcode: "20980520/LASMIN",
+								st: "1",
+								stt: "7:00 pm ET",
+								gdte: "2098-05-20",
+								v: { ta: "LAS", s: "" },
+								h: { ta: "MIN", s: "" }
+							}
+						]
+					}
+				}
+			]
+		};
+
+		fetchMock = async (url, config) => {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => mockHistorical
+			};
+		};
+
+		await scraper.getSeasonGameSlugs('2098');
+		assert.deepEqual(scraper.gameSlugs, ['nyl-vs-con-0049800101']);
+	});
+
 	test('getAPIBoxScore should fetch, validate and map box score statistics', async () => {
 		const scraper = new WNBAScraper();
 

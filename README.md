@@ -109,6 +109,8 @@ node run.js --league=nba --years=2024,2025 --type=pbp --step=extract,transform,l
 node run.js --league=nbl --years=2024 --type=pbp --step=extract,transform,load
 ```
 
+NBA PBP extraction tries the NBA play-by-play webpage, live CDN, and Stats API in order. Each source has a 15-second timeout covering the request and response body. Failed, invalid, or empty sources are logged before trying the next source. If all sources fail, extraction continues with the next game; failed games remain uncached so a later run can retry them. Stats API PBP is saved based on its plays rather than box-score player statistics.
+
 ---
 
 ## ETL Local Health Audit & Web Dashboard

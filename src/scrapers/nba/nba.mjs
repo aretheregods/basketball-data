@@ -25,7 +25,8 @@ export class NBAScraper extends HTTPClient {
 				'referer': 'https://www.nba.com',
 				'origin': 'https://www.nba.com',
 				'accept': 'application/json, text/plain, */*',
-				'accept-language': 'en-US,en;q=0.9'
+				'accept-language': 'en-US,en;q=0.9',
+				'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
 			}
 		);
 		/** @type {string[]} */
@@ -47,7 +48,8 @@ export class NBAScraper extends HTTPClient {
 
 	/**
 	 * @description Fetches the league schedule for a given season and returns the game slugs.
-	 * Filters for valid game ID prefixes: 001 (Preseason), 002 (Regular Season), 004 (Playoffs), 005 (Play-In).
+	 * Filters for valid game ID prefixes: 001 (Preseason), 002 (Regular Season), 004 (Playoffs), 005 (Play-In),
+	 * and filters out games that have not yet occurred.
 	 * @param {number | string} year - The year (season) for which to fetch data
 	 * @returns {Promise<NBAScraper>} - Returns the scraper instance for chaining
 	 * @throws {Error} - If the request fails or schema validation fails
@@ -56,50 +58,71 @@ export class NBAScraper extends HTTPClient {
 		const scheduleCachePath = path.resolve('data/raw/nba', `schedule_${year}.json`);
 		let data;
 
-		try {
-			const cacheContent = await fs.readFile(scheduleCachePath, 'utf8');
-			data = JSON.parse(cacheContent);
-			console.log(`💾 Loaded cached schedule from ${scheduleCachePath}`);
-		} catch (cacheErr) {
-			const historicalUrl = `https://data.nba.com/data/10s/v2015/json/mobile_teams/nba/${year}/league/00_full_schedule.json`;
-			const currentSeasonUrl = `https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json`;
+		const isCurrentSeason = String(year) === new Date().getFullYear().toString() || Number(year) >= new Date().getFullYear();
 
+		// For current/active season in non-test mode, refresh schedule from live endpoint first
+		// so recently completed games are discovered. Fall back to cached schedule on failure.
+		if (isCurrentSeason && process.env.NODE_ENV !== 'test') {
+			const currentSeasonUrl = `https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json`;
 			try {
-				// Try historical URL first
-				data = await this.request(historicalUrl, {}, 1, 1000);
-			} catch (err) {
-				console.log(`⚠️ Historical schedule not found or forbidden for ${year}. Falling back to current season schedule...`);
+				data = await this.request(currentSeasonUrl, {}, 2, 2000);
+				validateSchema('nba/leaguegamelog.json', data);
+				await fs.mkdir(path.dirname(scheduleCachePath), { recursive: true });
+				await fs.writeFile(scheduleCachePath, JSON.stringify(data, null, 2), 'utf8');
+				console.log(`💾 Updated fresh schedule cache at ${scheduleCachePath}`);
+			} catch (fetchErr) {
+				console.warn(`⚠️ Could not refresh live schedule for ${year}: ${fetchErr.message}. Falling back to cached schedule...`);
+				data = null;
+			}
+		}
+
+		if (!data) {
+			try {
+				const cacheContent = await fs.readFile(scheduleCachePath, 'utf8');
+				data = JSON.parse(cacheContent);
+				console.log(`💾 Loaded cached schedule from ${scheduleCachePath}`);
+			} catch (cacheErr) {
+				const historicalUrl = `https://data.nba.com/data/10s/v2015/json/mobile_teams/nba/${year}/league/00_full_schedule.json`;
+				const currentSeasonUrl = `https://cdn.nba.com/static/json/staticData/scheduleLeagueV2.json`;
+
 				try {
-					data = await this.request(currentSeasonUrl, {}, 3, 5000);
-				} catch (fallbackErr) {
-					console.warn(`⚠️ Schedule for ${year} is not available on the network:`, fallbackErr.message || fallbackErr);
+					// Try historical URL first
+					data = await this.request(historicalUrl, {}, 1, 1000);
+				} catch (err) {
+					console.log(`⚠️ Historical schedule not found or forbidden for ${year}. Falling back to current season schedule...`);
+					try {
+						data = await this.request(currentSeasonUrl, {}, 3, 5000);
+					} catch (fallbackErr) {
+						console.warn(`⚠️ Schedule for ${year} is not available on the network:`, fallbackErr.message || fallbackErr);
+						this.gameSlugs = [];
+						return this;
+					}
+				}
+
+				// Validate against JSON schema
+				try {
+					validateSchema('nba/leaguegamelog.json', data);
+				} catch (schemaErr) {
+					console.warn(`⚠️ Schedule validation failed for ${year}:`, schemaErr.message || schemaErr);
 					this.gameSlugs = [];
 					return this;
 				}
-			}
 
-			// Validate against JSON schema
-			try {
-				validateSchema('nba/leaguegamelog.json', data);
-			} catch (schemaErr) {
-				console.warn(`⚠️ Schedule validation failed for ${year}:`, schemaErr.message || schemaErr);
-				this.gameSlugs = [];
-				return this;
-			}
-
-			// Save to cache
-			try {
-				await fs.mkdir(path.dirname(scheduleCachePath), { recursive: true });
-				await fs.writeFile(scheduleCachePath, JSON.stringify(data, null, 2), 'utf8');
-				console.log(`💾 Saved schedule cache to ${scheduleCachePath}`);
-			} catch (writeErr) {
-				console.warn(`⚠️ Could not write schedule cache:`, writeErr.message);
+				// Save to cache
+				try {
+					await fs.mkdir(path.dirname(scheduleCachePath), { recursive: true });
+					await fs.writeFile(scheduleCachePath, JSON.stringify(data, null, 2), 'utf8');
+					console.log(`💾 Saved schedule cache to ${scheduleCachePath}`);
+				} catch (writeErr) {
+					console.warn(`⚠️ Could not write schedule cache:`, writeErr.message);
+				}
 			}
 		}
 
 		/** @type {string[]} */
 		const slugs = [];
 		const validPrefixes = ['001', '002', '004', '005'];
+		const now = new Date();
 
 		if (data && Array.isArray(data.lscd)) {
 			// Historical schedule format
@@ -111,6 +134,14 @@ export class NBAScraper extends HTTPClient {
 							// Filter out non-game events or other prefixes
 							const prefix = gameId.substring(0, 3);
 							if (!validPrefixes.includes(prefix)) {
+								continue;
+							}
+							// Filter out games that haven't yet occurred
+							const isFuture = (game.st === '1' || game.st === 1) &&
+								(!game.stt || !game.stt.toLowerCase().startsWith('final')) &&
+								(!game.h?.s && !game.v?.s) &&
+								(game.gdte && new Date(game.gdte) > now);
+							if (isFuture || game.ppdst === 'P') {
 								continue;
 							}
 							const visitor = (game.v && game.v.ta) ? game.v.ta.toLowerCase() : '';
@@ -134,6 +165,14 @@ export class NBAScraper extends HTTPClient {
 							// Filter out non-game events or other prefixes
 							const prefix = gameId.substring(0, 3);
 							if (!validPrefixes.includes(prefix)) {
+								continue;
+							}
+							// Filter out games that haven't yet occurred
+							const gameDate = new Date(game.gameDateTimeUTC || game.gameDateUTC || dateObj.gameDate);
+							const isFuture = (game.gameStatus === 1) &&
+								(!game.gameStatusText || !game.gameStatusText.toLowerCase().startsWith('final')) &&
+								(!isNaN(gameDate.getTime()) && gameDate > now);
+							if (isFuture || game.postponedStatus === 'Y') {
 								continue;
 							}
 							const visitor = (game.awayTeam && game.awayTeam.teamTricode) ? game.awayTeam.teamTricode.toLowerCase() : '';
@@ -177,6 +216,12 @@ export class NBAScraper extends HTTPClient {
 
 	/**
 	 * @description Universal fetch runner with automatic retry and exponential backoff
+	 * @param {string} endpoint - The endpoint or full URL to request
+	 * @param {Object} [options={}] - Fetch configuration options
+	 * @param {number} [retries=3] - Number of retries on failure
+	 * @param {number} [delay=1000] - Initial backoff delay in ms
+	 * @returns {Promise<any>} The parsed response data
+	 * @throws {Error} If all retries are exhausted or parsing fails
 	 */
 	async request(endpoint, options = {}, retries = 3, delay = 1000) {
 		const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
@@ -185,7 +230,7 @@ export class NBAScraper extends HTTPClient {
 
 		if (!isNbaUrl) {
 			this.defaultHeaders = {
-				'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+				'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 				'accept': 'application/json'
 			};
 		}
@@ -194,8 +239,9 @@ export class NBAScraper extends HTTPClient {
 			if (url.includes('nba.com/game/')) {
 				const config = {
 					...options,
+					signal: options.signal || (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(15000) : undefined),
 					headers: {
-						'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+						'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 						'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
 						'accept-language': 'en-US,en;q=0.9',
 						...options.headers

@@ -4,7 +4,7 @@ import { initDatabase } from '../stages/3-load.mjs';
 async function main() {
 	const league = process.env.LEAGUE || 'WNBA';
 	console.log(`🛠️ Running migrations manually for league database: ${league.toUpperCase()}`);
-	const db = await initDatabase(league);
+	const db = await initDatabase(league, 'europe');
 	db.destroy();
 	console.log(`✨ Migrations completed for ${league.toUpperCase()}!`);
 }

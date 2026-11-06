@@ -90,6 +90,7 @@ export class WNBAScraper extends HTTPClient {
 
 		/** @type {string[]} */
 		const slugs = [];
+		const now = new Date();
 
 		if (data && Array.isArray(data.lscd)) {
 			// Historical schedule format
@@ -97,6 +98,14 @@ export class WNBAScraper extends HTTPClient {
 				if (monthObj && monthObj.mscd && Array.isArray(monthObj.mscd.g)) {
 					for (const game of monthObj.mscd.g) {
 						if (game && game.gid) {
+							// Filter out games that haven't occurred yet
+							const isFuture = (game.st === '1' || game.st === 1) &&
+								(!game.stt || !game.stt.toLowerCase().startsWith('final')) &&
+								(!game.h?.s && !game.v?.s) &&
+								(game.gdte && new Date(game.gdte) > now);
+							if (isFuture || game.ppdst === 'P') {
+								continue;
+							}
 							const visitor = (game.v && game.v.ta) ? game.v.ta.toLowerCase() : '';
 							const home = (game.h && game.h.ta) ? game.h.ta.toLowerCase() : '';
 							const gameId = game.gid;
@@ -115,6 +124,14 @@ export class WNBAScraper extends HTTPClient {
 				if (dateObj && Array.isArray(dateObj.games)) {
 					for (const game of dateObj.games) {
 						if (game && game.gameId) {
+							// Filter out games that haven't occurred yet
+							const gameDate = new Date(game.gameDateTimeUTC || game.gameDateUTC || dateObj.gameDate);
+							const isFuture = (game.gameStatus === 1) &&
+								(!game.gameStatusText || !game.gameStatusText.toLowerCase().startsWith('final')) &&
+								(!isNaN(gameDate.getTime()) && gameDate > now);
+							if (isFuture || game.postponedStatus === 'Y') {
+								continue;
+							}
 							const visitor = (game.awayTeam && game.awayTeam.teamTricode) ? game.awayTeam.teamTricode.toLowerCase() : '';
 							const home = (game.homeTeam && game.homeTeam.teamTricode) ? game.homeTeam.teamTricode.toLowerCase() : '';
 							const gameId = game.gameId;

@@ -207,7 +207,7 @@ export async function extractStage(scraper, league, year, options = {}) {
 				validateSchema(`${schemaFolder}/boxscore.json`, rawData);
 			}
 
-			if (BaseNormalizer.isGameUnplayed(rawData, league)) {
+			if (!isPbp && BaseNormalizer.isGameUnplayed(rawData, league)) {
 				console.log(`⚠️ Game ID: ${gameId} is currently unplayed. Skipping cache file creation.`);
 			} else {
 				await fs.writeFile(filePath, JSON.stringify(rawData, null, 2), 'utf8');
@@ -221,7 +221,7 @@ export async function extractStage(scraper, league, year, options = {}) {
 				await new Promise(resolve => setTimeout(resolve, delay));
 			}
 		} catch (error) {
-			console.error(`❌ Failed to extract/save box score for Game ID ${gameId}:`, error.message || error);
+			console.error(`❌ Failed to extract/save ${isPbp ? 'PBP' : 'box score'} for Game ID ${gameId}:`, error.message || error);
 			if (league.toLowerCase().startsWith('europe')) {
 				console.warn(`⚠️ Warning: Bypassing extraction failure for European game ${gameId} to prevent pipeline crash. Writing fallback unplayed skeleton...`);
 				let fallback;

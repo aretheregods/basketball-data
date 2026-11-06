@@ -23,7 +23,7 @@ export class HTTPClient {
 		this.baseUrl = baseUrl;
 		/** @type {HTTPHeaders} */
 		this.defaultHeaders = {
-			'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+			'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
 			'accept': 'application/json',
 			...defaultHeaders
 		};
@@ -43,6 +43,7 @@ export class HTTPClient {
 		const url = endpoint.startsWith('http') ? endpoint : `${this.baseUrl}${endpoint}`;
 		const config = {
 			...options,
+			signal: options.signal || (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(15000) : undefined),
 			headers: { ...this.defaultHeaders, ...options.headers }
 		};
 

@@ -236,3 +236,86 @@ test.describe('NBA Play-by-Play Unit Tests', () => {
 		}
 	});
 });
+
+test('NBA PBP timeouts cover both stalled requests and stalled response bodies', async () => {
+	const { NbaPbpHarvester } = await import('../src/scrapers/nba/harvesters/NbaPbpHarvester.mjs');
+	for (const stallBody of [false, true]) {
+		let calls = 0;
+		fetchMock = async (url, { signal }) => {
+			calls++;
+			if (calls > 1) return { ok: true, json: async () => mockStatsApiPbpResponse };
+			const stalled = () => new Promise((resolve, reject) => {
+				signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+			});
+			return stallBody ? { ok: true, json: stalled } : stalled();
+		};
+		const harvester = new NbaPbpHarvester({ requestTimeoutMs: 20 });
+		assert.deepEqual(await harvester.fetchNbaPbp('0022300999', 'pbp_timeout_test'), mockStatsApiPbpResponse);
+		assert.equal(calls, 2);
+	}
+});
+
+test('NBA PBP rejects empty, invalid and unrelated responses and reaches the Stats API fallback', async () => {
+	const { NbaPbpHarvester } = await import('../src/scrapers/nba/harvesters/NbaPbpHarvester.mjs');
+	for (const invalid of [{ game: { actions: [] } }, { game: { actions: 'invalid' } }, { resultSets: [{ name: 'Other', rowSet: [[1]] }] }]) {
+		let calls = 0;
+		fetchMock = async () => {
+			calls++;
+			if (calls === 1) return { ok: true, text: async () => `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { playByPlay: invalid } } })}</script>` };
+			return { ok: true, json: async () => calls === 2 ? invalid : mockStatsApiPbpResponse };
+		};
+		assert.deepEqual(await new NbaPbpHarvester().fetchNbaPbp('0022300999', 'pbp_fallback_test'), mockStatsApiPbpResponse);
+		assert.equal(calls, 3);
+	}
+});
+
+test('NBA PBP reports every exhausted source', async () => {
+	const { NbaPbpHarvester } = await import('../src/scrapers/nba/harvesters/NbaPbpHarvester.mjs');
+	fetchMock = async () => ({ ok: false, status: 404 });
+	await assert.rejects(new NbaPbpHarvester().fetchNbaPbp('0022300999', 'pbp_failure_test'), /All PBP sources failed.*www.nba.com.*cdn.nba.com.*stats.nba.com/);
+});
+
+test('Stats API PBP is persisted and extraction continues after a failed game', async () => {
+	const league = 'nba_pbp_test';
+	const year = 'stats_fallback';
+	const scraper = new NBAScraper({ boxscoreType: 'pbp', requestTimeoutMs: 20 });
+	scraper.getSeasonGameSlugs = async function () {
+		this.gameSlugs = ['0022300001', '0022300002'];
+		return this;
+	};
+	scraper.fetchPbp = async gameId => {
+		if (gameId === '0022300001') throw new Error('All sources unavailable');
+		return mockStatsApiPbpResponse;
+	};
+	await extractStage(scraper, league, year, { boxscoreType: 'pbp' });
+	const file = path.resolve(`data/raw/${league}/pbp/${year}/0022300002.json`);
+	assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf8')), mockStatsApiPbpResponse);
+	await assert.rejects(fs.access(path.resolve(`data/raw/${league}/pbp/${year}/0022300001.json`)));
+});
+
+test('Every NBA PBP source times out and releases the game for retry', async () => {
+	const { NbaPbpHarvester } = await import('../src/scrapers/nba/harvesters/NbaPbpHarvester.mjs');
+	let calls = 0;
+	fetchMock = async (url, { signal }) => {
+		calls++;
+		return new Promise((resolve, reject) => {
+			signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+		});
+	};
+	await assert.rejects(new NbaPbpHarvester({ requestTimeoutMs: 10 }).fetchNbaPbp('0022300999', 'pbp_timeout_test'), /All PBP sources failed.*timed out/);
+	assert.equal(calls, 3);
+});
+
+test('NBA PBP uses the play-by-play page first without waiting for blocked API sources', async () => {
+	const { NbaPbpHarvester } = await import('../src/scrapers/nba/harvesters/NbaPbpHarvester.mjs');
+	const urls = [];
+	const playByPlay = { gameId: '0022600168', actions: mockCdnPbpResponse.game.actions };
+	fetchMock = async (url, { signal }) => {
+		urls.push(url);
+		assert.equal(url, 'https://www.nba.com/game/0022600168/play-by-play');
+		assert.ok(signal);
+		return { ok: true, text: async () => `<script id="__NEXT_DATA__" type="application/json">${JSON.stringify({ props: { pageProps: { playByPlay } } })}</script>` };
+	};
+	assert.deepEqual(await new NbaPbpHarvester().fetchNbaPbp('0022600168', 'page_source_test'), playByPlay);
+	assert.equal(urls.length, 1);
+});

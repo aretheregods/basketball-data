@@ -221,6 +221,131 @@ test.describe('NBAScraper & Pipeline Integration', () => {
 		}
 	});
 
+	test('getSeasonGameSlugs should filter out unplayed future games from leagueSchedule format', async () => {
+		const scraper = new NBAScraper();
+		const testYear = '2099_test';
+		const expectedCachePath = path.resolve('data/raw/nba', `schedule_${testYear}.json`);
+		await fs.rm(expectedCachePath, { force: true });
+
+		const mockScheduleLeagueV2 = {
+			leagueSchedule: {
+				seasonYear: "2099-00",
+				gameDates: [
+					{
+						gameDate: "10/01/2099",
+						games: [
+							{
+								gameId: "0029900001",
+								gameStatus: 3,
+								gameStatusText: "Final",
+								gameDateTimeUTC: "2024-10-01T23:00:00Z",
+								homeTeam: { teamTricode: "BOS" },
+								awayTeam: { teamTricode: "NYK" }
+							},
+							{
+								gameId: "0029900002",
+								gameStatus: 1,
+								gameStatusText: "7:00 pm ET",
+								gameDateTimeUTC: "2099-10-01T23:00:00Z",
+								homeTeam: { teamTricode: "LAL" },
+								awayTeam: { teamTricode: "GSW" }
+							},
+							{
+								gameId: "0029900003",
+								gameStatus: 1,
+								gameStatusText: "8:00 pm ET",
+								postponedStatus: "Y",
+								gameDateTimeUTC: "2024-10-01T23:00:00Z",
+								homeTeam: { teamTricode: "MIA" },
+								awayTeam: { teamTricode: "CHI" }
+							}
+						]
+					}
+				]
+			}
+		};
+
+		fetchMock = async (url, config) => {
+			if (url.includes('00_full_schedule.json')) {
+				return { ok: false, status: 404 };
+			}
+			return {
+				ok: true,
+				status: 200,
+				json: async () => mockScheduleLeagueV2
+			};
+		};
+
+		try {
+			await scraper.getSeasonGameSlugs(testYear);
+			assert.deepEqual(scraper.gameSlugs, ['nyk-vs-bos-0029900001']);
+		} finally {
+			await fs.rm(expectedCachePath, { force: true });
+		}
+	});
+
+	test('getSeasonGameSlugs should filter out unplayed future games from lscd format', async () => {
+		const scraper = new NBAScraper();
+		const testYear = '2098_test';
+		const expectedCachePath = path.resolve('data/raw/nba', `schedule_${testYear}.json`);
+		await fs.rm(expectedCachePath, { force: true });
+
+		const mockHistorical = {
+			lscd: [
+				{
+					mscd: {
+						mon: "October",
+						g: [
+							{
+								gid: "0029800001",
+								gcode: "20241001/NYKBOS",
+								st: "3",
+								stt: "Final",
+								gdte: "2024-10-01",
+								v: { ta: "NYK", s: "100" },
+								h: { ta: "BOS", s: "110" }
+							},
+							{
+								gid: "0029800002",
+								gcode: "20981001/GSWLAL",
+								st: "1",
+								stt: "7:00 pm ET",
+								gdte: "2098-10-01",
+								v: { ta: "GSW", s: "" },
+								h: { ta: "LAL", s: "" }
+							},
+							{
+								gid: "0029800003",
+								gcode: "20241001/CHIMIA",
+								st: "1",
+								stt: "Postponed",
+								ppdst: "P",
+								gdte: "2024-10-01",
+								v: { ta: "CHI", s: "" },
+								h: { ta: "MIA", s: "" }
+							}
+						]
+					}
+				}
+			]
+		};
+
+		fetchMock = async (url, config) => {
+			return {
+				ok: true,
+				status: 200,
+				json: async () => mockHistorical
+			};
+		};
+
+		try {
+			await scraper.getSeasonGameSlugs(testYear);
+			assert.deepEqual(scraper.gameSlugs, ['nyk-vs-bos-0029800001']);
+		} finally {
+			await fs.rm(expectedCachePath, { force: true });
+		}
+	});
+
 	test('getAPIBoxScore should fetch, validate against schema and return nested game state directly', async () => {
 		const scraper = new NBAScraper();
 

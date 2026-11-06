@@ -4,9 +4,10 @@ import path from 'path';
 /**
  * @description Runs all pending migrations for the provided node:sqlite database.
  * @param {import('node:sqlite').DatabaseSync} db - The node:sqlite DatabaseSync connection
+ * @param {string} [leagueId=''] - The league identifier (e.g. 'euroleague', 'acb')
  * @returns {Promise<void>}
  */
-export async function runMigrations(db) {
+export async function runMigrations(db, leagueId = '') {
 	// Ensure schema_migrations table exists
 	db.exec(`
 		CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -47,7 +48,7 @@ export async function runMigrations(db) {
 
 		db.exec('BEGIN TRANSACTION');
 		try {
-			migrationModule.up(db);
+			migrationModule.up(db, leagueId);
 			db.prepare('INSERT INTO schema_migrations (name) VALUES (?)').run(file);
 			db.exec('COMMIT');
 			console.log(`✅ Completed migration: ${file}`);
