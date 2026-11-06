@@ -9,6 +9,8 @@ import { LklScraper } from './LklScraper.mjs';
 import { AbaScraper } from './AbaScraper.mjs';
 import { BslScraper } from './BslScraper.mjs';
 import { IsraeliScraper } from './IsraeliScraper.mjs';
+import { BnxtScraper } from './BnxtScraper.mjs';
+import { KorisliigaScraper } from './KorisliigaScraper.mjs';
 import { EuroleaguePbpHarvester } from './pbp/EuroleaguePbpHarvester.mjs';
 import { AcbPbpHarvester } from './pbp/AcbPbpHarvester.mjs';
 import { LnbPbpHarvester } from './pbp/LnbPbpHarvester.mjs';
@@ -48,7 +50,7 @@ export class EuropeScraper extends HTTPClient {
 		// Parse competitions list (can be 'all', or comma-separated list like 'euroleague,eurocup,bcl,acb,lnb,lba,gbl')
 		const rawComps = options.competitions || options.competition || 'euroleague';
 		if (rawComps === 'all') {
-			this.competitions = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba', 'gbl', 'bbl', 'lkl', 'aba', 'bsl', 'israel'];
+			this.competitions = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba', 'gbl', 'bbl', 'lkl', 'aba', 'bsl', 'israel', 'bnxt', 'korisliiga'];
 		} else if (Array.isArray(rawComps)) {
 			this.competitions = rawComps;
 		} else {
@@ -83,7 +85,10 @@ export class EuropeScraper extends HTTPClient {
 			lkl: new LklScraper(),
 			aba: new AbaScraper(),
 			bsl: new BslScraper(),
-			israel: new IsraeliScraper()
+			israel: new IsraeliScraper(),
+			bnxt: new BnxtScraper(),
+			korisliiga: new KorisliigaScraper(),
+			finnish_korsiliiga: new KorisliigaScraper()
 		};
 
 		// Dynamically register any other requested competitions/domestic leagues to share the EuroleagueEngine
@@ -107,6 +112,10 @@ export class EuropeScraper extends HTTPClient {
 					this.engines[comp] = new BslScraper();
 				} else if (comp === 'israel') {
 					this.engines[comp] = new IsraeliScraper();
+				} else if (comp === 'bnxt') {
+					this.engines[comp] = new BnxtScraper();
+				} else if (comp === 'korisliiga' || comp === 'finnish_korsiliiga') {
+					this.engines[comp] = new KorisliigaScraper();
 				} else {
 					this.engines[comp] = new EuroleagueEngine();
 				}
@@ -220,6 +229,12 @@ export class EuropeScraper extends HTTPClient {
 		}
 		if (firstChar === 'Y') {
 			return this.engines.israel || (this.engines.israel = new IsraeliScraper());
+		}
+		if (firstChar === 'N') {
+			return this.engines.bnxt || (this.engines.bnxt = new BnxtScraper());
+		}
+		if (firstChar === 'F') {
+			return this.engines.korisliiga || (this.engines.korisliiga = new KorisliigaScraper());
 		}
 
 		// Fallback to competitionId-based lookup or euroleague

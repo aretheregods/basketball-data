@@ -63,7 +63,7 @@ export async function transformEurope(rawDir, year) {
 			);
 
 			if (isMatchOrIdentical) {
-				const suffixRegex = /-[EUBLIGDVK_S_Y]\d{4}_[A-Za-z0-9_]+$/i;
+				const suffixRegex = /-[EUBLIGDVK_S_YNF]\d{4}_[A-Za-z0-9_-]+$/i;
 				const parts = String(gameId || '').split('-vs-');
 				let homeFallback = '';
 				let awayFallback = '';
@@ -134,7 +134,10 @@ export async function transformEurope(rawDir, year) {
 				aba: 'ABA League',
 				vtb: 'VTB United League',
 				gbl: 'Greek Basketball League',
-				israel: 'Israeli Basketball Super League'
+				israel: 'Israeli Basketball Super League',
+				bnxt: 'BNXT League',
+				korisliiga: 'Finnish Korisliiga',
+				finnish_korsiliiga: 'Finnish Korisliiga'
 			};
 			const compName = compNames[competitionId] || competitionId.toUpperCase();
 			const compType = ['euroleague', 'eurocup', 'bcl'].includes(competitionId) ? 'continental' : 'domestic';
