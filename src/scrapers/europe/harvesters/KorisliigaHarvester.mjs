@@ -76,6 +76,10 @@ export class KorisliigaHarvester extends HTTPClient {
 			const slugs = [];
 			for (const g of games) {
 				if (!g || !g.game_public_id) continue;
+				// Filter out unplayed/future games (status SCHEDULED or IN_PROGRESS, or missing final scores)
+				const isPlayed = g.status === 'CONFIRMED' || (g.score_a !== null && g.score_b !== null && g.status !== 'SCHEDULED');
+				if (!isPlayed) continue;
+
 				const gameId = g.game_public_id;
 				const homeName = g.team_a_name_en || g.team_a_name_fi || 'home';
 				const awayName = g.team_b_name_en || g.team_b_name_fi || 'away';
