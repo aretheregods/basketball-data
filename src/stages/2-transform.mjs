@@ -44,7 +44,7 @@ export async function transformStage(league, year, options = {}) {
 	if (isPbp) {
 		const jsonFilesMap = [];
 		if (league.toLowerCase().startsWith('europe')) {
-			let subFolders = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba', 'gbl', 'bbl', 'lkl', 'aba'];
+			let subFolders = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba', 'gbl', 'bbl', 'lkl', 'aba', 'bnxt', 'korisliiga'];
 
 			const requestedComps = (options.competitions || options.competition || '').toLowerCase();
 			if (requestedComps && requestedComps !== 'all') {
@@ -107,6 +107,8 @@ export async function transformStage(league, year, options = {}) {
 			const { transformBblPbp } = await import('../scrapers/europe/pbp/BblPbpTransformer.mjs');
 			const { transformLklPbp } = await import('../scrapers/europe/pbp/LklPbpTransformer.mjs');
 			const { transformAbaPbp } = await import('../scrapers/europe/pbp/AbaPbpTransformer.mjs');
+			const { transformBnxtPbp } = await import('../scrapers/europe/pbp/BnxtPbpTransformer.mjs');
+			const { transformKorisliigaPbp } = await import('../scrapers/europe/pbp/KorisliigaPbpTransformer.mjs');
 
 			transformFn = (gameId, rawData) => {
 				const clean = String(gameId || '').trim();
@@ -133,6 +135,12 @@ export async function transformStage(league, year, options = {}) {
 				}
 				if (prefix === 'V' || clean.includes('_aba_') || compId.includes('aba')) {
 					return transformAbaPbp(gameId, rawData);
+				}
+				if (prefix === 'N' || clean.includes('_bnxt_') || compId.includes('bnxt')) {
+					return transformBnxtPbp(gameId, rawData);
+				}
+				if (prefix === 'F' || clean.includes('_korisliiga_') || compId.includes('korisliiga') || compId.includes('finnish_korsiliiga')) {
+					return transformKorisliigaPbp(gameId, rawData);
 				}
 				return transformEuroleaguePbp(gameId, rawData);
 			};
