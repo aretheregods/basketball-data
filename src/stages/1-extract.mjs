@@ -43,6 +43,10 @@ export async function extractStage(scraper, league, year, options = {}) {
 				subFolder = 'lkl';
 			} else if (comp.includes('aba')) {
 				subFolder = 'aba';
+			} else if (comp.includes('bnxt')) {
+				subFolder = 'bnxt';
+			} else if (comp.includes('korisliiga') || comp.includes('finnish_korsiliiga')) {
+				subFolder = 'korisliiga';
 			} else if (comp.includes('eurocup')) {
 				subFolder = 'eurocup';
 			} else if (comp.includes('bcl')) {
@@ -113,6 +117,8 @@ export async function extractStage(scraper, league, year, options = {}) {
 		if (prefix === 'D' || id.includes('_bbl_')) return 'bbl';
 		if (prefix === 'K' || id.includes('_lkl_')) return 'lkl';
 		if (prefix === 'V' || id.includes('_aba_')) return 'aba';
+		if (prefix === 'N' || id.includes('_bnxt_')) return 'bnxt';
+		if (prefix === 'F' || id.includes('_korisliiga_')) return 'korisliiga';
 		if (prefix === 'U' || id.includes('_eurocup_')) return 'eurocup';
 		if (prefix === 'B' || id.includes('_bcl_')) return 'bcl';
 		return 'euroleague';
@@ -242,6 +248,10 @@ export async function extractStage(scraper, league, year, options = {}) {
 						fallback = { gameId, competitionId: `BBL${year}`, seasonYear: String(year), actions: [] };
 					} else if (subFolder === 'lkl') {
 						fallback = { gameId, competitionId: `LKL${year}`, seasonYear: String(year), actions: [] };
+					} else if (subFolder === 'bnxt') {
+						fallback = { gameId, competitionId: `BNXT${year}`, seasonYear: String(year), actions: [] };
+					} else if (subFolder === 'korisliiga') {
+						fallback = { gameId, competitionId: `KORISLIIGA${year}`, seasonYear: String(year), actions: [] };
 					} else {
 						fallback = { seasonCode: String(year), pbp: { Rows: [] }, points: { Rows: [] } };
 					}

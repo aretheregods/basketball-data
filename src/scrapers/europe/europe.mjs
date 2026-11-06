@@ -19,6 +19,8 @@ import { GblPbpHarvester } from './pbp/GblPbpHarvester.mjs';
 import { BblPbpHarvester } from './pbp/BblPbpHarvester.mjs';
 import { LklPbpHarvester } from './pbp/LklPbpHarvester.mjs';
 import { AbaPbpHarvester } from './pbp/AbaPbpHarvester.mjs';
+import { BnxtPbpHarvester } from './pbp/BnxtPbpHarvester.mjs';
+import { KorisliigaPbpHarvester } from './pbp/KorisliigaPbpHarvester.mjs';
 
 /**
  * @description Extracts the competition prefix letter from a European game ID slug.
@@ -71,6 +73,8 @@ export class EuropeScraper extends HTTPClient {
 		this.bblPbpHarvester = new BblPbpHarvester(options);
 		this.lklPbpHarvester = new LklPbpHarvester(options);
 		this.abaPbpHarvester = new AbaPbpHarvester(options);
+		this.bnxtPbpHarvester = new BnxtPbpHarvester(options);
+		this.korisliigaPbpHarvester = new KorisliigaPbpHarvester(options);
 
 		// Instantiate available engines
 		this.engines = {
@@ -154,6 +158,12 @@ export class EuropeScraper extends HTTPClient {
 		}
 		if (prefix === 'V' || clean.includes('_aba_') || compOption === 'aba') {
 			return this.abaPbpHarvester.fetchAbaPbp(gameId, year);
+		}
+		if (prefix === 'N' || clean.includes('_bnxt_') || compOption === 'bnxt') {
+			return this.bnxtPbpHarvester.fetchBnxtPbp(gameId, year);
+		}
+		if (prefix === 'F' || clean.includes('_korisliiga_') || compOption === 'korisliiga' || compOption === 'finnish_korsiliiga') {
+			return this.korisliigaPbpHarvester.fetchKorisliigaPbp(gameId, year);
 		}
 		return this.pbpHarvester.fetchEuroleaguePbp(gameId, year);
 	}
