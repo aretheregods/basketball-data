@@ -215,6 +215,16 @@ export async function extractStage(scraper, league, year, options = {}) {
 
 			if (!isPbp && BaseNormalizer.isGameUnplayed(rawData, league)) {
 				console.log(`⚠️ Game ID: ${gameId} is currently unplayed. Skipping cache file creation.`);
+			} else if (isPbp) {
+				const actions = rawData?.game?.actions || rawData?.game?.plays || rawData?.actions || rawData?.plays || rawData?.pbp?.Rows || rawData?.Rows || rawData?.jugadas || rawData?.events || rawData?.pbp?.actions || rawData?.data?.pbp;
+				const hasActions = Array.isArray(actions) && actions.length > 0;
+				const hasResultSets = Array.isArray(rawData?.resultSets) && rawData.resultSets.some(r => Array.isArray(r.rowSet) && r.rowSet.length > 0);
+				if (hasActions || hasResultSets || rawData?.pbp || rawData?.data?.play_by_play) {
+					await fs.writeFile(filePath, JSON.stringify(rawData, null, 2), 'utf8');
+					console.log(`💾 Saved raw data to ${filePath}`);
+				} else {
+					console.log(`⚠️ Game ID: ${gameId} returned 0 PBP actions. Skipping empty cache file creation.`);
+				}
 			} else {
 				await fs.writeFile(filePath, JSON.stringify(rawData, null, 2), 'utf8');
 				console.log(`💾 Saved raw data to ${filePath}`);
