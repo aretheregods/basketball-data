@@ -10,6 +10,8 @@ import { LbaPbpHarvester } from '../src/scrapers/europe/pbp/LbaPbpHarvester.mjs'
 import { GblPbpHarvester } from '../src/scrapers/europe/pbp/GblPbpHarvester.mjs';
 import { BblPbpHarvester } from '../src/scrapers/europe/pbp/BblPbpHarvester.mjs';
 import { AbaPbpHarvester } from '../src/scrapers/europe/pbp/AbaPbpHarvester.mjs';
+import { BnxtPbpHarvester } from '../src/scrapers/europe/pbp/BnxtPbpHarvester.mjs';
+import { KorisliigaPbpHarvester } from '../src/scrapers/europe/pbp/KorisliigaPbpHarvester.mjs';
 import {
 	calculateGameSecondsRemaining,
 	parseEuroClock,
@@ -45,6 +47,16 @@ import {
 	normalizeAbaAction,
 	transformAbaPbp
 } from '../src/scrapers/europe/pbp/AbaPbpTransformer.mjs';
+import {
+	parseBnxtClock,
+	normalizeBnxtAction,
+	transformBnxtPbp
+} from '../src/scrapers/europe/pbp/BnxtPbpTransformer.mjs';
+import {
+	parseKorisliigaClock,
+	normalizeKorisliigaAction,
+	transformKorisliigaPbp
+} from '../src/scrapers/europe/pbp/KorisliigaPbpTransformer.mjs';
 import { extractStage } from '../src/stages/1-extract.mjs';
 import { transformStage } from '../src/stages/2-transform.mjs';
 import { loadStage, initDatabase } from '../src/stages/3-load.mjs';
@@ -102,6 +114,16 @@ test('EuroLeague, ACB, LNB, LBA, GBL, BBL & ABA PBP Clock and Helper Unit Tests'
 		assert.equal(parseAbaClock('00:09:45'), 585);
 		assert.equal(parseAbaClock('09:45'), 585);
 		assert.equal(parseAbaClock('00:00'), 0);
+
+		assert.equal(parseBnxtClock('00:10:00'), 600);
+		assert.equal(parseBnxtClock('00:09:40'), 580);
+		assert.equal(parseBnxtClock('09:40'), 580);
+		assert.equal(parseBnxtClock('00:00'), 0);
+
+		assert.equal(parseKorisliigaClock('00:10:00'), 600);
+		assert.equal(parseKorisliigaClock('00:09:50'), 590);
+		assert.equal(parseKorisliigaClock('09:50'), 590);
+		assert.equal(parseKorisliigaClock('00:00'), 0);
 	});
 
 	await t.test('normalizeAbaAction should map English and Serbo-Croatian event descriptions to standard event codes', () => {
@@ -204,6 +226,42 @@ test('EuroLeague, ACB, LNB, LBA, GBL, BBL & ABA PBP Clock and Helper Unit Tests'
 		assert.equal(normalizeGblAction('entered the court'), 'SUB');
 	});
 
+	await t.test('normalizeBnxtAction should map BNXT action types, qualifiers, and descriptions to standard event codes', () => {
+		assert.equal(normalizeBnxtAction('3PT', true), '3FGM');
+		assert.equal(normalizeBnxtAction('3PT', false), '3FGA');
+		assert.equal(normalizeBnxtAction('2PT', true), '2FGM');
+		assert.equal(normalizeBnxtAction('2PT', false), '2FGA');
+		assert.equal(normalizeBnxtAction('FREETHROW', true), 'FTM');
+		assert.equal(normalizeBnxtAction('FREETHROW', false), 'FTA');
+		assert.equal(normalizeBnxtAction('REBOUND', false, 'OFF'), 'ORB');
+		assert.equal(normalizeBnxtAction('REBOUND', false, 'DEF'), 'DRB');
+		assert.equal(normalizeBnxtAction('TURNOVER'), 'TOV');
+		assert.equal(normalizeBnxtAction('STEAL'), 'STL');
+		assert.equal(normalizeBnxtAction('FOUL'), 'FOUL');
+		assert.equal(normalizeBnxtAction('BLOCK'), 'BLK');
+		assert.equal(normalizeBnxtAction('SUBSTITUTION'), 'SUB');
+		assert.equal(normalizeBnxtAction('', false, '', 'Pierre-Antoine Gillet 3pt jump shot made'), '3FGM');
+		assert.equal(normalizeBnxtAction('', false, '', 'Substitution: Milan Samardzic in'), 'SUB');
+	});
+
+	await t.test('normalizeKorisliigaAction should map Korisliiga action types, Finnish descriptions, and qualifiers to standard event codes', () => {
+		assert.equal(normalizeKorisliigaAction('3P', true), '3FGM');
+		assert.equal(normalizeKorisliigaAction('3P', false), '3FGA');
+		assert.equal(normalizeKorisliigaAction('2P', true), '2FGM');
+		assert.equal(normalizeKorisliigaAction('2P', false), '2FGA');
+		assert.equal(normalizeKorisliigaAction('1P', true), 'FTM');
+		assert.equal(normalizeKorisliigaAction('1P', false), 'FTA');
+		assert.equal(normalizeKorisliigaAction('LEVYPALLO', false, 'HYÖKK'), 'ORB');
+		assert.equal(normalizeKorisliigaAction('LEVYPALLO', false, 'PUOL'), 'DRB');
+		assert.equal(normalizeKorisliigaAction('MENETYS'), 'TOV');
+		assert.equal(normalizeKorisliigaAction('RIISTO'), 'STL');
+		assert.equal(normalizeKorisliigaAction('VIRHE'), 'FOUL');
+		assert.equal(normalizeKorisliigaAction('TORJUNTA'), 'BLK');
+		assert.equal(normalizeKorisliigaAction('VAIHTO'), 'SUB');
+		assert.equal(normalizeKorisliigaAction('', false, '', 'Topias Palmi onnistunut 3p hypäri'), '3FGM');
+		assert.equal(normalizeKorisliigaAction('', false, '', 'Vaihto: Tuomas Hirvonen sisään'), 'SUB');
+	});
+
 	await t.test('calculateGameSecondsRemaining should accurately calculate total game clock for FIBA regulation and OT', () => {
 		// Q1 (Period 1): 10:00 remaining -> 3*600 + 600 = 2400
 		assert.equal(calculateGameSecondsRemaining(1, 600), 2400);
@@ -211,6 +269,130 @@ test('EuroLeague, ACB, LNB, LBA, GBL, BBL & ABA PBP Clock and Helper Unit Tests'
 		assert.equal(calculateGameSecondsRemaining(4, 120), 120);
 		// OT1 (Period 5): 03:00 remaining -> 180
 		assert.equal(calculateGameSecondsRemaining(5, 180), 180);
+	});
+});
+
+test('BNXT League PBP Harvester & Transformer Unit Tests', async (t) => {
+	await t.test('BnxtPbpHarvester parseGameId should parse game codes and season years', () => {
+		const harvester = new BnxtPbpHarvester();
+		assert.deepEqual(harvester.parseGameId('filou-oostende-vs-spirou-basket-N2024_7161'), {
+			competitionId: 'BNXT2024',
+			seasonCode: 'BNXT2024',
+			gameCode: '7161',
+			seasonYear: '2024'
+		});
+		assert.deepEqual(harvester.parseGameId('N2025_7162', '2025'), {
+			competitionId: 'BNXT2025',
+			seasonCode: 'BNXT2025',
+			gameCode: '7162',
+			seasonYear: '2025'
+		});
+	});
+
+	await t.test('transformBnxtPbp should normalize BNXT event stream and generate 5-on-5 stints', () => {
+		const rawPayload = {
+			seasonYear: '2024',
+			competitionId: 'BNXT2024',
+			actions: [
+				{
+					id: 1,
+					period: 1,
+					gameTime: "00:09:40",
+					type: "THREE_POINT_MADE",
+					isSuccessful: true,
+					teamId: "OOS",
+					playerId: "p-243",
+					homeScore: 3,
+					awayScore: 0,
+					description: "Pierre-Antoine Gillet 3pt jump shot made"
+				},
+				{
+					id: 2,
+					period: 1,
+					gameTime: "00:09:20",
+					type: "SUBSTITUTION",
+					teamId: "CHA",
+					playerId: "p-301",
+					subType: "IN",
+					homeScore: 3,
+					awayScore: 0,
+					description: "Substitution: Milan Samardzic in"
+				}
+			]
+		};
+
+		const { events, stints } = transformBnxtPbp('N2024_7161', rawPayload);
+		assert.equal(events.length, 2);
+		assert.equal(events[0].event_type, '3FGM');
+		assert.equal(events[0].competition_id, 'BNXT2024');
+		assert.equal(events[0].is_scoring_play, 1);
+		assert.equal(events[0].game_seconds_remaining, 2380);
+
+		assert.equal(stints.length, 1);
+		assert.equal(stints[0].period, 1);
+		assert.equal(stints[0].duration_seconds, 20);
+	});
+});
+
+test('Finnish Korisliiga PBP Harvester & Transformer Unit Tests', async (t) => {
+	await t.test('KorisliigaPbpHarvester parseGameId should parse game codes and season years', () => {
+		const harvester = new KorisliigaPbpHarvester();
+		assert.deepEqual(harvester.parseGameId('tampereen-pyrinto-vs-kataja-basket-F2024_431de40c-bebb-5f53-813d-66c80842ff20'), {
+			competitionId: 'KORISLIIGA2024',
+			seasonCode: 'KORISLIIGA2024',
+			gameCode: '431de40c-bebb-5f53-813d-66c80842ff20',
+			seasonYear: '2024'
+		});
+		assert.deepEqual(harvester.parseGameId('F2025_abc-123', '2025'), {
+			competitionId: 'KORISLIIGA2025',
+			seasonCode: 'KORISLIIGA2025',
+			gameCode: 'abc-123',
+			seasonYear: '2025'
+		});
+	});
+
+	await t.test('transformKorisliigaPbp should normalize Finnish Korisliiga event stream and generate 5-on-5 stints', () => {
+		const rawPayload = {
+			seasonYear: '2024',
+			competitionId: 'KORISLIIGA2024',
+			actions: [
+				{
+					id: 1,
+					period: 1,
+					gameTime: "00:09:50",
+					type: "3P",
+					isSuccessful: true,
+					teamId: "PYR",
+					playerId: "topias-palmi",
+					homeScore: 3,
+					awayScore: 0,
+					description: "Topias Palmi onnistunut 3p hypäri"
+				},
+				{
+					id: 2,
+					period: 1,
+					gameTime: "00:09:30",
+					type: "VAIHTO",
+					teamId: "KAT",
+					playerId: "tuomas-hirvonen",
+					subType: "IN",
+					homeScore: 3,
+					awayScore: 0,
+					description: "Vaihto: Tuomas Hirvonen sisään"
+				}
+			]
+		};
+
+		const { events, stints } = transformKorisliigaPbp('F2024_431de40c', rawPayload);
+		assert.equal(events.length, 2);
+		assert.equal(events[0].event_type, '3FGM');
+		assert.equal(events[0].competition_id, 'KORISLIIGA2024');
+		assert.equal(events[0].is_scoring_play, 1);
+		assert.equal(events[0].game_seconds_remaining, 2390);
+
+		assert.equal(stints.length, 1);
+		assert.equal(stints[0].period, 1);
+		assert.equal(stints[0].duration_seconds, 20);
 	});
 });
 
@@ -736,9 +918,9 @@ test('EuroLeague PBP Harvester & Transformer Unit Tests', async (t) => {
 	});
 });
 
-test('Europe, ACB, LNB, LBA, GBL, BBL & ABA PBP Full Pipeline Integration Test', async (t) => {
+test('Europe, ACB, LNB, LBA, GBL, BBL, ABA, BNXT & Korisliiga PBP Full Pipeline Integration Test', async (t) => {
 	// Setup clean mock scraper
-	const scraper = new EuropeScraper({ competitions: 'acb,lnb,lba,gbl,bbl,aba,euroleague', boxscoreType: 'pbp' });
+	const scraper = new EuropeScraper({ competitions: 'acb,lnb,lba,gbl,bbl,aba,bnxt,korisliiga,euroleague', boxscoreType: 'pbp' });
 	scraper.pbpHarvester.bypassNetwork = true;
 	scraper.acbPbpHarvester.bypassNetwork = true;
 	scraper.lnbPbpHarvester.bypassNetwork = true;
@@ -746,6 +928,8 @@ test('Europe, ACB, LNB, LBA, GBL, BBL & ABA PBP Full Pipeline Integration Test',
 	scraper.gblPbpHarvester.bypassNetwork = true;
 	scraper.bblPbpHarvester.bypassNetwork = true;
 	scraper.abaPbpHarvester.bypassNetwork = true;
+	scraper.bnxtPbpHarvester.bypassNetwork = true;
+	scraper.korisliigaPbpHarvester.bypassNetwork = true;
 	scraper.getSeasonGameSlugs = async function() {
 		this.gameSlugs = [
 			'realmadrid-vs-panathinaikos-E2024_1',
@@ -754,15 +938,17 @@ test('Europe, ACB, LNB, LBA, GBL, BBL & ABA PBP Full Pipeline Integration Test',
 			'unahotels-reggio-emilia-vs-dolomiti-energia-trentino-I2024_24662',
 			'olympiacos-vs-panathinaikos-G2024_65708E5D',
 			'fc-bayern-vs-alba-berlin-D2024_48210',
-			'partizan-vs-crvena-zvezda-V2024_123'
+			'partizan-vs-crvena-zvezda-V2024_123',
+			'filou-oostende-vs-spirou-basket-N2024_7161',
+			'tampereen-pyrinto-vs-kataja-basket-F2024_431de40c'
 		];
 		return this;
 	};
 
-	await t.test('Full Europe, ACB, LNB, LBA, GBL, BBL & ABA PBP Pipeline Execution: Extract -> Transform -> Load -> SQLite Audit', async () => {
+	await t.test('Full Europe, ACB, LNB, LBA, GBL, BBL, ABA, BNXT & Korisliiga PBP Pipeline Execution: Extract -> Transform -> Load -> SQLite Audit', async () => {
 		// Stage 1: Extract
-		const extractedGameIds = await extractStage(scraper, league, year, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,bbl,aba,euroleague' });
-		assert.equal(extractedGameIds.length, 7);
+		const extractedGameIds = await extractStage(scraper, league, year, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,bbl,aba,bnxt,korisliiga,euroleague' });
+		assert.equal(extractedGameIds.length, 9);
 		assert.ok(extractedGameIds.includes('E2024_1'));
 		assert.ok(extractedGameIds.includes('A2024_105373'));
 		assert.ok(extractedGameIds.includes('L2024_1001'));
@@ -770,19 +956,31 @@ test('Europe, ACB, LNB, LBA, GBL, BBL & ABA PBP Full Pipeline Integration Test',
 		assert.ok(extractedGameIds.includes('G2024_65708E5D'));
 		assert.ok(extractedGameIds.includes('D2024_48210'));
 		assert.ok(extractedGameIds.includes('V2024_123'));
+		assert.ok(extractedGameIds.includes('N2024_7161'));
+		assert.ok(extractedGameIds.includes('F2024_431de40c'));
 
 		// Verify competition filtering: transform with --competition=aba should only transform ABA events
 		const abaOnlyData = await transformStage(league, year, { type: 'pbp', competition: 'aba' });
 		assert.equal(abaOnlyData.events.length, 2);
 		assert.ok(abaOnlyData.events.every(e => e.game_id === 'V2024_123'));
 
+		// Verify BNXT competition filtering
+		const bnxtOnlyData = await transformStage(league, year, { type: 'pbp', competition: 'bnxt' });
+		assert.equal(bnxtOnlyData.events.length, 2);
+		assert.ok(bnxtOnlyData.events.every(e => e.game_id === 'N2024_7161'));
+
+		// Verify Korisliiga competition filtering
+		const korisliigaOnlyData = await transformStage(league, year, { type: 'pbp', competition: 'korisliiga' });
+		assert.equal(korisliigaOnlyData.events.length, 2);
+		assert.ok(korisliigaOnlyData.events.every(e => e.game_id === 'F2024_431de40c'));
+
 		// Stage 2: Transform all competitions
-		const transformedData = await transformStage(league, year, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,bbl,aba,euroleague' });
+		const transformedData = await transformStage(league, year, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,bbl,aba,bnxt,korisliiga,euroleague' });
 		assert.ok(transformedData.events.length > 0);
 		assert.ok(transformedData.stints.length > 0);
 
 		// Stage 3: Load
-		await loadStage(league, year, transformedData, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,bbl,aba,euroleague' });
+		await loadStage(league, year, transformedData, { type: 'pbp', competitions: 'acb,lnb,lba,gbl,bbl,aba,bnxt,korisliiga,euroleague' });
 
 		// Stage 4: Direct DB verification
 		let db = await initDatabase(league);
@@ -808,6 +1006,12 @@ test('Europe, ACB, LNB, LBA, GBL, BBL & ABA PBP Full Pipeline Integration Test',
 			const abaEventsCount = db.prepare('SELECT COUNT(*) as count FROM game_play_by_play WHERE game_id = ?').get('V2024_123');
 			assert.equal(abaEventsCount.count, 2);
 
+			const bnxtEventsCount = db.prepare('SELECT COUNT(*) as count FROM game_play_by_play WHERE game_id = ?').get('N2024_7161');
+			assert.equal(bnxtEventsCount.count, 2);
+
+			const korisliigaEventsCount = db.prepare('SELECT COUNT(*) as count FROM game_play_by_play WHERE game_id = ?').get('F2024_431de40c');
+			assert.equal(korisliigaEventsCount.count, 2);
+
 			const elStintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('E2024_1');
 			assert.equal(elStintsCount.count, 1);
 
@@ -828,6 +1032,12 @@ test('Europe, ACB, LNB, LBA, GBL, BBL & ABA PBP Full Pipeline Integration Test',
 
 			const abaStintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('V2024_123');
 			assert.equal(abaStintsCount.count, 1);
+
+			const bnxtStintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('N2024_7161');
+			assert.equal(bnxtStintsCount.count, 1);
+
+			const korisliigaStintsCount = db.prepare('SELECT COUNT(*) as count FROM game_stints WHERE game_id = ?').get('F2024_431de40c');
+			assert.equal(korisliigaStintsCount.count, 1);
 
 			// Populate team_game_stats record to test AuditEngine PBP stats query
 			db.prepare(`

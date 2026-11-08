@@ -43,6 +43,10 @@ export async function extractStage(scraper, league, year, options = {}) {
 				subFolder = 'lkl';
 			} else if (comp.includes('aba')) {
 				subFolder = 'aba';
+			} else if (comp.includes('bnxt')) {
+				subFolder = 'bnxt';
+			} else if (comp.includes('korisliiga') || comp.includes('finnish_korsiliiga')) {
+				subFolder = 'korisliiga';
 			} else if (comp.includes('eurocup')) {
 				subFolder = 'eurocup';
 			} else if (comp.includes('bcl')) {
@@ -113,6 +117,8 @@ export async function extractStage(scraper, league, year, options = {}) {
 		if (prefix === 'D' || id.includes('_bbl_')) return 'bbl';
 		if (prefix === 'K' || id.includes('_lkl_')) return 'lkl';
 		if (prefix === 'V' || id.includes('_aba_')) return 'aba';
+		if (prefix === 'N' || id.includes('_bnxt_')) return 'bnxt';
+		if (prefix === 'F' || id.includes('_korisliiga_')) return 'korisliiga';
 		if (prefix === 'U' || id.includes('_eurocup_')) return 'eurocup';
 		if (prefix === 'B' || id.includes('_bcl_')) return 'bcl';
 		return 'euroleague';
@@ -209,6 +215,16 @@ export async function extractStage(scraper, league, year, options = {}) {
 
 			if (!isPbp && BaseNormalizer.isGameUnplayed(rawData, league)) {
 				console.log(`⚠️ Game ID: ${gameId} is currently unplayed. Skipping cache file creation.`);
+			} else if (isPbp) {
+				const actions = rawData?.game?.actions || rawData?.game?.plays || rawData?.actions || rawData?.plays || rawData?.pbp?.Rows || rawData?.Rows || rawData?.jugadas || rawData?.events || rawData?.pbp?.actions || rawData?.data?.pbp;
+				const hasActions = Array.isArray(actions) && actions.length > 0;
+				const hasResultSets = Array.isArray(rawData?.resultSets) && rawData.resultSets.some(r => Array.isArray(r.rowSet) && r.rowSet.length > 0);
+				if (hasActions || hasResultSets || rawData?.pbp || rawData?.data?.play_by_play) {
+					await fs.writeFile(filePath, JSON.stringify(rawData, null, 2), 'utf8');
+					console.log(`💾 Saved raw data to ${filePath}`);
+				} else {
+					console.log(`⚠️ Game ID: ${gameId} returned 0 PBP actions. Skipping empty cache file creation.`);
+				}
 			} else {
 				await fs.writeFile(filePath, JSON.stringify(rawData, null, 2), 'utf8');
 				console.log(`💾 Saved raw data to ${filePath}`);
@@ -242,6 +258,10 @@ export async function extractStage(scraper, league, year, options = {}) {
 						fallback = { gameId, competitionId: `BBL${year}`, seasonYear: String(year), actions: [] };
 					} else if (subFolder === 'lkl') {
 						fallback = { gameId, competitionId: `LKL${year}`, seasonYear: String(year), actions: [] };
+					} else if (subFolder === 'bnxt') {
+						fallback = { gameId, competitionId: `BNXT${year}`, seasonYear: String(year), actions: [] };
+					} else if (subFolder === 'korisliiga') {
+						fallback = { gameId, competitionId: `KORISLIIGA${year}`, seasonYear: String(year), actions: [] };
 					} else {
 						fallback = { seasonCode: String(year), pbp: { Rows: [] }, points: { Rows: [] } };
 					}
