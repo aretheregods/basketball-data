@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { HTTPClient } from '#utils';
 import { BnxtHarvester } from '../harvesters/BnxtHarvester.mjs';
+import { fetchBnxtFibaLiveStats } from '../harvesters/BnxtFibaLiveStats.mjs';
 
 /**
  * @description Harvester for BNXT League (Belgium & Netherlands) Play-by-Play data.
@@ -94,7 +95,7 @@ export class BnxtPbpHarvester extends HTTPClient {
 		} catch (e) {
 			// ignore
 		}
-		const fallback = String(year) === '2026' ? 24 : 22;
+		const fallback = { '2022': 1, '2023': 3, '2024': 12, '2025': 22, '2026': 24, '2027': 25 }[String(year)] || 12;
 		this.competitionIdMap.set(year, fallback);
 		return fallback;
 	}
@@ -161,6 +162,8 @@ export class BnxtPbpHarvester extends HTTPClient {
 			await this.warmGeniusIdMap(compId);
 
 			let targetGeniusId = geniusMatchId || this.geniusIdMap.get(String(gameCode));
+			// Allow a Genius match ID to be used directly as the game code for FIBA-only imports.
+			if (!targetGeniusId && /^\d{7,}$/.test(String(gameCode))) targetGeniusId = gameCode;
 
 			const headers = {
 				'X-Authorization': this.apiToken,
@@ -171,24 +174,22 @@ export class BnxtPbpHarvester extends HTTPClient {
 			// Tier 1: Genius Sports / FIBA LiveStats CDN if genius_id exists
 			if (targetGeniusId) {
 				try {
-					const fibaUrl = `https://fibalivestats.dcd.shared.geniussports.com/data/${targetGeniusId}/data.json`;
-					const fibaRes = await fetch(fibaUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
-					if (fibaRes.ok) {
-						const fibaData = await fibaRes.json();
-						if (fibaData && (fibaData.pbp || fibaData.tm)) {
-							payload = {
-								gameId: String(gameId),
-								competitionId,
-								seasonYear: year,
-								source: 'fiba_livestats',
-								geniusId: targetGeniusId,
-								data: fibaData
-							};
-						}
+					const fibaData = await fetchBnxtFibaLiveStats(targetGeniusId);
+					if (fibaData) {
+						payload = {
+							gameId: String(gameId),
+							competitionId,
+							seasonYear: year,
+							source: 'fiba_livestats',
+							geniusId: targetGeniusId,
+							data: fibaData
+						};
 					}
 				} catch (err) {
 					console.warn(`⚠️ [BnxtPbpHarvester] Tier 1 FIBA CDN fetch failed for BNXT Game ${gameId}: ${err.message}`);
 				}
+			} else {
+				console.warn(`⚠️ [BnxtPbpHarvester] No Genius match ID is available for BNXT Game ${gameId}; FIBA LiveStats cannot be queried.`);
 			}
 
 			// Tier 2: Construct period-by-period scoring stream from schedule/find competitor period_scores

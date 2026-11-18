@@ -44,7 +44,27 @@ export class EuroleagueEngine extends HTTPClient {
 			return slugs;
 		}
 
-		// Production Mode: Dynamically discover all games of the season sequentially
+		// EuroLeague and EuroCup expose the season schedule in one request. Use it
+		// to avoid probing every possible game number (most of which may not have
+		// been played yet).
+		if (competitionId === 'euroleague' || competitionId === 'eurocup') {
+			const seasonCode = `${competitionCode}${yearFull}`;
+			const scheduleUrl = `https://api-live.euroleague.net/v2/competitions/${competitionCode}/seasons/${seasonCode}/games`;
+			const schedule = await this.request(scheduleUrl);
+			const games = Array.isArray(schedule) ? schedule : (schedule?.data || []);
+			const slugs = games
+				.filter(game => game?.played === true || String(game?.game_status ?? game?.gameStatus ?? game?.status ?? '').toLowerCase() === 'result')
+				.map(game => {
+				const code = game?.game_code ?? game?.gameCode ?? game?.code ?? game?.identifier?.split('_').at(-1);
+					return code == null ? null : `matchup-${seasonCode}_${code}`;
+				})
+				.filter(Boolean);
+			this.gameSlugs = [...new Set(slugs)];
+			return this.gameSlugs;
+		}
+
+		// Other competitions still use sequential IDs because they do not share
+		// the EuroLeague / EuroCup season schedule endpoint.
 		let maxGames = 330;
 		if (competitionId === 'eurocup') {
 			maxGames = 200;

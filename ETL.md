@@ -43,7 +43,7 @@ Each stage performs a highly targeted task:
 
 ## Supported Leagues & Sub-Competitions
 
-The pipeline supports 9 major league categories and numerous domestic and international sub-competitions:
+The pipeline supports 10 major league categories and numerous domestic and international sub-competitions:
 
 | League Code (`--league`) | Description & Included Competitions | Database File |
 |---|---|---|
@@ -55,7 +55,8 @@ The pipeline supports 9 major league categories and numerous domestic and intern
 | `puertorico` | Baloncesto Superior Nacional (BSN). | `data/SQL/PUERTORICO.sqlite` |
 | `southamerica` | South American Basketball: BCLA (`bcla`), LSB (`lsb`), NBB Brazil (`nbb`), LNB Argentina (`lnb`), LUB Uruguay (`lub`). | `data/SQL/SOUTHAMERICA.sqlite` |
 | `nbl` | Australian National Basketball League (Traditional, Play-by-Play). | `data/SQL/NBL.sqlite` |
-| `asia` | Asian Basketball: East Asia Super League (`easl`), WASL (`wasl`), BCL Asia (`bcl_asia`), FIBA Asia CC (`fiba_asia_cc`), B.League Japan (`bleague`), KBL South Korea (`kbl`), PBA Philippines (`pba`), CBA China (`cba`), TPBL Taiwan (`tpbl`). | `data/SQL/ASIA.sqlite` |
+| `asia` | Asian Basketball: East Asia Super League (`easl`), WASL (`wasl`), BCL Asia (`bcl_asia`), FIBA Asia CC (`fiba_asia_cc`), KBL South Korea (`kbl`), PBA Philippines (`pba`), CBA China (`cba`), TPBL Taiwan (`tpbl`). | `data/SQL/ASIA.sqlite` |
+| `bleague` | Japan B.League B1 (B.LEAGUE PREMIER top tier), harvested from the official `bleague.jp` schedule feed with official S3 game payloads and same-source HTML embed fallback (2021 onwards). | `data/SQL/BLEAGUE.sqlite` |
 
 ---
 
@@ -71,8 +72,8 @@ node run.js [options]
 
 | Flag | Format | Default | Description |
 |---|---|---|---|
-| `--league` | `--league=wnba` or `--league=asia,southamerica` | `wnba` | Comma-separated list of target leagues to process (`nba`, `wnba`, `europe`, `mexico`, `canada`, `puertorico`, `southamerica`, `nbl`, `asia`). |
-| `--competitions` | `--competitions=easl,bleague` | Default competition for targeted league (`euroleague`, `bcla`, `bcl_asia`) | Comma-separated list or `all` for sub-competitions within Europe, South America, or Asia. |
+| `--league` | `--league=wnba` or `--league=asia,southamerica` | `wnba` | Comma-separated list of target leagues to process (`nba`, `wnba`, `europe`, `mexico`, `canada`, `puertorico`, `southamerica`, `nbl`, `asia`, `bleague`). |
+| `--competitions` | `--competitions=easl,kbl` | Default competition for targeted league (`euroleague`, `bcla`, `bcl_asia`) | Comma-separated list or `all` for sub-competitions within Europe, South America, or Asia. (`bleague` is a standalone league; use `--league=bleague`.) |
 | `--years` | `--years=2023` or `--years=2024,2025` | Current Year | Comma-separated list of target season years to process. |
 | `--step` | `--step=extract,transform` | `extract,transform,load,sync` | Comma-separated list of pipeline stages to run (`extract`, `transform`, `load`, `sync`, `audit`). |
 | `--database` | `--database=my_d1_db` | `likelyhigh_db` | Name of the target Cloudflare D1 database for the `sync` stage. |
@@ -262,14 +263,19 @@ node run.js
 ```
 
 ### 2. Targeting Specific Asian Competitions
-Run the Asian basketball pipeline for EASL and B.League Japan:
+Run the Asian basketball pipeline for EASL and KBL:
 ```bash
-node run.js --league=asia --competitions=easl,bleague --years=2024
+node run.js --league=asia --competitions=easl,kbl --years=2024
 ```
 
-To run all Asian competitions (`easl`, `wasl`, `bcl_asia`, `fiba_asia_cc`, `bleague`, `kbl`, `pba`, `cba`, `tpbl`):
+To run all Asian competitions (`easl`, `wasl`, `bcl_asia`, `fiba_asia_cc`, `kbl`, `pba`, `cba`, `tpbl`):
 ```bash
 node run.js --league=asia --competitions=all --years=2024
+```
+
+Japan's B.League is a standalone league (not an Asia sub-competition):
+```bash
+node run.js --league=bleague --years=2024
 ```
 
 ### 3. Play-by-Play Ingestion Examples (NBA, WNBA, NBL)
@@ -310,3 +316,12 @@ node run.js --step=audit
 
 ### Q: Why did Stage 4 [SYNC] crash with "Wrangler execution failed"?
 * Ensure Wrangler CLI is installed, authenticated (`npx wrangler whoami`), and the target `--database` binding matches your Cloudflare account.
+
+### Q: B.League moved out of `asia` — what about legacy `BLEAGUE%` rows in existing databases?
+* B.League is now a standalone league (`--league=bleague`), and its rows are written to `data/SQL/BLEAGUE.sqlite` with `league = 'bleague'`. Local `ASIA.sqlite` has already been purged. The production D1 `asia` database may still contain legacy rows; the following cleanup SQL is **documented for later execution** (not run automatically):
+  ```sql
+  BEGIN;
+  DELETE FROM player_game_stats WHERE game_id LIKE 'BLEAGUE%';
+  DELETE FROM team_game_stats  WHERE game_id LIKE 'BLEAGUE%';
+  COMMIT;
+  ```

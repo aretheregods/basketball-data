@@ -160,7 +160,12 @@ export class EuropeScraper extends HTTPClient {
 			return this.abaPbpHarvester.fetchAbaPbp(gameId, year);
 		}
 		if (prefix === 'N' || clean.includes('_bnxt_') || compOption === 'bnxt') {
-			return this.bnxtPbpHarvester.fetchBnxtPbp(gameId, year);
+			const gameCode = clean.includes('_') ? clean.split('_').at(-1) : clean;
+			const metadata = this.engines.bnxt?.gameMetadataMap?.get(String(gameCode)) || {};
+			const gameData = metadata.gameData || {};
+			const geniusMatchId = metadata.geniusMatchId || metadata.geniusId || metadata.genius_id ||
+				gameData.genius_id || gameData.geniusId || gameData.genius_match_id || null;
+			return this.bnxtPbpHarvester.fetchBnxtPbp(gameId, year, geniusMatchId);
 		}
 		if (prefix === 'F' || clean.includes('_korisliiga_') || compOption === 'korisliiga' || compOption === 'finnish_korsiliiga') {
 			return this.korisliigaPbpHarvester.fetchKorisliigaPbp(gameId, year);

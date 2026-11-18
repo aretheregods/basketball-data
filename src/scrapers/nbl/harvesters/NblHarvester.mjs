@@ -29,12 +29,22 @@ export class NblHarvester extends HTTPClient {
 		}
 
 		const allSlugs = [];
+		const unplayedGameIds = new Set();
+		const isExplicitlyUnplayed = (match) => {
+			const status = String(match?.match_status ?? match?.matchStatus ?? match?.status ?? match?.match_status_string ?? '').trim().toLowerCase();
+			if (/^(postponed|cancelled|canceled)$/.test(status)) return true;
+			if (!/^(scheduled|upcoming|pending|not.?started|confirmed)$/.test(status)) return false;
+			const start = Date.parse(match?.start_time_datetime ?? match?.start_time ?? match?.startTime ?? match?.scheduled_at ?? '');
+			return Number.isFinite(start) && start > Date.now();
+		};
 
 		// Primary Source 1: Direct Rosetta API Schedule Endpoints
 		try {
+			// Rosetta's default schedule response is capped at 100 rows; request enough
+			// rows to include the full regular season and postseason schedule.
 			const rosettaUrls = [
-				`https://prod.rosetta.nbl.com.au/get/nbl/matches/in/season/${year}/all`,
-				`https://prod.rosetta.nbl.com.au/get/nbl/matches/in/season/${year}/regular`
+				`https://prod.rosetta.nbl.com.au/get/nbl/matches/in/season/${year}/all?limit=500`,
+				`https://prod.rosetta.nbl.com.au/get/nbl/matches/in/season/${year}/regular?limit=500`
 			];
 
 			for (const url of rosettaUrls) {
@@ -57,6 +67,9 @@ export class NblHarvester extends HTTPClient {
 							const cleanSlug = slugBase.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
 							const gameKey = `${cleanSlug}-O${year}_${m.id}`;
 							allSlugs.push(gameKey);
+							if (isExplicitlyUnplayed(m)) {
+								unplayedGameIds.add(String(m.id));
+							}
 
 							if (this.scraper && typeof this.scraper.setGameUrl === 'function') {
 								this.scraper.setGameUrl(`O${year}_${m.id}`, `https://www.nbl.com.au/matches/${cleanSlug}`);
@@ -70,7 +83,6 @@ export class NblHarvester extends HTTPClient {
 						}
 					}
 				}
-				if (allSlugs.length > 0) break;
 			}
 		} catch (err) {
 			console.warn(`⚠️ [NblHarvester] Rosetta API schedule fetch failed for ${year}: ${err.message}`);
@@ -103,6 +115,9 @@ export class NblHarvester extends HTTPClient {
 								if (id && slug) {
 									const cleanSlug = slug.toLowerCase().replace(/[^a-z0-9\s-]/g, '').trim().replace(/[\s-]+/g, '-');
 									allSlugs.push(`${cleanSlug}-O${year}_${id}`);
+									if (isExplicitlyUnplayed(item)) {
+										unplayedGameIds.add(String(id));
+									}
 								}
 							}
 						} catch (e) {}
@@ -136,6 +151,7 @@ export class NblHarvester extends HTTPClient {
 
 		if (allSlugs.length > 0) {
 			const uniqueSlugs = [...new Set(allSlugs)];
+			if (this.scraper) this.scraper.unplayedGameIds = unplayedGameIds;
 			console.log(`✅ [NblHarvester] Successfully harvested ${uniqueSlugs.length} total NBL game slugs for season ${year}.`);
 			return uniqueSlugs;
 		}

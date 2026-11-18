@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { HTTPClient } from '#utils';
 import { BnxtHarvester } from './harvesters/BnxtHarvester.mjs';
+import { fetchBnxtFibaLiveStats, mapBnxtFibaBoxScore } from './harvesters/BnxtFibaLiveStats.mjs';
 
 /**
  * @description Scraper for BNXT League (Belgium & Netherlands domestic basketball league).
@@ -96,7 +97,8 @@ export class BnxtScraper extends HTTPClient {
 			'2023': 3,
 			'2024': 12,
 			'2025': 22,
-			'2026': 24
+			'2026': 24,
+			'2027': 25
 		};
 		if (known[targetYear]) return known[targetYear];
 
@@ -155,6 +157,8 @@ export class BnxtScraper extends HTTPClient {
 			}
 		}
 
+		let numericCompId;
+		let scheduleItem = this.gameMetadataMap.get(String(gameCode))?.gameData;
 		try {
 			const headers = {
 				'X-Authorization': this.apiToken,
@@ -163,13 +167,12 @@ export class BnxtScraper extends HTTPClient {
 			};
 
 			// Determine competition numeric ID
-			let numericCompId = this.gameMetadataMap.get(String(gameCode))?.competitionId;
+			numericCompId = this.gameMetadataMap.get(String(gameCode))?.competitionId;
 			if (!numericCompId) {
 				numericCompId = await this.resolveCompetitionId(yearPrefix);
 			}
 
 			// 1. Fetch game details from schedule/find endpoint to get scores and dates
-			let scheduleItem = this.gameMetadataMap.get(String(gameCode))?.gameData;
 			if (!scheduleItem) {
 				const schedRes = await fetch(`https://bnxt.sportpress.info/api/v1/schedule/find/${gameCode}?lang=en`, { headers });
 				if (schedRes.ok) {
@@ -195,7 +198,31 @@ export class BnxtScraper extends HTTPClient {
 
 			return this.parseBnxtPayload(teamBlocks, scheduleItem, gameId, competitionId, yearPrefix, jsonCachePath);
 		} catch (error) {
-			console.error(`❌ [BnxtScraper] Error parsing game ${gameId}:`, error.message || error);
+			console.warn(`⚠️ [BnxtScraper] BNXT box score unavailable for ${gameId}:`, error.message || error);
+			const metadata = this.gameMetadataMap.get(String(gameCode)) || {};
+			const geniusMatchId = metadata.geniusMatchId || metadata.geniusId || metadata.genius_id ||
+				scheduleItem?.genius_id || scheduleItem?.geniusId || scheduleItem?.genius_match_id;
+			if (geniusMatchId) {
+				try {
+					const fibaData = await fetchBnxtFibaLiveStats(geniusMatchId);
+					const fibaBoxScore = mapBnxtFibaBoxScore(fibaData, {
+						gameId,
+						competitionId,
+						seasonYear: yearPrefix,
+						matchId: geniusMatchId,
+						gameDate: scheduleItem?.game_time?.split(' ')[0] || ''
+					});
+					if (fibaBoxScore) {
+						await fs.writeFile(jsonCachePath, JSON.stringify(fibaBoxScore, null, 2), 'utf8');
+						console.log(`✅ [BnxtScraper] Recovered box score for ${gameId} from FIBA LiveStats match ${geniusMatchId}.`);
+						return fibaBoxScore;
+					}
+				} catch (fibaError) {
+					console.warn(`⚠️ [BnxtScraper] FIBA LiveStats fallback failed for ${gameId}:`, fibaError.message || fibaError);
+				}
+			} else {
+				console.warn(`⚠️ [BnxtScraper] No Genius match ID is available for ${gameId}; cannot request FIBA LiveStats fallback.`);
+			}
 			return this.getUnplayedSkeleton(gameId, competitionId, yearPrefix);
 		}
 	}

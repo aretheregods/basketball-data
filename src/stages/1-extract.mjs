@@ -126,6 +126,18 @@ export async function extractStage(scraper, league, year, options = {}) {
 
 	// 3. Download and save raw payload for each game
 	for (const gameId of gameIds) {
+		// NBL & B.League schedule metadata lets us skip clearly scheduled fixtures before opening a game page.
+		// Missing metadata remains eligible so discovery never silently drops potentially played games.
+		if (league.toLowerCase().startsWith('nbl') &&
+			scraper.unplayedGameIds?.has(String(gameId).replace(/^O\d{4}_/, ''))) {
+			console.log(`⏭️ Game ID: ${gameId} is scheduled and has not started. Skipping ${isPbp ? 'PBP' : 'boxscore'} request.`);
+			continue;
+		}
+		if (league.toLowerCase().startsWith('bleague') &&
+			scraper.unplayedGameIds?.has(String(gameId).replace(/^BLEAGUE\d{4}_/, ''))) {
+			console.log(`⏭️ Game ID: ${gameId} is scheduled and has not started. Skipping ${isPbp ? 'PBP' : 'boxscore'} request.`);
+			continue;
+		}
 		let targetOutputDir = outputDir;
 		if (isPbp && league.toLowerCase().startsWith('europe')) {
 			const subFolder = resolveEuropePbpSubfolder(gameId);
@@ -209,6 +221,8 @@ export async function extractStage(scraper, league, year, options = {}) {
 					schemaFolder = 'nbl';
 				} else if (league.toLowerCase().startsWith('asia')) {
 					schemaFolder = 'asia';
+				} else if (league.toLowerCase().startsWith('bleague')) {
+					schemaFolder = 'bleague';
 				}
 				validateSchema(`${schemaFolder}/boxscore.json`, rawData);
 			}

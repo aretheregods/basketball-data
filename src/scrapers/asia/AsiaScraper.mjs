@@ -6,8 +6,9 @@ import { parseAsiaHtml, parseAsiaFibaJson, parseAsiaRealGmHtml } from './parsers
 
 /**
  * @class AsiaScraper
- * @description Scraper and Orchestrator for Asian basketball competitions (EASL, WASL, BCL Asia, FIBA Asia CC, B.League, KBL, PBA, CBA, TPBL).
+ * @description Scraper and Orchestrator for Asian basketball competitions (EASL, WASL, BCL Asia, FIBA Asia CC, KBL, PBA, CBA, TPBL).
  * Fetches, caches, parses, and normalizes game box score statistics.
+ * Japan's B.League is intentionally NOT handled here; it has its own standalone pipeline (`--league=bleague`).
  */
 export class AsiaScraper extends HTTPClient {
 	/**
@@ -15,6 +16,7 @@ export class AsiaScraper extends HTTPClient {
 	 * @param {Object} [options={}] - Scraper options
 	 * @param {string|string[]} [options.competitions='bcl_asia'] - Comma-separated list or array of target competitions
 	 * @param {string} [options.boxscoreType='traditional'] - Box score metric type
+	 * @throws {Error} If `bleague` is requested as an Asia sub-competition
 	 */
 	constructor(options = {}) {
 		super('https://www.proballers.com');
@@ -22,11 +24,16 @@ export class AsiaScraper extends HTTPClient {
 		// Parse competitions list (can be 'all', or comma-separated list)
 		const rawComps = options.competitions || 'bcl_asia';
 		if (rawComps === 'all') {
-			this.competitions = ['easl', 'wasl', 'bcl_asia', 'fiba_asia_cc', 'bleague', 'kbl', 'pba', 'cba', 'tpbl'];
+			this.competitions = ['easl', 'wasl', 'bcl_asia', 'fiba_asia_cc', 'kbl', 'pba', 'cba', 'tpbl'];
 		} else if (Array.isArray(rawComps)) {
 			this.competitions = rawComps;
 		} else {
 			this.competitions = rawComps.split(',').map(c => c.trim().toLowerCase());
+		}
+
+		// B.League was extracted into its own standalone league pipeline.
+		if (this.competitions.includes('bleague')) {
+			throw new Error('B.League is no longer an Asia sub-competition. Run it as its own league instead: node run.js --league=bleague --years=2024');
 		}
 
 		this.harvester = new AsiaHarvester(this);
@@ -276,44 +283,6 @@ export class AsiaScraper extends HTTPClient {
 		const { yearPrefix, competitionId } = this.parseGameId(gameId);
 
 		// Supply varying mock data based on the targeted competition
-		if (competitionId === 'bleague') {
-			return {
-				gameId,
-				season: yearPrefix,
-				gameDate: `${yearPrefix}-03-15`,
-				homeTeam: {
-					teamId: "RYUK",
-					teamName: "RYUKYU GOLDEN KINGS",
-					score: 87,
-					players: [
-						{
-							playerId: "jack-cooley",
-							playerName: "Jack Cooley",
-							statistics: {
-								min: "28:30", pts: 20, fgm: 8, fga: 12, fg3m: 0, fg3a: 0, ftm: 4, fta: 6,
-								oreb: 5, dreb: 8, reb: 13, ast: 2, stl: 1, blk: 1, tov: 1, pf: 3, plus_minus: 5
-							}
-						}
-					]
-				},
-				awayTeam: {
-					teamId: "CHIB",
-					teamName: "CHIBA JETS",
-					score: 82,
-					players: [
-						{
-							playerId: "yuki-togashi",
-							playerName: "Yuki Togashi",
-							statistics: {
-								min: "32:15", pts: 22, fgm: 7, fga: 15, fg3m: 4, fg3a: 9, ftm: 4, fta: 4,
-								oreb: 0, dreb: 2, reb: 2, ast: 8, stl: 2, blk: 0, tov: 3, pf: 2, plus_minus: -5
-							}
-						}
-					]
-				}
-			};
-		}
-
 		if (competitionId === 'kbl') {
 			return {
 				gameId,

@@ -1,9 +1,10 @@
 import { HTTPClient } from '#utils';
 
 /**
- * @description Harvester for Asian schedules from Proballers (CBA, B.League, PBA, IBL, QBL, BCL Asia, FIBA Asia CC, EASL, WASL, etc.).
+ * @description Harvester for Asian schedules from Proballers (CBA, PBA, IBL, QBL, BCL Asia, FIBA Asia CC, EASL, WASL, etc.).
  * Discovers and collects match IDs across seasons using Playwright or cached fallback lists.
  * Supports harvesting both Regular Season and Playoff games automatically.
+ * Japan's B.League is harvested by `BLeagueHarvester` instead.
  */
 export class AsiaHarvester extends HTTPClient {
 	/**
@@ -19,10 +20,6 @@ export class AsiaHarvester extends HTTPClient {
 			cba: [
 				{ id: 159, slug: 'china-cba' },
 				{ id: 158, slug: 'china-cba-playoffs' }
-			],
-			bleague: [
-				{ id: 281, slug: 'japan-b1-league' },
-				{ id: 155, slug: 'japan-b1-league-playoffs' }
 			],
 			pba: [
 				{ id: 357, slug: 'philippines-pba' },
@@ -116,9 +113,17 @@ export class AsiaHarvester extends HTTPClient {
 	 * @description Fetches all game slugs/IDs for active Asian competitions for a given season.
 	 * @param {string|number} year - The season start year
 	 * @returns {Promise<string[]>} List of game slugs
+	 * @throws {Error} If `bleague` is requested as an Asia sub-competition
 	 */
 	async getSeasonGameSlugs(year) {
 		const activeComps = this.scraper?.competitions || ['bcl_asia'];
+
+		// B.League is a standalone league now; without this guard the unknown
+		// `bleague` key would silently fall through to the CBA default endpoints.
+		if (activeComps.includes('bleague')) {
+			throw new Error('B.League is no longer an Asia sub-competition. Run it as its own league instead: node run.js --league=bleague --years=2024');
+		}
+
 		const allSlugs = [];
 
 		// If in test mode, bypass Playwright and return mock slugs
@@ -138,12 +143,7 @@ export class AsiaHarvester extends HTTPClient {
 				const comp = resolvedComp;
 				const compUpper = comp.toUpperCase().replace(/_/g, '');
 
-				if (comp === 'bleague') {
-					allSlugs.push(
-						`ryukyu-golden-kings-vs-chiba-jets-${compUpper}${year}_20001`,
-						`utsunomiya-brex-vs-alvark-tokyo-${compUpper}${year}_20002`
-					);
-				} else if (comp === 'kbl') {
+				if (comp === 'kbl') {
 					allSlugs.push(
 						`seoul-sk-knights-vs-db-promy-${compUpper}${year}_30001`
 					);

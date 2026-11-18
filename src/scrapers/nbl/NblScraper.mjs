@@ -51,6 +51,7 @@ export class NblScraper extends HTTPClient {
 	async getSeasonGameSlugs(year) {
 		const slugs = await this.harvester.getSeasonGameSlugs(year);
 		this.gameSlugs = slugs;
+		this.pbpHarvester.unplayedGameIds = this.unplayedGameIds || new Set();
 		return slugs;
 	}
 
@@ -114,6 +115,16 @@ export class NblScraper extends HTTPClient {
 		// If in test mode, bypass real network calls and return mock data
 		if (this.bypassNetwork) {
 			return this.getMockUnifiedBoxScore(gameId);
+		}
+
+		// Rosetta is the authoritative NBL boxscore source. The NBL match page is not
+		// Proballers HTML and does not contain the tables expected by NblParser.
+		try {
+			const match = await this.pbpHarvester.fetchRosettaMatchData(gameId, yearPrefix);
+			const rosettaBoxScore = this.normalizeRosettaBoxScore(gameId, yearPrefix, match);
+			if (rosettaBoxScore) return rosettaBoxScore;
+		} catch (error) {
+			console.warn(`⚠️ [NblScraper] Rosetta boxscore lookup failed for ${gameId}: ${error.message}`);
 		}
 
 		// Parse matchup team names from the gameId slug for mapping
@@ -197,6 +208,55 @@ export class NblScraper extends HTTPClient {
 			console.error(`❌ [NblScraper] Error parsing game HTML ${gameId}:`, error.message || error);
 			return this.getUnplayedSkeleton(gameId, yearPrefix);
 		}
+	}
+
+	/**
+	 * @description Converts a Rosetta match record into the normalized NBL boxscore schema.
+	 * @param {string} gameId - NBL schedule game ID.
+	 * @param {string} season - Four-digit season year.
+	 * @param {Object|null} match - Rosetta match record.
+	 * @returns {Object|null} Normalized boxscore, or null when player statistics are absent.
+	 */
+	normalizeRosettaBoxScore(gameId, season, match) {
+		const stats = match?.player_match_statistics;
+		if (!Array.isArray(stats) || stats.length === 0) return null;
+		const home = match.home_team || {};
+		const away = match.away_team || {};
+		const rows = stats.filter(row => String(row.period ?? '0') === '0' && row.participated !== false);
+		const normalizePlayer = row => {
+			const player = row.player || {};
+			const value = (field, fallback) => Number(row[field] ?? fallback ?? 0) || 0;
+			return {
+				playerId: String(player.external_id || player.id || row.external_id || ''),
+				playerName: String(player.full_name || [player.first_name, player.last_name].filter(Boolean).join(' ') || 'Unknown'),
+				statistics: {
+					min: String(row.minutes || row.minutes_string || '00:00'),
+					pts: value('points'), fgm: value('field_goals_made'), fga: value('field_goals_attempted'),
+					fg3m: value('three_points_made'), fg3a: value('three_points_attempted'),
+					ftm: value('free_throws_made'), fta: value('free_throws_attempted'),
+					oreb: value('offensive_rebounds'), dreb: value('defensive_rebounds'), reb: value('rebounds'),
+					ast: value('assists'), stl: value('steals'), blk: value('blocks'),
+					tov: value('turnovers'), pf: value('personal_fouls', row.fouls), plus_minus: value('plus_minus')
+				}
+			};
+		};
+		const team = (teamRecord, score, teamRows) => ({
+			teamId: String(teamRecord.id || teamRecord.team_code || ''),
+			teamName: String(teamRecord.name || teamRecord.external_team_name || 'Unknown'),
+			score: Number(score) || 0,
+			players: teamRows.filter(row => String(row.team?.id || row.team?.external_id) === String(teamRecord.id || teamRecord.external_id))
+				.map(normalizePlayer)
+		});
+		const homePlayers = rows.filter(row => String(row.team?.id || row.team?.external_id) === String(home.id || home.external_id));
+		const awayPlayers = rows.filter(row => String(row.team?.id || row.team?.external_id) === String(away.id || away.external_id));
+		if (homePlayers.length === 0 || awayPlayers.length === 0) return null;
+		return {
+			gameId,
+			season: String(season),
+			gameDate: String(match.start_time_datetime || match.start_time || '').slice(0, 10),
+			homeTeam: team(home, match.home_score, homePlayers),
+			awayTeam: team(away, match.away_score, awayPlayers)
+		};
 	}
 
 	/**

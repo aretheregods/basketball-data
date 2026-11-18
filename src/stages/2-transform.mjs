@@ -2,7 +2,9 @@ import fs from 'fs/promises';
 import path from 'path';
 import { BaseNormalizer } from '#utils';
 import { transformEurope } from '../scrapers/europe/europe_transform.mjs';
+import { transformBLeague } from '../scrapers/bleague/bleague_transform.mjs';
 import { getEuropeGamePrefix } from '../scrapers/europe/europe.mjs';
+import { EUROPE_LEAGUE_REGISTRY, resolveLeagueForCompetition } from '../db/europe_league_registry.mjs';
 
 /**
  * @description Map helper to convert a Stats API result set (headers + rowSet) to objects.
@@ -37,6 +39,7 @@ function mapResultSet(resultSet) {
  */
 export async function transformStage(league, year, options = {}) {
 	const isPbp = options.boxscoreType === 'pbp' || options.type === 'pbp';
+	const requestedComps = (options.competitions || options.competition || 'all').toLowerCase();
 	console.log(`⚙️ Starting Stage 2 [TRANSFORM] for ${league.toUpperCase()} - ${year}${isPbp ? ' (PBP)' : ''}`);
 
 	let rawDir = path.resolve('data/raw', league, String(year));
@@ -44,13 +47,19 @@ export async function transformStage(league, year, options = {}) {
 	if (isPbp) {
 		const jsonFilesMap = [];
 		if (league.toLowerCase().startsWith('europe')) {
-			let subFolders = ['euroleague', 'eurocup', 'bcl', 'acb', 'lnb', 'lba', 'gbl', 'bbl', 'lkl', 'aba', 'bnxt', 'korisliiga'];
+			let subFolders = [...new Set(Object.values(EUROPE_LEAGUE_REGISTRY).flatMap(config => config.competitions))]
+				.map(comp => ({ adriatic: 'aba', winner_league: 'israel', isl: 'israel', fec: 'fiba_europe_cup', feba: 'fiba_europe_cup' }[comp] || comp));
+			subFolders = [...new Set(subFolders)];
 
-			const requestedComps = (options.competitions || options.competition || '').toLowerCase();
 			if (requestedComps && requestedComps !== 'all') {
 				const compList = requestedComps.split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
 				if (compList.length > 0) {
-					subFolders = subFolders.filter(sf => compList.includes(sf));
+					const selectedFolders = compList.map(comp => {
+						const leagueId = resolveLeagueForCompetition(comp);
+						const config = EUROPE_LEAGUE_REGISTRY[leagueId];
+						return config ? config.competitions.map(id => ({ adriatic: 'aba', winner_league: 'israel', isl: 'israel', fec: 'fiba_europe_cup', feba: 'fiba_europe_cup' }[id] || id)) : [comp];
+					}).flat();
+					subFolders = subFolders.filter(sf => selectedFolders.includes(sf));
 				}
 			}
 
@@ -110,9 +119,11 @@ export async function transformStage(league, year, options = {}) {
 			const { transformBnxtPbp } = await import('../scrapers/europe/pbp/BnxtPbpTransformer.mjs');
 			const { transformKorisliigaPbp } = await import('../scrapers/europe/pbp/KorisliigaPbpTransformer.mjs');
 
+			const requestedCompetitionIds = requestedComps.split(',').map(value => value.trim());
 			transformFn = (gameId, rawData) => {
 				const clean = String(gameId || '').trim();
-				const compId = rawData && rawData.competitionId ? String(rawData.competitionId).toLowerCase() : '';
+				const prefixComp = ({ E: 'euroleague', U: 'eurocup', B: 'bcl', A: 'acb', L: 'lnb', I: 'lba', G: 'gbl', D: 'bbl', K: 'lkl', V: 'aba', N: 'bnxt', F: 'korisliiga' })[getEuropeGamePrefix(clean)] || '';
+				const compId = rawData && rawData.competitionId ? String(rawData.competitionId).toLowerCase() : prefixComp || requestedCompetitionIds.find(comp => comp && comp !== 'all') || '';
 				const prefix = getEuropeGamePrefix(clean);
 
 				if (prefix === 'A' || clean.includes('_acb_') || compId.includes('acb')) {
@@ -169,7 +180,8 @@ export async function transformStage(league, year, options = {}) {
 		}
 
 		const pbpResult = { events: allEvents, stints: allStints };
-		const cacheDir = path.resolve('data/transformed', league, 'pbp', String(year));
+		const cacheKey = requestedComps && requestedComps !== 'all' ? requestedComps.replaceAll(',', '_') : 'all';
+		const cacheDir = path.resolve('data/transformed', league, 'pbp', cacheKey, String(year));
 		await fs.mkdir(cacheDir, { recursive: true });
 		const cachePath = path.join(cacheDir, 'transformed.json');
 		await fs.writeFile(cachePath, JSON.stringify(pbpResult, null, 2), 'utf8');
@@ -207,6 +219,38 @@ export async function transformStage(league, year, options = {}) {
 
 		console.log(`💾 Transformed output cached to ${cachePath}`);
 		console.log(`✅ Stage 2 [TRANSFORM] complete. Produced ${result.players.length} player rows, ${result.teams.length} team rows, and referential mappings.\n`);
+
+		return result;
+	}
+
+	if (league.toLowerCase() === 'bleague' || league.toLowerCase().startsWith('bleague')) {
+		const result = await transformBLeague(rawDir, year);
+
+		// Apply generic system game score overrides if present
+		try {
+			const overridesPath = path.resolve('config', `${league}_overrides.json`);
+			const overridesContent = await fs.readFile(overridesPath, 'utf8');
+			const overrides = JSON.parse(overridesContent);
+			console.log(`🔧 Applying game score overrides from ${overridesPath}...`);
+			for (const team of result.teams) {
+				const gameOverride = overrides[team.game_id];
+				if (gameOverride && gameOverride[team.team_id] !== undefined) {
+					console.log(`🔧 Overriding team ${team.team_id} score in game ${team.game_id} to ${gameOverride[team.team_id]}`);
+					team.pts = Number(gameOverride[team.team_id]);
+				}
+			}
+		} catch (e) {
+			// Ignore if file doesn't exist or is unparseable
+		}
+
+		// Cache the transformed data to disk
+		const cacheDir = path.resolve('data/transformed', league, String(year));
+		await fs.mkdir(cacheDir, { recursive: true });
+		const cachePath = path.join(cacheDir, 'transformed.json');
+		await fs.writeFile(cachePath, JSON.stringify(result, null, 2), 'utf8');
+
+		console.log(`💾 Transformed output cached to ${cachePath}`);
+		console.log(`✅ Stage 2 [TRANSFORM] complete. Produced ${result.players.length} player rows and ${result.teams.length} team rows.\n`);
 
 		return result;
 	}

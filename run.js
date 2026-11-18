@@ -15,6 +15,7 @@ import { BsnScraper } from './src/scrapers/puertorico/BsnScraper.mjs';
 import { SouthAmericaScraper } from './src/scrapers/southamerica/SouthAmericaScraper.mjs';
 import { NblScraper } from './src/scrapers/nbl/NblScraper.mjs';
 import { AsiaScraper } from './src/scrapers/asia/AsiaScraper.mjs';
+import { BLeagueScraper } from './src/scrapers/bleague/BLeagueScraper.mjs';
 import { extractStage } from './src/stages/1-extract.mjs';
 import { transformStage } from './src/stages/2-transform.mjs';
 import { loadStage } from './src/stages/3-load.mjs';
@@ -59,6 +60,7 @@ const LEAGUE_SCRAPERS = {
 	southamerica: (options) => new SouthAmericaScraper(options),
 	nbl: (options) => new NblScraper(options),
 	asia: (options) => new AsiaScraper(options),
+	bleague: (options) => new BLeagueScraper(options),
 };
 
 /**
@@ -168,7 +170,10 @@ async function main() {
 	const databaseName = flags.database || 'likelyhigh_db';
 	const dryRun = flags.dryRun === 'true' || flags['dry-run'] === 'true';
 	const boxscoreType = flags['boxscore-type'] || flags.type || 'traditional';
-	const competitions = flags.competitions || flags.competition || 'euroleague';
+	// `--competitions` is optional: when absent each scraper applies its own league-aware
+	// default (europe -> 'euroleague', asia -> 'bcl_asia', southamerica -> 'bcla'). Passing a
+	// global default here would poison every non-European league with a European competition.
+	const competitions = flags.competitions || flags.competition || undefined;
 
 	// Handle direct --step=audit interceptor
 	if (activeSteps.includes('audit')) {

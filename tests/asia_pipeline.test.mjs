@@ -56,7 +56,7 @@ test('Asia Basketball Pipeline & Scraper Integration', async (t) => {
 	});
 
 	await t.test('AsiaHarvester should return mock slugs for active competitions in test mode', async () => {
-		const scraper = new AsiaScraper({ competitions: 'bcl_asia,bleague,kbl' });
+		const scraper = new AsiaScraper({ competitions: 'bcl_asia,kbl' });
 		scraper.bypassNetwork = true;
 		const harvester = scraper.harvester;
 		const slugs = await harvester.getSeasonGameSlugs('2024');
@@ -69,12 +69,6 @@ test('Asia Basketball Pipeline & Scraper Integration', async (t) => {
 		const bclGameId = bclSlug.split('-').pop();
 		assert.match(bclGameId, /^BCLASIA2024_\d+$/);
 
-		// Check B.League Segment
-		const bleagueSlug = slugs.find(s => s.includes('-BLEAGUE2024_'));
-		assert.ok(bleagueSlug);
-		const bleagueGameId = bleagueSlug.split('-').pop();
-		assert.match(bleagueGameId, /^BLEAGUE2024_\d+$/);
-
 		// Check KBL Segment
 		const kblSlug = slugs.find(s => s.includes('-KBL2024_'));
 		assert.ok(kblSlug);
@@ -83,16 +77,8 @@ test('Asia Basketball Pipeline & Scraper Integration', async (t) => {
 	});
 
 	await t.test('AsiaScraper should return correct unified schema mock data based on competition', async () => {
-		const scraper = new AsiaScraper({ competitions: 'bcl_asia,bleague,kbl,fiba_asia_cc' });
+		const scraper = new AsiaScraper({ competitions: 'bcl_asia,kbl,fiba_asia_cc' });
 		scraper.bypassNetwork = true;
-
-		// bleague check
-		const bleagueBox = await scraper.request('ryukyu-golden-kings-vs-chiba-jets-BLEAGUE2024_20001');
-		assert.equal(bleagueBox.gameId, 'ryukyu-golden-kings-vs-chiba-jets-BLEAGUE2024_20001');
-		assert.equal(bleagueBox.homeTeam.teamName, 'RYUKYU GOLDEN KINGS');
-		assert.equal(bleagueBox.homeTeam.score, 87);
-		assert.equal(bleagueBox.awayTeam.teamName, 'CHIBA JETS');
-		assert.equal(bleagueBox.awayTeam.score, 82);
 
 		// kbl check
 		const kblBox = await scraper.request('seoul-sk-knights-vs-db-promy-KBL2024_30001');
@@ -220,7 +206,7 @@ test('Asia Basketball Pipeline & Scraper Integration', async (t) => {
 			</html>
 		`;
 
-		const boxscore = parseAsiaHtml(sampleHtml, 'ryukyu-golden-kings', 'chiba-jets', 'ryukyu-golden-kings-vs-chiba-jets-BLEAGUE2024_20001', '2024');
+		const boxscore = parseAsiaHtml(sampleHtml, 'ryukyu-golden-kings', 'chiba-jets', 'ryukyu-golden-kings-vs-chiba-jets-BCLASIA2024_10003', '2024');
 
 		assert.equal(boxscore.homeTeam.teamName, 'RYUKYU GOLDEN KINGS');
 		assert.equal(boxscore.awayTeam.teamName, 'CHIBA JETS');
@@ -419,15 +405,30 @@ test('Asia Basketball Pipeline & Scraper Integration', async (t) => {
 		assert.equal(zhejiangPlayers[1].playerId, 'wei-liu-10002');
 	});
 
+	await t.test('AsiaScraper and AsiaHarvester should reject bleague as an Asia sub-competition', async () => {
+		assert.throws(
+			() => new AsiaScraper({ competitions: 'bcl_asia,bleague' }),
+			/B\.League is no longer an Asia sub-competition/
+		);
+
+		// Even a scraper whose competitions were set after construction is rejected at harvest time,
+		// otherwise the unknown key would fall through to the default CBA endpoints.
+		const scraper = new AsiaScraper({ competitions: 'bcl_asia' });
+		scraper.competitions = ['bleague'];
+		await assert.rejects(
+			() => scraper.harvester.getSeasonGameSlugs('2024'),
+			/B\.League is no longer an Asia sub-competition/
+		);
+	});
+
 	await t.test('Full Asia Multi-Competition Pipeline Integration: Extract -> Transform -> Load', async () => {
-		const scraper = new AsiaScraper({ competitions: 'bcl_asia,bleague,kbl,fiba_asia_cc' });
+		const scraper = new AsiaScraper({ competitions: 'bcl_asia,kbl,fiba_asia_cc' });
 		scraper.bypassNetwork = true;
 
 		// 1. STAGE 1: Extract
 		const gameIds = await extractStage(scraper, league, year);
 		assert.ok(gameIds.length > 0);
 		assert.ok(gameIds.includes('BCLASIA2024_10001'));
-		assert.ok(gameIds.includes('BLEAGUE2024_20001'));
 		assert.ok(gameIds.includes('KBL2024_30001'));
 
 		// 2. STAGE 2: Transform
@@ -435,18 +436,12 @@ test('Asia Basketball Pipeline & Scraper Integration', async (t) => {
 		assert.ok(transformed.players.length > 0);
 		assert.ok(transformed.teams.length > 0);
 
-		// Assert transformed BLEAGUE records
-		const cooleyBleague = transformed.players.find(p => p.game_id === 'BLEAGUE2024_20001' && p.player_id === 'jack-cooley');
-		assert.ok(cooleyBleague);
-		assert.equal(cooleyBleague.team_id, 'ryukyu-golden-kings'); // mapped from config/asia_team_mappings.json
-		assert.equal(cooleyBleague.pts, 20);
-		assert.equal(cooleyBleague.min, '28.5'); // "28:30" -> 28.5 minutes
-
-		const togashiBleague = transformed.players.find(p => p.game_id === 'BLEAGUE2024_20001' && p.player_id === 'yuki-togashi');
-		assert.ok(togashiBleague);
-		assert.equal(togashiBleague.team_id, 'chiba-jets'); // mapped
-		assert.equal(togashiBleague.pts, 22);
-		assert.equal(togashiBleague.min, '32.3'); // "32:15" -> 32.3 minutes
+		// Assert transformed BCL Asia records
+		const cooleyBcl = transformed.players.find(p => p.game_id === 'BCLASIA2024_10001' && p.player_id === 'jack-cooley');
+		assert.ok(cooleyBcl);
+		assert.equal(cooleyBcl.team_id, 'ryukyu-golden-kings'); // mapped from config/asia_team_mappings.json
+		assert.equal(cooleyBcl.pts, 18);
+		assert.equal(cooleyBcl.min, '28.5'); // "28:30" -> 28.5 minutes
 
 		// Assert transformed KBL records
 		const warneyKbl = transformed.players.find(p => p.game_id === 'KBL2024_30001' && p.player_id === 'jameel-warney');
@@ -465,13 +460,17 @@ test('Asia Basketball Pipeline & Scraper Integration', async (t) => {
 			assert.ok(playerStats.length > 0);
 
 			// Verify games exist under 'asia' league rollup
-			assert.ok(playerStats.some(p => p.player_name === 'Jack Cooley' && p.game_id.includes('BLEAGUE')));
+			assert.ok(playerStats.some(p => p.player_name === 'Jack Cooley' && p.game_id.includes('BCLASIA')));
 			assert.ok(playerStats.some(p => p.player_name === 'Jameel Warney' && p.game_id.includes('KBL')));
 
 			const teamStats = db.prepare('SELECT * FROM team_game_stats WHERE league = ? AND season = ?').all('asia', year);
 			assert.ok(teamStats.length > 0);
-			assert.ok(teamStats.some(t => t.team_name === 'RYUKYU GOLDEN KINGS' && t.game_id.includes('BLEAGUE')));
+			assert.ok(teamStats.some(t => t.team_name === 'RYUKYU GOLDEN KINGS' && t.game_id.includes('BCLASIA')));
 			assert.ok(teamStats.some(t => t.team_name === 'SEOUL SK KNIGHTS' && t.game_id.includes('KBL')));
+
+			// B.League is a standalone league now; no BLEAGUE rows may remain under asia
+			const bleagueRows = db.prepare("SELECT * FROM player_game_stats WHERE game_id LIKE 'BLEAGUE%'").all();
+			assert.equal(bleagueRows.length, 0, 'No BLEAGUE rows should exist in the asia database');
 		} finally {
 			if (db) db.close();
 		}

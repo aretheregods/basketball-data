@@ -99,7 +99,7 @@ The following diagram maps out the physical data flows, network boundaries, and 
 
 ## 3. Multi-League Scraper & Engine Catalog
 
-We utilize specialized scraper engines organized by league characteristics and technical providers across 9 distinct league categories.
+We utilize specialized scraper engines organized by league characteristics and technical providers across 10 distinct league categories.
 
 ### 3.1 Domestic and Continental Scraper Specifications
 
@@ -113,7 +113,8 @@ We utilize specialized scraper engines organized by league characteristics and t
 | **puertorico** | `BsnScraper` | B | Proballers league schedule harvester (League 270) returning matchups formatted as `matchup-B{year}_{gameCode}`. High-performance, browser-independent static HTML regex parser. | `PUERTORICO.sqlite` |
 | **southamerica** | `SouthAmericaScraper` | SA / Comp | Targets Proballers index for BCLA (`bcla`), LSB (`lsb`), NBB Brazil (`nbb`), LNB Argentina (`lnb`), LUB Uruguay (`lub`). Fast static HTML regex parsing. | `SOUTHAMERICA.sqlite` |
 | **nbl** | `NblScraper` | N/A | Fetches Australia NBL games, supporting traditional boxscores and FIBA LiveStats Play-by-Play (`NblPbpHarvester` / `NblPbpTransformer` for `--type=pbp`). | `NBL.sqlite` |
-| **asia** | `AsiaScraper` | Comp | Targets EASL, WASL, BCL Asia, FIBA Asia CC, B.League, KBL, PBA, CBA, TPBL using `AsiaHarvester` and dynamic parser resolution (FIBA LiveStats REST JSON, RealGM KBL HTML, Proballers HTML). | `ASIA.sqlite` |
+| **asia** | `AsiaScraper` | Comp | Targets EASL, WASL, BCL Asia, FIBA Asia CC, KBL, PBA, CBA, TPBL using `AsiaHarvester` and dynamic parser resolution (FIBA LiveStats REST JSON, RealGM KBL HTML, Proballers HTML). | `ASIA.sqlite` |
+| **bleague** | `BLeagueScraper` | N/A (B.League is a standalone league, not an Asia sub-competition) | Walks the official `bleague.jp` day-scoped schedule JSON feed (`tab=1`, B1 only) via `BLeagueHarvester`, then resolves each game's official S3 `v2_genius_contexts` payload with a same-source `game_detail` HTML embed fallback (`BLeagueParser`). League-owned transform lives in `bleague_transform.mjs`. | `BLEAGUE.sqlite` |
 
 ---
 

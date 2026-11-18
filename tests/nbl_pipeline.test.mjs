@@ -40,6 +40,55 @@ test.describe('Oceania NBL Scraper & Pipeline Integration', () => {
 		assert.match(sampleGameId, /^O2024_\d+$/, 'gameId Segment must match NBL pattern');
 	});
 
+	test('NblHarvester should preserve all discovered IDs and mark explicitly scheduled games', async () => {
+		const originalNodeEnv = process.env.NODE_ENV;
+		process.env.NODE_ENV = 'development';
+		const harvester = new NblHarvester();
+		harvester.scraper = { setGameUrl() {} };
+		const originalFetch = globalThis.fetch;
+		let calls = 0;
+		const requestedUrls = [];
+		globalThis.fetch = async url => {
+			calls += 1;
+			requestedUrls.push(String(url));
+			return {
+				ok: true,
+				json: async () => ({ data: [
+					{ id: 21, match_slug: 'played-match', match_status: 'FINALIZED', home_team: { team_code: 'MEL' }, away_team: { team_code: 'SYD' } },
+					{ id: 22, match_slug: 'scheduled-match', match_status: 'SCHEDULED', start_time_datetime: '2099-01-01T10:00:00Z', home_team: { team_code: 'MEL' }, away_team: { team_code: 'SYD' } },
+					{ id: 25, match_slug: 'stale-scheduled-match', match_status: 'SCHEDULED', start_time_datetime: new Date(Date.now() - 86400000).toISOString(), home_team: { team_code: 'MEL' }, away_team: { team_code: 'SYD' } },
+					{ id: 23, match_slug: 'scored-match', home_team_score: 80, away_team_score: 75 },
+					{ id: 24, match_slug: 'zero-score-match', home_team_score: 0, away_team_score: 0 }
+				] })
+			};
+		};
+		try {
+			const slugs = await harvester.getSeasonGameSlugs('2026');
+			assert.deepEqual(slugs, ['played-match-O2026_21', 'scheduled-match-O2026_22', 'stale-scheduled-match-O2026_25', 'scored-match-O2026_23', 'zero-score-match-O2026_24']);
+			assert.deepEqual([...harvester.scraper.unplayedGameIds], ['22']);
+			assert.equal(calls, 2, 'should merge the all-games and regular-season schedules');
+			assert.ok(requestedUrls.every(url => url.endsWith('?limit=500')), 'schedule requests should ask for a full season page');
+		} finally {
+			globalThis.fetch = originalFetch;
+			process.env.NODE_ENV = originalNodeEnv;
+		}
+	});
+
+	test('extractStage should skip explicitly scheduled NBL games before scraper.request', async () => {
+		const scraper = {
+			gameSlugs: [],
+			unplayedGameIds: new Set(['10003']),
+			async getSeasonGameSlugs() {
+				this.gameSlugs = ['melbourne-united-vs-sydney-kings-O2024_10003'];
+			},
+			getGameEndpoint() { throw new Error('request should be skipped'); },
+			getGameUrl() { throw new Error('request should be skipped'); },
+			async request() { throw new Error('request should be skipped'); }
+		};
+		const gameIds = await extractStage(scraper, 'nbl_test', '2024');
+		assert.deepEqual(gameIds, ['O2024_10003']);
+	});
+
 	test('NblScraper should return correct unified schema mock data', async () => {
 		const scraper = new NblScraper();
 		const boxscore = await scraper.request('melbourne-united-vs-sydney-kings-O2024_10001');
@@ -58,6 +107,26 @@ test.describe('Oceania NBL Scraper & Pipeline Integration', () => {
 		assert.equal(chrisGoulding.playerId, 'chris-goulding');
 		assert.equal(chrisGoulding.statistics.pts, 21);
 		assert.equal(chrisGoulding.statistics.min, '28:15');
+	});
+
+	test('NblScraper should normalize official Rosetta player boxscore statistics', () => {
+		const scraper = new NblScraper();
+		const match = {
+			start_time_datetime: '2026-11-15T04:00:00',
+			home_score: '111', away_score: '102',
+			home_team: { id: 'home-id', team_code: 'SYD', name: 'Sydney Kings' },
+			away_team: { id: 'away-id', team_code: 'NZL', name: 'NZ Breakers' },
+			player_match_statistics: [
+				{ period: '0', participated: true, player: { id: 'p1', full_name: 'Home Player' }, team: { id: 'home-id' }, minutes: '15:36', points: 12, field_goals_made: 4, field_goals_attempted: 8, three_points_made: 2, three_points_attempted: 4, free_throws_made: 2, free_throws_attempted: 2, offensive_rebounds: 1, defensive_rebounds: 3, rebounds: 4, assists: 2, steals: 1, blocks: 0, turnovers: 1, fouls: 2 },
+				{ period: '0', participated: true, player: { id: 'p2', full_name: 'Away Player' }, team: { id: 'away-id' }, minutes: '20:00', points: 9 }
+			]
+		};
+		const result = scraper.normalizeRosettaBoxScore('O2026_match-uuid', '2026', match);
+		assert.equal(result.gameDate, '2026-11-15');
+		assert.equal(result.homeTeam.score, 111);
+		assert.equal(result.homeTeam.players[0].statistics.pts, 12);
+		assert.equal(result.homeTeam.players[0].statistics.fg3m, 2);
+		assert.equal(result.awayTeam.players[0].playerName, 'Away Player');
 	});
 
 	test('NblScraper HTML Parser should correctly parse NBL team names, scores, and player statistics from Proballers HTML', async () => {

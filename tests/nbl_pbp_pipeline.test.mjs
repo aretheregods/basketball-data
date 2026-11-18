@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { NblScraper } from '../src/scrapers/nbl/NblScraper.mjs';
+import { NblPbpHarvester } from '../src/scrapers/nbl/harvesters/NblPbpHarvester.mjs';
 import { extractStage } from '../src/stages/1-extract.mjs';
 import { transformStage } from '../src/stages/2-transform.mjs';
 import { loadStage, initDatabase } from '../src/stages/3-load.mjs';
@@ -134,6 +135,37 @@ test.after(async () => {
 });
 
 test.describe('NBL Play-by-Play Unit Tests', () => {
+	test('NblPbpHarvester should resolve Rosetta UUID to numeric FIBA media ID', async () => {
+		const harvester = new NblPbpHarvester({ bypassNetwork: false });
+		const uuid = '00000000-0000-4000-8000-000000002099';
+		harvester.seasonMatchCache['2099'] = [{ id: uuid, external_media_id: '72016892', match_status: 'scheduled', start_time_datetime: new Date(Date.now() - 86400000).toISOString() }];
+		const cachePath = path.resolve(`data/raw/nbl/pbp/2099/O2099_${uuid}.json`);
+		await fs.rm(cachePath, { force: true });
+		const originalFetch = globalThis.fetch;
+		const requestedUrls = [];
+		globalThis.fetch = async url => {
+			requestedUrls.push(String(url));
+			if (String(url).includes(`/get/match/${uuid}/live/all`)) {
+				return { ok: true, status: 200, json: async () => ({ data: { external_media_id: '72016892', play_by_play: [] } }) };
+			}
+			if (String(url).includes('/data/72016892/data.json')) {
+				return { ok: true, status: 200, json: async () => ({ pbp: [{ actionNumber: 1 }] }) };
+			}
+			throw new Error(`Unexpected request URL: ${url}`);
+		};
+		try {
+			const payload = await harvester.fetchNblPbp(`O2099_${uuid}`, '2099');
+			assert.equal(payload.source, 'fiba_livestats');
+			assert.deepEqual(requestedUrls, [
+				`https://prod.rosetta.nbl.com.au/get/match/${uuid}/live/all`,
+				'https://fibalivestats.dcd.shared.geniussports.com/data/72016892/data.json'
+			]);
+		} finally {
+			globalThis.fetch = originalFetch;
+			await fs.rm(cachePath, { force: true });
+		}
+	});
+
 	test('parseFibaClockToSeconds should accurately parse FIBA clock strings and ISO durations', () => {
 		assert.equal(parseFibaClockToSeconds('10:00', 1), 600);
 		assert.equal(parseFibaClockToSeconds('08:45.5', 1), 525.5);

@@ -47,19 +47,10 @@ export class AuditEngine {
 		try {
 			const leagueKey = path.basename(this.dbPath, '.sqlite').toLowerCase();
 			const dbSeasons = this.getSeasons();
-			const rawSeasons = [];
-			const rawLeagueDir = path.resolve('data/raw', leagueKey);
-			if (fs.existsSync(rawLeagueDir)) {
-				try {
-					const dirs = fs.readdirSync(rawLeagueDir);
-					for (const dir of dirs) {
-						if (/^\d{4}$/.test(dir)) {
-							rawSeasons.push(dir);
-						}
-					}
-				} catch (e) {}
-			}
-			const seasons = [...new Set([...dbSeasons, ...rawSeasons])].sort((a, b) => b - a);
+			const rawPbp = this.getRawPbpStats(leagueKey);
+			const pbpSeasons = [...new Set([...this.getPbpSeasons(), ...Object.keys(rawPbp)])];
+			const rawSeasons = this.getRawSeasons(leagueKey);
+			const seasons = [...new Set([...dbSeasons, ...pbpSeasons, ...rawSeasons])].sort((a, b) => b - a);
 
 			const report = {
 				seasons: {},
@@ -85,6 +76,10 @@ export class AuditEngine {
 				const syncStatus = this.getSyncStatus(season);
 				const unplayedGames = this.getUnplayedGamesFromRaw(leagueKey, season);
 				const pbpStats = this.getPbpStats(season, gamesCount);
+				this.mergePbpStats(pbpStats, rawPbp[season]);
+				if (gamesCount > 0) {
+					pbpStats.pbpCoveragePct = Number(((pbpStats.pbpGamesCount / gamesCount) * 100).toFixed(1));
+				}
 
 				report.seasons[season] = {
 					gamesCount,
@@ -117,6 +112,162 @@ export class AuditEngine {
 	}
 
 	/**
+	 * @description Reads PBP file presence and approximate event counts from raw season folders.
+	 * @param {string} leagueKey - Lowercase league database key
+	 * @returns {Record<string, { pbpGamesCount: number, pbpEventsCount: number }>} Raw PBP stats by season
+	 */
+	getRawPbpStats(leagueKey) {
+		const competitionFolders = {
+			euroleague: ['euroleague'],
+			eurocup: ['eurocup'],
+			basketball_champions_league: ['bcl'],
+			fiba_europe_cup: ['fiba_europe_cup', 'fec'],
+			acb: ['acb'],
+			greek_basketball: ['gbl'],
+			italian_serie_a_basketball: ['lba'],
+			french_pro_a: ['lnb'],
+			german_bbl: ['bbl'],
+			lithuanian_lkl: ['lkl'],
+			adriatic_basketball: ['aba'],
+			israeli_basketball: ['bsl', 'israel'],
+			bnxt: ['bnxt'],
+			finnish_korsiliiga: ['korisliiga'],
+			british_basketball: ['british_basketball', 'bbl_gb']
+		};
+		const root = leagueKey === 'europe' ? path.resolve('data/raw/europe/pbp') : null;
+		const folders = root ? fs.existsSync(root) ? fs.readdirSync(root).map(name => path.join(root, name)) : [] :
+			(competitionFolders[leagueKey] || []).map(folder => path.resolve('data/raw/europe/pbp', folder));
+		/** @type {Record<string, { pbpGamesCount: number, pbpEventsCount: number }>} */
+		const stats = {};
+		for (const folder of folders) {
+			let seasons;
+			try {
+				seasons = fs.readdirSync(folder, { withFileTypes: true }).filter(entry => entry.isDirectory() && /^\d{4}$/.test(entry.name));
+			} catch (error) {
+				continue;
+			}
+			for (const seasonDir of seasons) {
+				const seasonPath = path.join(folder, seasonDir.name);
+				let files;
+				try {
+					files = fs.readdirSync(seasonPath).filter(file => file.endsWith('.json'));
+				} catch (error) {
+					continue;
+				}
+				const seasonStats = stats[seasonDir.name] || { pbpGamesCount: 0, pbpEventsCount: 0 };
+				for (const file of files) {
+					try {
+						const raw = JSON.parse(fs.readFileSync(path.join(seasonPath, file), 'utf8'));
+						const actions = raw?.pbp?.Rows || raw?.pbp?.actions || raw?.pbp || raw?.actions || raw?.plays || raw?.events || [];
+						const eventCount = Array.isArray(actions) ? actions.length :
+							(actions && typeof actions === 'object' ? Object.values(actions).reduce((count, value) => count + (Array.isArray(value) ? value.length : 0), 0) : 0);
+						if (eventCount > 0) {
+							seasonStats.pbpGamesCount++;
+							seasonStats.pbpEventsCount += eventCount;
+						}
+					} catch (error) {
+						// Skip invalid cached source files.
+					}
+				}
+				stats[seasonDir.name] = seasonStats;
+			}
+		}
+		return stats;
+	}
+
+	/**
+	 * @description Combines raw download presence with loaded PBP counts, preferring the larger count per metric.
+	 * @param {{ pbpGamesCount: number, pbpCoveragePct: number, pbpEventsCount: number, pbpStintsCount: number }} loadedStats - Stats from SQLite
+	 * @param {{ pbpGamesCount: number, pbpEventsCount: number }} [rawStats] - Stats from raw downloaded files
+	 * @returns {void}
+	 */
+	mergePbpStats(loadedStats, rawStats) {
+		if (!rawStats) return;
+		loadedStats.pbpGamesCount = Math.max(loadedStats.pbpGamesCount, rawStats.pbpGamesCount);
+		loadedStats.pbpEventsCount = Math.max(loadedStats.pbpEventsCount, rawStats.pbpEventsCount);
+	}
+
+	/**
+	 * @description Finds raw seasons in the current league's traditional or PBP directory.
+	 * European PBP files are stored under the shared europe/pbp/<competition>/<season> tree.
+	 * @param {string} leagueKey - Lowercase database key
+	 * @returns {string[]} Raw seasons available for this database
+	 */
+	getRawSeasons(leagueKey) {
+		const seasons = new Set();
+		const directories = [path.resolve('data/raw', leagueKey)];
+		const europeanCompetitionFolders = {
+			euroleague: ['euroleague'],
+			eurocup: ['eurocup'],
+			basketball_champions_league: ['bcl'],
+			acb: ['acb'],
+			greek_basketball: ['gbl'],
+			italian_serie_a_basketball: ['lba'],
+			french_pro_a: ['lnb'],
+			german_bbl: ['bbl'],
+			lithuanian_lkl: ['lkl'],
+			adriatic_basketball: ['aba'],
+			israeli_basketball: ['bsl', 'israel'],
+			bnxt: ['bnxt'],
+			finnish_korsiliiga: ['korisliiga'],
+			british_basketball: ['british_basketball']
+		};
+		for (const folder of europeanCompetitionFolders[leagueKey] || []) {
+			directories.push(path.resolve('data/raw/europe/pbp', folder));
+		}
+		for (const directory of directories) {
+			try {
+				for (const dir of fs.readdirSync(directory, { withFileTypes: true })) {
+					if (dir.isDirectory() && /^\d{4}$/.test(dir.name)) seasons.add(dir.name);
+				}
+			} catch (error) {
+				// Raw files are optional; the database remains the source of loaded seasons.
+			}
+		}
+		return [...seasons];
+	}
+
+	/**
+	 * @description Retrieves seasons represented by play-by-play events or stints.
+	 * @returns {string[]} Seasons inferred from catalogs, linked stats, competition IDs, or event IDs
+	 */
+	getPbpSeasons() {
+		const seasons = new Set();
+		try {
+			const gamesTable = this.db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='games'`).get();
+			if (gamesTable) {
+				const rows = this.db.prepare(`SELECT DISTINCT season_id FROM games WHERE season_id IS NOT NULL AND season_id != ''`).all();
+				for (const row of rows) seasons.add(String(row.season_id));
+			}
+		} catch (error) {
+			// Non-European databases do not have the European games catalog.
+		}
+		for (const table of ['game_play_by_play', 'game_stints']) {
+			try {
+				const exists = this.db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`).get(table);
+				if (!exists) continue;
+				const rows = this.db.prepare(`
+					SELECT DISTINCT t.season AS season, p.competition_id AS competition_id, p.game_id AS game_id
+					FROM ${table} p
+					LEFT JOIN team_game_stats t ON p.game_id = t.game_id
+				`).all();
+				for (const row of rows) {
+					if (row.season !== null && row.season !== undefined && row.season !== '') seasons.add(String(row.season));
+					for (const value of [row.competition_id, row.game_id]) {
+						// Season identifiers are prefixes (NBL2025, U2026, F2026_...),
+						// never arbitrary four-digit fragments within event IDs or UUIDs.
+						const match = String(value || '').match(/^[A-Z_-]*((?:19|20)\d{2})(?=_|$)/i);
+						if (match) seasons.add(match[1]);
+					}
+				}
+			} catch (error) {
+				// PBP may exist in older schemas without stats tables or expected columns.
+			}
+		}
+		return [...seasons];
+	}
+
+	/**
 	 * @description Computes PBP statistics (events, stints, coverage %) for a season.
 	 * @param {string} season - The season year
 	 * @param {number} totalGames - Total games in season
@@ -127,47 +278,63 @@ export class AuditEngine {
 		try {
 			// Check if game_play_by_play table exists
 			const tableCheck = this.db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='game_play_by_play'`).get();
-			if (!tableCheck) return res;
+			const stintsTableCheck = this.db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='game_stints'`).get();
+			if (!tableCheck && !stintsTableCheck) return res;
 
 			const seasonStr = String(season);
+			const gamesTable = this.db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='games'`).get();
+			const statsTable = this.db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='team_game_stats'`).get();
+			const seasonGameConditions = [];
+			if (gamesTable) seasonGameConditions.push('p.game_id IN (SELECT id FROM games WHERE season_id = ?)');
+			if (statsTable) seasonGameConditions.push('p.game_id IN (SELECT DISTINCT game_id FROM team_game_stats WHERE season = ?)');
+			const fallbackSeasonConditions = [];
+			const fallbackSeasonParams = [];
+			if (!seasonGameConditions.length) {
+				fallbackSeasonConditions.push('p.competition_id LIKE ?', 'p.event_id LIKE ?');
+				fallbackSeasonParams.push(`%${seasonStr}%`, `%${seasonStr}%`);
+			}
+			const seasonFilter = [...seasonGameConditions, ...fallbackSeasonConditions].join(' OR ') || '0';
+			const seasonParams = [
+				...(gamesTable ? [seasonStr] : []),
+				...(statsTable ? [seasonStr] : []),
+				...fallbackSeasonParams
+			];
 
-			const pbpGamesStmt = this.db.prepare(`
-				SELECT COUNT(DISTINCT p.game_id) as cnt
-				FROM game_play_by_play p
-				LEFT JOIN (SELECT DISTINCT game_id, season FROM team_game_stats) t ON p.game_id = t.game_id
-				WHERE t.season = ?
-				   OR p.competition_id LIKE '%' || ? || '%'
-				   OR p.event_id LIKE '%' || ? || '%'
-				   OR p.game_id IN (SELECT DISTINCT game_id FROM team_game_stats WHERE season = ?)
-			`);
-			const pbpGamesRow = pbpGamesStmt.get(seasonStr, seasonStr, seasonStr, seasonStr);
-			res.pbpGamesCount = pbpGamesRow ? pbpGamesRow.cnt : 0;
+			if (tableCheck) {
+				const pbpGamesStmt = this.db.prepare(`
+					SELECT COUNT(DISTINCT p.game_id) as cnt
+					FROM game_play_by_play p
+					WHERE ${seasonFilter}
+				`);
+				const pbpGamesRow = pbpGamesStmt.get(...seasonParams);
+				res.pbpGamesCount = pbpGamesRow ? pbpGamesRow.cnt : 0;
 
-			const pbpEventsStmt = this.db.prepare(`
-				SELECT COUNT(*) as cnt
-				FROM game_play_by_play p
-				LEFT JOIN (SELECT DISTINCT game_id, season FROM team_game_stats) t ON p.game_id = t.game_id
-				WHERE t.season = ?
-				   OR p.competition_id LIKE '%' || ? || '%'
-				   OR p.event_id LIKE '%' || ? || '%'
-				   OR p.game_id IN (SELECT DISTINCT game_id FROM team_game_stats WHERE season = ?)
-			`);
-			const pbpEventsRow = pbpEventsStmt.get(seasonStr, seasonStr, seasonStr, seasonStr);
-			res.pbpEventsCount = pbpEventsRow ? pbpEventsRow.cnt : 0;
+				const pbpEventsStmt = this.db.prepare(`
+					SELECT COUNT(*) as cnt
+					FROM game_play_by_play p
+					WHERE ${seasonFilter}
+				`);
+				const pbpEventsRow = pbpEventsStmt.get(...seasonParams);
+				res.pbpEventsCount = pbpEventsRow ? pbpEventsRow.cnt : 0;
+			}
 
 			// Check if game_stints table exists
-			const stintsTableCheck = this.db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='game_stints'`).get();
 			if (stintsTableCheck) {
+				const stintSeasonConditions = [];
+				if (gamesTable) stintSeasonConditions.push('s.game_id IN (SELECT id FROM games WHERE season_id = ?)');
+				if (statsTable) stintSeasonConditions.push('s.game_id IN (SELECT DISTINCT game_id FROM team_game_stats WHERE season = ?)');
+				const stintFallbackConditions = stintSeasonConditions.length ? [] : ['s.competition_id LIKE ?', 's.stint_id LIKE ?'];
+				const stintFilter = [...stintSeasonConditions, ...stintFallbackConditions].join(' OR ') || '0';
 				const pbpStintsStmt = this.db.prepare(`
 					SELECT COUNT(*) as cnt
 					FROM game_stints s
-					LEFT JOIN (SELECT DISTINCT game_id, season FROM team_game_stats) t ON s.game_id = t.game_id
-					WHERE t.season = ?
-					   OR s.competition_id LIKE '%' || ? || '%'
-					   OR s.stint_id LIKE '%' || ? || '%'
-					   OR s.game_id IN (SELECT DISTINCT game_id FROM team_game_stats WHERE season = ?)
+					WHERE ${stintFilter}
 				`);
-				const pbpStintsRow = pbpStintsStmt.get(seasonStr, seasonStr, seasonStr, seasonStr);
+				const stintParams = [
+					...stintSeasonConditions.map(() => seasonStr),
+					...stintFallbackConditions.map(() => `%${seasonStr}%`)
+				];
+				const pbpStintsRow = pbpStintsStmt.get(...stintParams);
 				res.pbpStintsCount = pbpStintsRow ? pbpStintsRow.cnt : 0;
 			}
 
@@ -238,6 +405,7 @@ export class AuditEngine {
 	 * @returns {number} Count of games
 	 */
 	getGamesCount(season) {
+		let count = 0;
 		try {
 			const stmt = this.db.prepare(`
 				SELECT COUNT(DISTINCT game_id) as cnt
@@ -245,10 +413,20 @@ export class AuditEngine {
 				WHERE season = ?
 			`);
 			const row = stmt.get(season);
-			return row ? row.cnt : 0;
+			count = row ? row.cnt : 0;
 		} catch (e) {
-			return 0;
+			// Some European seasons are represented only in the games catalog.
 		}
+		try {
+			const gamesTable = this.db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name='games'`).get();
+			if (gamesTable) {
+				const row = this.db.prepare('SELECT COUNT(DISTINCT id) AS cnt FROM games WHERE season_id = ?').get(String(season));
+				count = Math.max(count, row?.cnt || 0);
+			}
+		} catch (error) {
+			// Keep the team stats count when the games catalog has a different schema.
+		}
+		return count;
 	}
 
 	/**

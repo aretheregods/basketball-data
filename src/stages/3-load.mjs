@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { DatabaseSync } from 'node:sqlite';
 import { runMigrations } from '../db/migrations-runner.mjs';
-import { EUROPE_LEAGUE_REGISTRY, isEuropeanLeague, resolveLeagueForCompetition } from '../db/europe_league_registry.mjs';
+import { EUROPE_LEAGUE_REGISTRY, getLeagueDbPath, isEuropeanLeague, resolveLeagueForCompetition } from '../db/europe_league_registry.mjs';
 
 /**
  * @description Initializes the SQLite connection for a specific league and ensures schema tables exist.
@@ -14,8 +14,8 @@ import { EUROPE_LEAGUE_REGISTRY, isEuropeanLeague, resolveLeagueForCompetition }
  * @param {string} [europeLeagueId=''] - Optional European league ID for schema migrations
  * @returns {Promise<import('node:sqlite').DatabaseSync>} - The initialized DatabaseSync instance
  */
-export async function initDatabase(league = 'wnba', europeLeagueId = '') {
-	const dbDir = path.resolve('data/SQL');
+export async function initDatabase(league = 'wnba', europeLeagueId = '', dbDirectory = path.resolve('data/SQL')) {
+	const dbDir = path.resolve(dbDirectory);
 	await fs.mkdir(dbDir, { recursive: true });
 
 	// Determine database file name
@@ -71,7 +71,10 @@ export async function loadStage(league, year, cleanedGamesArray, options = {}) {
 			}
 		}
 		if (!hasDirectData) {
-			const cachePath = path.resolve('data/transformed', league, 'pbp', String(year), 'transformed.json');
+			const cacheKey = league.toLowerCase().startsWith('europe')
+				? String(options.competitions || options.competition || 'all').toLowerCase().replaceAll(',', '_')
+				: '';
+			const cachePath = path.resolve('data/transformed', league, 'pbp', ...(cacheKey ? [cacheKey] : []), String(year), 'transformed.json');
 			try {
 				console.log(`📂 No direct memory PBP data passed. Loading transformed PBP data from cache file: ${cachePath}`);
 				const cacheContent = await fs.readFile(cachePath, 'utf8');
@@ -91,43 +94,52 @@ export async function loadStage(league, year, cleanedGamesArray, options = {}) {
 			throw new Error(msg);
 		}
 
-		console.log(`💾 Connecting to SQLite local staging database [data/SQL/${league.toUpperCase()}.sqlite]...`);
-		const db = await initDatabase(league);
-
-		try {
-			db.exec('BEGIN TRANSACTION');
-
-			if (events.length > 0) {
-				console.log(`📥 Inserting ${events.length} PBP event rows into 'game_play_by_play'...`);
-				const keys = Object.keys(events[0]);
-				const placeholders = keys.map(() => '?').join(', ');
-				const insertStmt = db.prepare(`INSERT OR REPLACE INTO game_play_by_play (${keys.join(', ')}) VALUES (${placeholders})`);
-				for (const event of events) {
-					const values = keys.map(k => event[k] === undefined ? null : event[k]);
-					insertStmt.run(...values);
-				}
-			}
-
-			if (stints.length > 0) {
-				console.log(`📥 Inserting ${stints.length} PBP stint rows into 'game_stints'...`);
-				const keys = Object.keys(stints[0]);
-				const placeholders = keys.map(() => '?').join(', ');
-				const insertStmt = db.prepare(`INSERT OR REPLACE INTO game_stints (${keys.join(', ')}) VALUES (${placeholders})`);
-				for (const stint of stints) {
-					const values = keys.map(k => stint[k] === undefined ? null : stint[k]);
-					insertStmt.run(...values);
-				}
-			}
-
-			db.exec('COMMIT');
-			console.log(`✅ Stage 3 [LOAD] complete. Successfully saved PBP records to local staging database.`);
-		} catch (error) {
-			db.exec('ROLLBACK');
-			console.error(`❌ Database PBP TRANSACTION failure:`, error);
-			throw error;
-		} finally {
-			db.close();
+		const isEurope = league.toLowerCase().startsWith('europe');
+		const gamePrefixCompetition = (gameId) => ({ E: 'euroleague', U: 'eurocup', B: 'bcl', A: 'acb', L: 'lnb', I: 'lba', G: 'gbl', D: 'bbl', K: 'lkl', V: 'aba', N: 'bnxt', F: 'korisliiga' })[String(gameId || '').trim()[0]?.toUpperCase()] || '';
+		const leagueBuckets = new Map();
+		if (isEurope) {
+			const bucketFor = (record) => {
+				const competitionValue = String(record.competition_id || '').toLowerCase();
+				const resolvedValue = resolveLeagueForCompetition(competitionValue);
+				const competition = isEuropeanLeague(resolvedValue) ? competitionValue : gamePrefixCompetition(record.game_id);
+				const leagueId = resolveLeagueForCompetition(competition);
+				if (!isEuropeanLeague(leagueId)) throw new Error(`Cannot route European PBP record for competition "${competition}" and game "${record.game_id}".`);
+				if (!leagueBuckets.has(leagueId)) leagueBuckets.set(leagueId, { events: [], stints: [] });
+				return leagueBuckets.get(leagueId);
+			};
+			for (const event of events) bucketFor(event).events.push(event);
+			for (const stint of stints) bucketFor(stint).stints.push(stint);
+		} else {
+			leagueBuckets.set('', { events, stints });
 		}
+
+		for (const [europeLeagueId, records] of leagueBuckets) {
+			const databaseDirectory = options.databaseDirectory || path.resolve('data/SQL');
+			const dbPath = europeLeagueId
+				? path.join(databaseDirectory, `${EUROPE_LEAGUE_REGISTRY[europeLeagueId].dbFile.replace('.sqlite', '').toUpperCase()}.sqlite`)
+				: path.join(databaseDirectory, `${league.toUpperCase()}.sqlite`);
+			console.log(`💾 Connecting to SQLite local staging database [${dbPath}]...`);
+			const db = await initDatabase(league, europeLeagueId, databaseDirectory);
+			try {
+				db.exec('BEGIN TRANSACTION');
+				for (const [table, rows] of [['game_play_by_play', records.events], ['game_stints', records.stints]]) {
+					if (rows.length === 0) continue;
+					console.log(`📥 Inserting ${rows.length} ${table === 'game_stints' ? 'PBP stint' : 'PBP event'} rows into '${table}'...`);
+					const keys = Object.keys(rows[0]);
+					const placeholders = keys.map(() => '?').join(', ');
+					const insertStmt = db.prepare(`INSERT OR REPLACE INTO ${table} (${keys.join(', ')}) VALUES (${placeholders})`);
+					for (const row of rows) insertStmt.run(...keys.map(key => row[key] === undefined ? null : row[key]));
+				}
+				db.exec('COMMIT');
+			} catch (error) {
+				db.exec('ROLLBACK');
+				console.error(`❌ Database PBP TRANSACTION failure:`, error);
+				throw error;
+			} finally {
+				db.close();
+			}
+		}
+		console.log(`✅ Stage 3 [LOAD] complete. Successfully routed PBP records to league databases.`);
 		return;
 	}
 

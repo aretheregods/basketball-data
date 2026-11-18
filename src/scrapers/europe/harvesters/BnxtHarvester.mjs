@@ -1,4 +1,5 @@
 import { HTTPClient } from '#utils';
+import { fetchBnxtPortalSchedule, mapBnxtPortalGame } from './BnxtPortalSchedule.mjs';
 
 /**
  * @description Harvester for BNXT League schedules from official REST API (bnxt.sportpress.info).
@@ -49,7 +50,7 @@ export class BnxtHarvester extends HTTPClient {
 			const compInfo = phaseData.data?.[0]?.competition;
 			if (!compInfo || !compInfo.id) {
 				console.warn(`⚠️ [BnxtHarvester] No competition found for season ${targetYear}`);
-				return [];
+				return this.getPortalScheduleFallback(targetYear);
 			}
 			const competitionId = compInfo.id;
 
@@ -86,6 +87,11 @@ export class BnxtHarvester extends HTTPClient {
 					// Soft failure on single team schedule fetch
 				}
 			}
+			if (gameMap.size === 0) {
+				console.warn(`⚠️ [BnxtHarvester] Sportpress returned no games for season ${targetYear}; trying BNXT Portal schedule.`);
+				return this.getPortalScheduleFallback(targetYear);
+			}
+			await this.enrichWithPortalGeniusIds(targetYear, gameMap);
 
 			const slugs = [];
 			for (const [gameId, g] of gameMap.entries()) {
@@ -113,6 +119,7 @@ export class BnxtHarvester extends HTTPClient {
 					this.scraper.setGameMetadata(String(gameId), {
 						competitionId,
 						gameId: String(gameId),
+						geniusMatchId: g.genius_id || g.geniusId || g.genius_match_id || null,
 						gameData: g
 					});
 				}
@@ -122,6 +129,80 @@ export class BnxtHarvester extends HTTPClient {
 			return slugs;
 		} catch (error) {
 			console.error(`❌ [BnxtHarvester] Failed to harvest BNXT schedule:`, error.message || error);
+			return this.getPortalScheduleFallback(targetYear);
+		}
+	}
+
+	/**
+	 * @description Adds Genius match IDs to Sportpress games using BNXT Portal's public schedule crosswalk.
+	 * @param {string} targetYear - BNXT season end year.
+	 * @param {Map<string|number, Object>} gameMap - Sportpress game records keyed by BNXT game ID.
+	 * @returns {Promise<number>} Number of game records enriched with a Genius ID.
+	 */
+	async enrichWithPortalGeniusIds(targetYear, gameMap) {
+		if (![...gameMap.values()].some(game => !(game.genius_id || game.geniusId || game.genius_match_id))) return 0;
+		try {
+			const portalGames = await fetchBnxtPortalSchedule(targetYear);
+			const geniusIdByExternalId = new Map(
+				portalGames
+					.filter(game => game.external_id && game.genius_id)
+					.map(game => [String(game.external_id), game.genius_id])
+			);
+			let enriched = 0;
+			for (const [gameId, game] of gameMap) {
+				if (game.genius_id || game.geniusId || game.genius_match_id) continue;
+				const geniusId = geniusIdByExternalId.get(String(game.id || gameId));
+				if (geniusId) {
+					game.genius_id = geniusId;
+					enriched++;
+				}
+			}
+			console.log(`🔗 [BnxtHarvester] Matched ${enriched} Sportpress games to Genius LiveStats IDs for season ${targetYear}.`);
+			return enriched;
+		} catch (error) {
+			console.warn(`⚠️ [BnxtHarvester] Could not enrich Genius IDs from BNXT Portal: ${error.message || error}`);
+			return 0;
+		}
+	}
+
+	/**
+	 * @description Harvests schedule records from the public BNXT Portal after Sportpress fails.
+	 * @param {string} targetYear - BNXT season end year.
+	 * @returns {Promise<string[]>} BNXT game slugs for the requested season.
+	 */
+	async getPortalScheduleFallback(targetYear) {
+		try {
+			const games = await fetchBnxtPortalSchedule(targetYear);
+			const competitionIds = { '2022': 1, '2023': 3, '2024': 12, '2025': 22, '2026': 24, '2027': 25 };
+			const slugs = [];
+			for (const game of games) {
+				try {
+					const mapped = mapBnxtPortalGame(game, targetYear);
+					slugs.push(mapped.slug);
+					if (this.scraper && typeof this.scraper.setGameMetadata === 'function') {
+						this.scraper.setGameMetadata(mapped.gameId, {
+							competitionId: competitionIds[targetYear] || null,
+							gameId: mapped.gameId,
+							geniusMatchId: mapped.geniusMatchId,
+							gameData: {
+								id: mapped.gameId,
+								genius_id: mapped.geniusMatchId,
+								game_time: `${game.date} ${game.time || ''}`.trim(),
+								competitors: [
+									{ side: 1, finalScore: game.home_score, competition_team: { name: game.home_team, short_name: String(game.home_team).slice(0, 3).toUpperCase() } },
+									{ side: 2, finalScore: game.away_score, competition_team: { name: game.away_team, short_name: String(game.away_team).slice(0, 3).toUpperCase() } }
+								]
+							}
+						});
+					}
+				} catch (mapError) {
+					console.warn(`⚠️ [BnxtHarvester] Skipping malformed BNXT Portal fixture: ${mapError.message}`);
+				}
+			}
+			console.log(`✅ [BnxtHarvester] Recovered ${slugs.length} BNXT fixtures from BNXT Portal for season ${targetYear}.`);
+			return slugs;
+		} catch (fallbackError) {
+			console.error(`❌ [BnxtHarvester] BNXT Portal schedule fallback failed:`, fallbackError.message || fallbackError);
 			return [];
 		}
 	}

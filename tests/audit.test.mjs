@@ -64,6 +64,24 @@ test.describe('AuditEngine Unit Tests', () => {
 				synced INTEGER DEFAULT 0,
 				PRIMARY KEY (game_id, team_id)
 			);
+
+			CREATE TABLE IF NOT EXISTS games (
+				id TEXT PRIMARY KEY,
+				competition_id TEXT,
+				season_id TEXT
+			);
+
+			CREATE TABLE IF NOT EXISTS game_play_by_play (
+				event_id TEXT PRIMARY KEY,
+				game_id TEXT NOT NULL,
+				competition_id TEXT
+			);
+
+			CREATE TABLE IF NOT EXISTS game_stints (
+				stint_id TEXT PRIMARY KEY,
+				game_id TEXT NOT NULL,
+				competition_id TEXT
+			);
 		`);
 
 		// Scenario 1: A perfect game (gamesCount = 1)
@@ -132,6 +150,18 @@ test.describe('AuditEngine Unit Tests', () => {
 			VALUES ('G_05', 101, 'Extreme Player', 'Extreme Player', 10, 'Team A', '42.0', 85, 36, 5, '2025', 'test-league', 0)
 		`).run();
 
+		// European catalog and PBP can be populated even when boxscore stats are not.
+		db.prepare("INSERT INTO games (id, competition_id, season_id) VALUES ('EU_GAME_1', 'acb', '2024')").run();
+		db.prepare("INSERT INTO games (id, competition_id, season_id) VALUES ('EU_GAME_2', 'acb', '2024')").run();
+		db.prepare("INSERT INTO games (id, competition_id, season_id) VALUES ('EU_GAME_3', 'euroleague', '2024')").run();
+		db.prepare("INSERT INTO games (id, competition_id, season_id) VALUES ('EU_GAME_4', 'euroleague', '2025')").run();
+		db.prepare("INSERT INTO game_play_by_play (event_id, game_id, competition_id) VALUES ('event_1', 'EU_GAME_1', 'acb')").run();
+		db.prepare("INSERT INTO game_play_by_play (event_id, game_id, competition_id) VALUES ('event_2', 'EU_GAME_1', 'acb')").run();
+	db.prepare("INSERT INTO game_play_by_play (event_id, game_id, competition_id) VALUES ('event_3', 'EU_GAME_3', 'euroleague')").run();
+	db.prepare("INSERT INTO game_play_by_play (event_id, game_id, competition_id) VALUES ('event_4', 'EU_GAME_4', 'euroleague')").run();
+	db.prepare("INSERT INTO game_play_by_play (event_id, game_id, competition_id) VALUES ('KORISLIIGA2026_F2026_1900-2077-2096', 'F2026_1900-2077-2096', 'KORISLIIGA2026')").run();
+		db.prepare("INSERT INTO game_stints (stint_id, game_id, competition_id) VALUES ('stint_1', 'EU_GAME_1', 'acb')").run();
+
 		db.close();
 	});
 
@@ -148,7 +178,7 @@ test.describe('AuditEngine Unit Tests', () => {
 		const report = engine.runFullAudit();
 
 		// Basic counts
-		assert.equal(report.totalGames, 5); // G_01, G_02, G_03, G_04, G_05
+		assert.equal(report.totalGames, 8); // Five boxscore games and three catalog-only games
 		assert.equal(Object.keys(report.seasons).includes('2025'), true);
 
 		const s2025 = report.seasons['2025'];
@@ -189,5 +219,22 @@ test.describe('AuditEngine Unit Tests', () => {
 		assert.equal(s2025.unplayedGames.length, 1);
 		assert.equal(s2025.unplayedGames[0].gameId, 'mock_unplayed_game');
 		assert.ok(s2025.unplayedGames[0].filePath.endsWith('mock_unplayed_game.json'));
+
+		const europeanSeason = report.seasons['2024'];
+		assert.equal(europeanSeason.gamesCount, 3);
+		assert.deepEqual(europeanSeason.pbpStats, {
+			pbpGamesCount: 2,
+			pbpCoveragePct: 66.7,
+			pbpEventsCount: 3,
+			pbpStintsCount: 1
+		});
+		assert.equal(report.seasons['2025'].pbpStats.pbpGamesCount, 1);
+		assert.equal(report.seasons['2025'].pbpStats.pbpEventsCount, 1);
+		assert.ok(report.seasons['2026']);
+		assert.equal(report.seasons['1900'], undefined);
+		assert.equal(report.seasons['2077'], undefined);
+		assert.equal(report.seasons['2096'], undefined);
+		assert.equal(report.seasons['2024'].pbpStats.pbpGamesCount, 2);
+		assert.equal(report.seasons['2024'].pbpStats.pbpEventsCount, 3);
 	});
 });

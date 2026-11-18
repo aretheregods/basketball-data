@@ -73,6 +73,8 @@ export function startServer(port = PORT) {
 								continue;
 							}
 							const leagueKey = file.replace('.sqlite', '').toLowerCase();
+							// EUROPE.sqlite contains shared cross-league mappings, not league audit data.
+							if (leagueKey === 'europe') continue;
 							const dbPath = path.join(DB_DIR, file);
 							try {
 								const engine = new AuditEngine(dbPath);
