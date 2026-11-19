@@ -108,6 +108,9 @@ export async function transformStage(league, year, options = {}) {
 		} else if (league.toLowerCase().startsWith('nbl')) {
 			const { transformNblPbp } = await import('../scrapers/nbl/pbp/NblPbpTransformer.mjs');
 			transformFn = (gameId, rawData) => transformNblPbp(gameId, rawData, `NBL${year}`);
+		} else if (league.toLowerCase().startsWith('bleague')) {
+			const { transformBLeaguePbp } = await import('../scrapers/bleague/pbp/BLeaguePbpTransformer.mjs');
+			transformFn = (gameId, rawData) => transformBLeaguePbp(gameId, rawData, `BLEAGUE${year}`);
 		} else if (league.toLowerCase().startsWith('europe')) {
 			const { transformEuroleaguePbp } = await import('../scrapers/europe/pbp/EuroleaguePbpTransformer.mjs');
 			const { transformAcbPbp } = await import('../scrapers/europe/pbp/AcbPbpTransformer.mjs');

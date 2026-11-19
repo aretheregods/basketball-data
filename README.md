@@ -10,14 +10,14 @@ The ETL pipeline supports box scores, play-by-play (PBP) events, and advanced st
 
 1. **NBA (`nba`)**: North American Men's Professional Basketball (includes Play-by-Play and 5-on-5 stint tracking).
 2. **WNBA (`wnba`)**: Women's National Basketball Association (includes Play-by-Play and 5-on-5 stint tracking).
-3. **Europe (`europe`)**: European continental and domestic competitions (EuroLeague `E`, EuroCup `U`, Basketball Champions League `B`, Spanish Liga ACB `A`, French LNB `L`, Italian LBA `I`, Greek GBL `G`, German BBL `D`, Lithuanian LKL `K`, Adriatic ABA `V`, Turkish BSL `S`, Israeli Winner League `Y`).
+3. **Europe (`europe`)**: European continental and domestic competitions (EuroLeague `E`, EuroCup `U`, Basketball Champions League `B`, Spanish Liga ACB `A`, French LNB `L`, Italian LBA `I`, Greek GBL `G`, German BBL `D`, Lithuanian LKL `K`, Adriatic ABA `V`, Turkish BSL `S`, Israeli Winner League `Y`) (includes Play-by-Play and 5-on-5 stint tracking).
 4. **Mexico (`mexico`)**: Liga Nacional de Baloncesto Profesional (LNBP).
 5. **Canada (`canada`)**: Canadian Elite Basketball League (CEBL).
 6. **Puerto Rico (`puertorico`)**: Baloncesto Superior Nacional (BSN).
 7. **South America (`southamerica`)**: South American competitions (Basketball Champions League Americas `bcla`, Liga Sudamericana `lsb`, NBB Brazil `nbb`, LNB Argentina `lnb`, LUB Uruguay `lub`).
 8. **Australia NBL (`nbl`)**: Australian National Basketball League (includes Play-by-Play and 5-on-5 stint tracking).
 9. **Asia (`asia`)**: Asian continental and domestic competitions (East Asia Super League `easl`, WASL `wasl`, BCL Asia `bcl_asia`, FIBA Asia CC `fiba_asia_cc`, KBL South Korea `kbl`, PBA Philippines `pba`, TPBL Taiwan `tpbl`).
-10. **Japan B.League (`bleague`)**: Japan's B.LEAGUE PREMIER (B1) top tier, harvested from the official `bleague.jp` schedule feed and S3 game payloads (2021 onwards).
+10. **Japan B.League (`bleague`)**: Japan's B.LEAGUE PREMIER (B1) top tier, harvested from the official `bleague.jp` schedule feed and S3 game payloads (2021 onwards) (includes Play-by-Play and 5-on-5 stint tracking).
 11. **China CBA (`cba`)**: Chinese Basketball Association regular season and playoffs (2015-16 onwards), harvested from the official `data-server.cbaleague.com` schedule feeds and `data-count` box score payloads with Chinese-native team/player identity.
 
 ---
@@ -98,9 +98,9 @@ The loader automatically executes any pending migrations dynamically on database
 
 ---
 
-## Play-by-Play Data Ingestion (NBA, WNBA, & NBL)
+## Play-by-Play Data Ingestion (NBA, WNBA, NBL, Europe, & B.League)
 
-The pipeline supports play-by-play (PBP) event feeds, shot locations, and 5-on-5 stint interval tracking for NBA, WNBA, and Australia NBL via the `--type=pbp` flag:
+The pipeline supports play-by-play (PBP) event feeds, shot locations, and 5-on-5 stint interval tracking for NBA, WNBA, Australia NBL, Europe, and Japan's B.League via the `--type=pbp` flag:
 
 ```bash
 # WNBA Play-by-Play
@@ -111,9 +111,19 @@ node run.js --league=nba --years=2024,2025 --type=pbp --step=extract,transform,l
 
 # Australia NBL Play-by-Play
 node run.js --league=nbl --years=2024 --type=pbp --step=extract,transform,load
+
+# Europe Play-by-Play (EuroLeague, ACB, LNB, etc.)
+node run.js --league=europe --competitions=euroleague,acb --years=2024 --type=pbp --step=extract,transform,load
+
+# Japan B.League Play-by-Play
+node run.js --league=bleague --years=2026 --type=pbp --step=extract,transform,load
 ```
 
 NBA PBP extraction tries the NBA play-by-play webpage, live CDN, and Stats API in order. Each source has a 15-second timeout covering the request and response body. Failed, invalid, or empty sources are logged before trying the next source. If all sources fail, extraction continues with the next game; failed games remain uncached so a later run can retry them. Stats API PBP is saved based on its plays rather than box-score player statistics.
+
+B.League PBP is decoded from the same official S3 `v2_genius_contexts` payload used for box scores, so a box-score run fully seeds the raw payload side-cache and a later `--type=pbp` run reuses it without extra network requests.
+
+Leagues without a PBP implementation (e.g. `cba`, `asia`, `mexico`) fail immediately with a `--type=pbp is not supported` error before any schedule request is made, instead of fetching a full season and writing nothing.
 
 ---
 

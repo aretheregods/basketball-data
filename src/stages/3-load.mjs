@@ -71,10 +71,12 @@ export async function loadStage(league, year, cleanedGamesArray, options = {}) {
 			}
 		}
 		if (!hasDirectData) {
-			const cacheKey = league.toLowerCase().startsWith('europe')
-				? String(options.competitions || options.competition || 'all').toLowerCase().replaceAll(',', '_')
-				: '';
-			const cachePath = path.resolve('data/transformed', league, 'pbp', ...(cacheKey ? [cacheKey] : []), String(year), 'transformed.json');
+			// Must mirror the cache key written by the transform stage (`2-transform.mjs`):
+			// `pbp/<competitions or 'all'>/<year>/transformed.json` for every league, not only
+			// for Europe. Without this, `--step=load` alone failed for all standalone leagues.
+			const requestedComps = String(options.competitions || options.competition || 'all').toLowerCase();
+			const cacheKey = requestedComps && requestedComps !== 'all' ? requestedComps.replaceAll(',', '_') : 'all';
+			const cachePath = path.resolve('data/transformed', league, 'pbp', cacheKey, String(year), 'transformed.json');
 			try {
 				console.log(`📂 No direct memory PBP data passed. Loading transformed PBP data from cache file: ${cachePath}`);
 				const cacheContent = await fs.readFile(cachePath, 'utf8');

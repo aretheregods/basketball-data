@@ -21,6 +21,7 @@ import { extractStage } from './src/stages/1-extract.mjs';
 import { transformStage } from './src/stages/2-transform.mjs';
 import { loadStage } from './src/stages/3-load.mjs';
 import { syncStage } from './src/stages/4-sync.mjs';
+import { assertPbpSupported } from './src/utils/pbp_support.mjs';
 
 // Audit Engine and Web Server imports
 import { AuditEngine } from './src/audit/AuditEngine.mjs';
@@ -176,6 +177,14 @@ async function main() {
 	// default (europe -> 'euroleague', asia -> 'bcl_asia', southamerica -> 'bcla'). Passing a
 	// global default here would poison every non-European league with a European competition.
 	const competitions = flags.competitions || flags.competition || undefined;
+
+	// Fast-fail unsupported play-by-play leagues before any scraper is constructed: a PBP run
+	// against an unsupported league would fetch every game of the season and write nothing.
+	if (boxscoreType === 'pbp') {
+		for (const league of targetLeagues) {
+			assertPbpSupported(league, boxscoreType);
+		}
+	}
 
 	// Handle direct --step=audit interceptor
 	if (activeSteps.includes('audit')) {

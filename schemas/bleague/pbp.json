@@ -1,0 +1,28 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "BLeaguePlayByPlayPayload",
+  "description": "Schema for the official B.League v2_genius_contexts play-by-play payload (PlayByPlays event rows plus the Game header)",
+  "type": "object",
+  "required": ["PlayByPlays"],
+  "properties": {
+    "PlayByPlays": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "Game": {
+      "type": "object"
+    },
+    "HomeBoxscores": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "AwayBoxscores": {
+      "type": "array",
+      "items": { "type": "object" }
+    },
+    "Summaries": {
+      "type": "array",
+      "items": { "type": "object" }
+    }
+  }
+}

@@ -280,7 +280,7 @@ node run.js --league=bleague --years=2024
 node run.js --league=cba --years=2024
 ```
 
-### 3. Play-by-Play Ingestion Examples (NBA, WNBA, NBL)
+### 3. Play-by-Play Ingestion Examples (NBA, WNBA, NBL, Europe, B.League)
 Ingest play-by-play events and calculate 5-on-5 lineups/stints:
 ```bash
 # WNBA Play-by-Play
@@ -291,7 +291,15 @@ node run.js --league=nba --years=2024,2025 --type=pbp --step=extract,transform,l
 
 # Australia NBL Play-by-Play
 node run.js --league=nbl --years=2024 --type=pbp --step=extract,transform,load
+
+# Europe Play-by-Play (EuroLeague, ACB, LNB, etc.)
+node run.js --league=europe --competitions=euroleague,acb --years=2024 --type=pbp --step=extract,transform,load
+
+# Japan B.League Play-by-Play
+node run.js --league=bleague --years=2026 --type=pbp --step=extract,transform,load
 ```
+Leagues without a PBP implementation (e.g. `cba`, `asia`) fast-fail with a clear
+`--type=pbp is not supported` error before any request is sent.
 
 ### 4. Running Database Loader Independently (Re-loading Cache)
 If raw data has already been transformed, re-populate local SQLite databases without making network requests:

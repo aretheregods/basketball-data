@@ -1,6 +1,6 @@
 import fs from 'fs/promises';
 import path from 'path';
-import { validateSchema, BaseNormalizer } from '#utils';
+import { validateSchema, BaseNormalizer, assertPbpSupported } from '#utils';
 import { getEuropeGamePrefix } from '../scrapers/europe/europe.mjs';
 
 /**
@@ -21,6 +21,11 @@ import { getEuropeGamePrefix } from '../scrapers/europe/europe.mjs';
  */
 export async function extractStage(scraper, league, year, options = {}) {
 	const isPbp = options.boxscoreType === 'pbp' || options.type === 'pbp';
+	// Fast-fail before the schedule request: an unsupported league would otherwise fetch its
+	// whole season and write zero play-by-play files (e.g. 780 B.League requests).
+	if (isPbp) {
+		assertPbpSupported(league, 'pbp');
+	}
 	console.log(`📥 Starting Stage 1 [EXTRACT] for ${league.toUpperCase()} - ${year}${isPbp ? ' (PBP)' : ''}`);
 
 	// Determine competition subdirectory for European PBP or general league directory
@@ -160,7 +165,7 @@ export async function extractStage(scraper, league, year, options = {}) {
 				if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
 					// Verify that for PBP runs, the cached payload is a valid non-empty PBP payload
 					if (isPbp) {
-						const actions = parsed.game?.actions || parsed.game?.plays || parsed.actions || parsed.plays || parsed.pbp?.Rows || parsed.Rows || parsed.jugadas || parsed.events || parsed.pbp?.actions;
+						const actions = parsed.game?.actions || parsed.game?.plays || parsed.actions || parsed.plays || parsed.pbp?.Rows || parsed.Rows || parsed.jugadas || parsed.events || parsed.pbp?.actions || parsed.PlayByPlays;
 						const hasActions = Array.isArray(actions) && actions.length > 0;
 						const hasResultSets = Array.isArray(parsed.resultSets) && parsed.resultSets.some(r => Array.isArray(r.rowSet) && r.rowSet.length > 0);
 						if (hasActions || hasResultSets || parsed.pbp || parsed.data?.play_by_play) {
@@ -202,6 +207,10 @@ export async function extractStage(scraper, league, year, options = {}) {
 					schemaFolder = 'nbl';
 				} else if (schemaFolder.startsWith('europe')) {
 					schemaFolder = 'europe';
+				} else if (schemaFolder.startsWith('bleague')) {
+					schemaFolder = 'bleague';
+				} else if (schemaFolder.startsWith('cba')) {
+					schemaFolder = 'cba';
 				}
 				validateSchema(`${schemaFolder}/pbp.json`, rawData);
 			} else {
@@ -237,7 +246,7 @@ export async function extractStage(scraper, league, year, options = {}) {
 			if (!isPbp && BaseNormalizer.isGameUnplayed(rawData, league)) {
 				console.log(`⚠️ Game ID: ${gameId} is currently unplayed. Skipping cache file creation.`);
 			} else if (isPbp) {
-				const actions = rawData?.game?.actions || rawData?.game?.plays || rawData?.actions || rawData?.plays || rawData?.pbp?.Rows || rawData?.Rows || rawData?.jugadas || rawData?.events || rawData?.pbp?.actions || rawData?.data?.pbp;
+				const actions = rawData?.game?.actions || rawData?.game?.plays || rawData?.actions || rawData?.plays || rawData?.pbp?.Rows || rawData?.Rows || rawData?.jugadas || rawData?.events || rawData?.pbp?.actions || rawData?.data?.pbp || rawData?.PlayByPlays;
 				const hasActions = Array.isArray(actions) && actions.length > 0;
 				const hasResultSets = Array.isArray(rawData?.resultSets) && rawData.resultSets.some(r => Array.isArray(r.rowSet) && r.rowSet.length > 0);
 				if (hasActions || hasResultSets || rawData?.pbp || rawData?.data?.play_by_play) {

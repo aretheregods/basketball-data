@@ -152,28 +152,15 @@ export class BLeagueScraper extends HTTPClient {
 	}
 
 	/**
-	 * @description Resolves the unified box score for a game ID.
-	 * Order: raw payload side-cache -> official S3 JSON -> `game_detail` HTML embed -> skeleton.
-	 * @param {string} url - Unified game ID (the extract stage passes `getGameUrl()` output)
-	 * @param {Object} [options] - Unused request options, kept for API parity
-	 * @param {number} [retries] - Unused retry hint, kept for API parity
-	 * @param {number} [delay] - Unused delay hint, kept for API parity
-	 * @returns {Promise<Object>} Unified box score object
+	 * @description Resolves the raw official payload for a schedule key. Order: raw payload
+	 * side-cache -> official S3 JSON -> `game_detail` HTML embed. Both `request()` (box scores)
+	 * and `fetchPbp()` (play-by-play) share this path, so a box-score run fully seeds the cache
+	 * that a later `--type=pbp` run reuses without touching the network.
+	 * @param {string} scheduleKey - Official B.League schedule key
+	 * @param {string} yearPrefix - Four digit season start year (locates the side-cache directory)
+	 * @returns {Promise<Object|null>} Parsed payload, or null when every transport fails
 	 */
-	async request(url, options = {}, retries = 3, delay = 1000) {
-		const gameId = url;
-		const { yearPrefix, scheduleKey } = this.parseGameId(gameId);
-
-		// Test mode bypasses the network entirely.
-		if (this.bypassNetwork) {
-			return this.getMockUnifiedBoxScore(gameId);
-		}
-
-		if (!scheduleKey) {
-			console.warn(`⚠️ [BLeagueScraper] Unable to derive a schedule key from game ID ${gameId}. Returning unplayed skeleton.`);
-			return createUnplayedSkeleton(gameId, yearPrefix);
-		}
-
+	async resolvePayload(scheduleKey, yearPrefix) {
 		// Side-cache lives in a subdirectory so the flat `data/raw/<league>/<year>` scan
 		// performed by the transform stage never picks these files up as games.
 		const cacheDir = path.resolve('data/raw/bleague', String(yearPrefix), 'payloads');
@@ -228,7 +215,34 @@ export class BLeagueScraper extends HTTPClient {
 			}
 		}
 
-		if (!payload || typeof payload !== 'object') {
+		return (payload && typeof payload === 'object') ? payload : null;
+	}
+
+	/**
+	 * @description Resolves the unified box score for a game ID.
+	 * Order: raw payload side-cache -> official S3 JSON -> `game_detail` HTML embed -> skeleton.
+	 * @param {string} url - Unified game ID (the extract stage passes `getGameUrl()` output)
+	 * @param {Object} [options] - Unused request options, kept for API parity
+	 * @param {number} [retries] - Unused retry hint, kept for API parity
+	 * @param {number} [delay] - Unused delay hint, kept for API parity
+	 * @returns {Promise<Object>} Unified box score object
+	 */
+	async request(url, options = {}, retries = 3, delay = 1000) {
+		const gameId = url;
+		const { yearPrefix, scheduleKey } = this.parseGameId(gameId);
+
+		// Test mode bypasses the network entirely.
+		if (this.bypassNetwork) {
+			return this.getMockUnifiedBoxScore(gameId);
+		}
+
+		if (!scheduleKey) {
+			console.warn(`⚠️ [BLeagueScraper] Unable to derive a schedule key from game ID ${gameId}. Returning unplayed skeleton.`);
+			return createUnplayedSkeleton(gameId, yearPrefix);
+		}
+
+		const payload = await this.resolvePayload(scheduleKey, yearPrefix);
+		if (!payload) {
 			console.warn(`⚠️ [BLeagueScraper] No payload available for ${scheduleKey}. Returning unplayed skeleton.`);
 			return createUnplayedSkeleton(gameId, yearPrefix);
 		}
@@ -239,6 +253,44 @@ export class BLeagueScraper extends HTTPClient {
 			console.error(`❌ [BLeagueScraper] Failed to parse payload for ${gameId}: ${error.message}`);
 			return createUnplayedSkeleton(gameId, yearPrefix);
 		}
+	}
+
+	/**
+	 * @description Resolves the raw play-by-play payload for a game ID. The official B.League
+	 * `v2_genius_contexts` payload carries `PlayByPlays` alongside the box score sections, so
+	 * PBP extraction reuses the exact side-cache populated by a box-score run (zero extra
+	 * requests when the cache is warm).
+	 * @param {string} gameId - Unified game identifier (e.g. `BLEAGUE2026_506379`)
+	 * @param {string|number} year - Season start year, used when the game ID carries no season
+	 * @returns {Promise<Object>} Payload containing a `PlayByPlays` array (possibly empty)
+	 * @throws {Error} When no schedule key can be derived or every payload transport fails
+	 */
+	async fetchPbp(gameId, year) {
+		const { yearPrefix, scheduleKey } = this.parseGameId(gameId);
+
+		// Test mode bypasses the network entirely.
+		if (this.bypassNetwork) {
+			return this.getMockPbpPayload(gameId);
+		}
+
+		if (!scheduleKey) {
+			throw new Error(`Unable to derive a B.League schedule key from game ID ${gameId}.`);
+		}
+
+		const payload = await this.resolvePayload(scheduleKey, yearPrefix || String(year));
+		if (!payload) {
+			throw new Error(`No official B.League payload resolved for ${gameId} (S3 and game_detail HTML both failed).`);
+		}
+
+		// Fixtures without recorded play-by-play (unplayed, postponed or a stripped feed) expose
+		// no `PlayByPlays` key at all. Normalize them to an empty event list so the extract
+		// stage logs its "0 PBP actions" skip instead of failing schema validation.
+		if (!Array.isArray(payload.PlayByPlays)) {
+			console.warn(`⚠️ [BLeagueScraper] Payload for ${gameId} contains no PlayByPlays section (PlayByPlayExistsFlg=false). Returning empty play-by-play.`);
+			return payload.Game ? { PlayByPlays: [], Game: payload.Game } : { PlayByPlays: [] };
+		}
+
+		return payload;
 	}
 
 	/**
@@ -334,6 +386,248 @@ export class BLeagueScraper extends HTTPClient {
 						}
 					]
 				}
+		};
+	}
+
+	/**
+	 * @description Generates mock play-by-play payloads used by the test suite. The mock mirrors
+	 * the official feed's semantics: ragged rows, `Score` omitted on substitution rows, a
+	 * starting-lineup substitution run before the period marker, a mid-quarter substitution run,
+	 * a period boundary, a `BASKET_COUNT` row that does not move the score, and assist rows that
+	 * follow their made field goal. The two mock games reuse the schedule keys of the mock box
+	 * scores (`20001`, `20002`) and their `Game` headers agree with those final scores.
+	 * @param {string} gameId - Unified game identifier
+	 * @returns {Object} Mock payload containing `Game` and `PlayByPlays`
+	 */
+	getMockPbpPayload(gameId) {
+		const { scheduleKey, yearPrefix } = this.parseGameId(gameId);
+		const secondGame = scheduleKey === '20002';
+
+		/**
+		 * @description Builds one ragged official-style play row with feed defaults applied.
+		 * @param {number} No - Official record number
+		 * @param {number} ActionCD1 - Event code
+		 * @param {number} Period - Period number
+		 * @param {string} RestTime - Remaining period clock
+		 * @param {string|null} Score - Post-action `home-away` score
+		 * @param {Record<string, any>} [extra={}] - Row specific overrides (side, actors, coords)
+		 * @returns {Record<string, any>} Raw play row
+		 */
+		const mkRow = (No, ActionCD1, Period, RestTime, Score, extra = {}) => ({
+			Period,
+			Code: 100001,
+			ScheduleKey: Number(scheduleKey) || 0,
+			TeamID: null,
+			TeamNameJ: null,
+			PlayerID1: null,
+			PlayerNo1: '',
+			PlayerNameJ1: '',
+			No,
+			RecordDateTime: `${yearPrefix || '2024'}-12-01 19:00:00`,
+			RecordEditDateTime: null,
+			RestTime,
+			Score,
+			PeriodEndRowFlg: false,
+			GameEndRowFlg: false,
+			ActionCD1,
+			ActionCD2: null,
+			ActionCD3: null,
+			Success: 1,
+			Side: 'left',
+			PlayText: '',
+			...extra
+		});
+
+		if (secondGame) {
+			return {
+				Game: {
+					Code: 200002,
+					ScheduleKey: Number(scheduleKey) || 0,
+					MaxPeriod: 4,
+					Year: Number(yearPrefix) || 2024,
+					GameEndedFlg: true,
+					PlayByPlayExistsFlg: true,
+					BoxscoreExistsFlg: true,
+					HomeTeamID: '9003',
+					HomeTeamNameE: 'SENDAI 89ERS',
+					AwayTeamID: '9004',
+					AwayTeamNameE: 'YOKOHAMA B-CORSAIRS',
+					HomeTeamScore: 78,
+					AwayTeamScore: 85
+				},
+				PlayByPlays: [
+					mkRow(1000, 80, 1, '10:00', '0-0', { PlayText: '試合開始 ' }),
+					mkRow(2000, 86, 1, '10:00', null, {
+						HomeAway: 1, TeamID: '9003', PlayerID1: '9301', PlayerNo1: '1', PlayText: '#1 仙台 プレイヤーイン'
+					}),
+					mkRow(2000, 86, 1, '10:00', null, {
+						HomeAway: 2, TeamID: '9004', PlayerID1: '9401', PlayerNo1: '2', PlayText: '#2 横浜 プレイヤーイン'
+					}),
+					mkRow(3000, 82, 1, '10:00', '0-0', { PlayText: 'ピリオドスタート' }),
+					mkRow(4000, 1, 1, '9:50', '78-85', {
+						HomeAway: 1, TeamID: '9003', PlayerID1: '9301', PlayerNo1: '1',
+						ActionCD2: 27, X: 74.0, Y: 26.5, Success: 1,
+						PlayText: '#1 仙台 3Pシュート○  ジャンプショット '
+					}),
+					mkRow(5000, 81, 1, '0:00', '78-85', { PlayText: '試合終了 ' })
+				]
+			};
+		}
+
+		/** @type {Array<[string, string, string]>} Home starter [playerId, jersey, name] triples */
+		const homeStarters = [
+			['9101', '1', '山田'],
+			['9102', '4', '佐藤'],
+			['9103', '7', '鈴木'],
+			['9104', '10', '高橋'],
+			['9105', '13', '田中']
+		];
+		/** @type {Array<[string, string, string]>} Away starter [playerId, jersey, name] triples */
+		const awayStarters = [
+			['9201', '2', '青山'],
+			['9202', '5', '渡辺'],
+			['9203', '8', '小林'],
+			['9204', '11', '中村'],
+			['9205', '14', '松本']
+		];
+
+		const starterRows = [
+			...homeStarters.map(([playerId, jersey, name]) => mkRow(2000, 86, 1, '10:00', null, {
+				HomeAway: 1, TeamID: '9001', PlayerID1: playerId, PlayerNo1: jersey,
+				PlayText: `#${jersey} ${name} プレイヤーイン`
+			})),
+			...awayStarters.map(([playerId, jersey, name]) => mkRow(2000, 86, 1, '10:00', null, {
+				HomeAway: 2, TeamID: '9002', PlayerID1: playerId, PlayerNo1: jersey,
+				PlayText: `#${jersey} ${name} プレイヤーイン`
+			}))
+		];
+
+		return {
+			Game: {
+				Code: 200001,
+				ScheduleKey: Number(scheduleKey) || 0,
+				MaxPeriod: 4,
+				Year: Number(yearPrefix) || 2024,
+				GameEndedFlg: true,
+				PlayByPlayExistsFlg: true,
+				BoxscoreExistsFlg: true,
+				HomeTeamID: '9001',
+				HomeTeamNameE: 'NAGASAKI VELCA',
+				AwayTeamID: '9002',
+				AwayTeamNameE: 'SEAHORSES MIKAWA',
+				HomeTeamScore: 12,
+				AwayTeamScore: 9
+			},
+			PlayByPlays: [
+				mkRow(1000, 80, 1, '10:00', '0-0', { PlayText: '試合開始 ' }),
+				...starterRows,
+				mkRow(3000, 82, 1, '10:00', '0-0', { PlayText: 'ピリオドスタート' }),
+				mkRow(3000, 84, 1, '10:00', '0-0', { PlayText: 'タイムスタート' }),
+				// Made three + its assist row (the assist follows the basket it credits).
+				mkRow(4000, 1, 1, '9:30', '3-0', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9101', PlayerNo1: '1',
+					ActionCD2: 27, X: 75.5, Y: 25.0, Success: 1,
+					PlayText: '#1 山田 3Pシュート○  ジャンプショット '
+				}),
+				mkRow(5000, 12, 1, '9:28', '3-0', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9102', PlayerNo1: '4',
+					PlayText: '#4 佐藤 アシスト (1本)'
+				}),
+				// Missed shot, rebound, turnover for the away side.
+				mkRow(6000, 5, 1, '9:10', '3-0', {
+					HomeAway: 2, TeamID: '9002', PlayerID1: '9201', PlayerNo1: '2',
+					ActionCD2: 28, X: 45.0, Y: 55.0, Success: 0,
+					PlayText: '#2 青山 2Pシュート アウトサイドペイント×  ジャンプショット'
+				}),
+				mkRow(7000, 9, 1, '9:08', '3-0', {
+					HomeAway: 2, TeamID: '9002', PlayerID1: '9202', PlayerNo1: '5',
+					PlayText: '#5 渡辺 ディフェンスリバウンド (0-1-1)'
+				}),
+				mkRow(8000, 13, 1, '9:00', '3-0', {
+					HomeAway: 2, TeamID: '9002', PlayerID1: '9202', PlayerNo1: '5',
+					PlayText: '#5 渡辺 ターンオーバー (1本)'
+				}),
+				// Shooting foul sequence: made two, personal foul, basket count (no score
+				// change), then the free throws.
+				mkRow(9000, 4, 1, '8:50', '5-0', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9103', PlayerNo1: '7',
+					ActionCD2: 28, X: 10.0, Y: 20.0, Success: 1,
+					PlayText: '#7 鈴木 2Pシュートインサイドペイント○  レイアップ'
+				}),
+				mkRow(10000, 22, 1, '8:50', '5-0', {
+					HomeAway: 2, TeamID: '9002', PlayerID1: '9203', PlayerNo1: '8',
+					ActionCD2: 30, PlayText: '#8 小林 パーソナルファウル (1-1:1)  フリースローオンファウル1  シュートファウル'
+				}),
+				mkRow(11000, 16, 1, '8:50', '5-0', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9103', PlayerNo1: '7',
+					PlayText: '#7 鈴木 バスケットカウント'
+				}),
+				mkRow(12000, 7, 1, '8:50', '6-0', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9103', PlayerNo1: '7',
+					ActionCD2: 35, Success: 1, PlayText: '#7 鈴木 フリースロー○ (6点)'
+				}),
+				mkRow(13000, 8, 1, '8:50', '6-0', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9103', PlayerNo1: '7',
+					Success: 0, PlayText: '#7 鈴木 フリースロー×'
+				}),
+				// Mid-quarter substitution run: closes the opening stint before applying.
+				mkRow(14000, 87, 1, '8:45', '6-0', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9105', PlayerNo1: '13',
+					PlayText: '#13 田中 プレイヤーアウト'
+				}),
+				mkRow(14000, 86, 1, '8:45', '6-0', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9106', PlayerNo1: '16',
+					PlayText: '#16 伊藤 プレイヤーイン'
+				}),
+				mkRow(15000, 85, 1, '8:44', '6-0', { PlayText: 'タイムストップ' }),
+				mkRow(16000, 83, 1, '0:00', '6-0', { PlayText: 'ピリオドエンド' }),
+				// Period 2 opens with a substitution run recorded before the period marker.
+				mkRow(17000, 87, 2, '10:00', '6-0', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9106', PlayerNo1: '16',
+					PlayText: '#16 伊藤 プレイヤーアウト'
+				}),
+				mkRow(17000, 86, 2, '10:00', '6-0', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9105', PlayerNo1: '13',
+					PlayText: '#13 田中 プレイヤーイン'
+				}),
+				mkRow(18000, 82, 2, '10:00', '6-0', { PlayText: 'ピリオドスタート' }),
+				mkRow(19000, 4, 2, '9:40', '8-0', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9102', PlayerNo1: '4',
+					ActionCD2: 28, X: 12.0, Y: 30.0, Success: 1,
+					PlayText: '#4 佐藤 2Pシュートインサイドペイント○  レイアップ'
+				}),
+				mkRow(20000, 12, 2, '9:38', '8-0', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9103', PlayerNo1: '7',
+					PlayText: '#7 鈴木 アシスト (2本)'
+				}),
+				mkRow(21000, 22, 2, '9:30', '8-0', {
+					HomeAway: 2, TeamID: '9002', PlayerID1: '9204', PlayerNo1: '11',
+					ActionCD2: 30, PlayText: '#11 中村 パーソナルファウル (2-1:1)'
+				}),
+				mkRow(22000, 7, 2, '9:30', '9-0', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9102', PlayerNo1: '4',
+					ActionCD2: 35, Success: 1, PlayText: '#4 佐藤 フリースロー○ (9点)'
+				}),
+				// Away made three: the following HOME assist row must not credit the away shooter.
+				mkRow(23000, 1, 2, '9:20', '9-3', {
+					HomeAway: 2, TeamID: '9002', PlayerID1: '9204', PlayerNo1: '11',
+					ActionCD2: 27, X: 80.0, Y: 25.0, Success: 1,
+					PlayText: '#11 中村 3Pシュート○  ジャンプショット'
+				}),
+				mkRow(24000, 12, 2, '9:18', '9-3', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9104', PlayerNo1: '10',
+					PlayText: '#10 高橋 アシスト (1本)'
+				}),
+				mkRow(25000, 88, 2, '9:00', '9-3', {
+					HomeAway: 1, TeamID: '9001', PlayText: 'タイムアウト'
+				}),
+				mkRow(26000, 1, 2, '0:30', '12-9', {
+					HomeAway: 1, TeamID: '9001', PlayerID1: '9105', PlayerNo1: '13',
+					ActionCD2: 27, X: 75.0, Y: 25.0, Success: 1,
+					PlayText: '#13 田中 3Pシュート○  ジャンプショット  ファストブレイク'
+				}),
+				mkRow(27000, 81, 2, '0:00', '12-9', { PlayText: '試合終了 ' })
+			]
 		};
 	}
 }
