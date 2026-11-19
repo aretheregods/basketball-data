@@ -6,7 +6,7 @@ This project implements a modular, high-performance ETL pipeline to scrape, clea
 
 ## Supported Leagues & Competitions
 
-The ETL pipeline supports box scores, play-by-play (PBP) events, and advanced statistical computations across **10 global league categories**:
+The ETL pipeline supports box scores, play-by-play (PBP) events, and advanced statistical computations across **11 global league categories**:
 
 1. **NBA (`nba`)**: North American Men's Professional Basketball (includes Play-by-Play and 5-on-5 stint tracking).
 2. **WNBA (`wnba`)**: Women's National Basketball Association (includes Play-by-Play and 5-on-5 stint tracking).
@@ -16,8 +16,9 @@ The ETL pipeline supports box scores, play-by-play (PBP) events, and advanced st
 6. **Puerto Rico (`puertorico`)**: Baloncesto Superior Nacional (BSN).
 7. **South America (`southamerica`)**: South American competitions (Basketball Champions League Americas `bcla`, Liga Sudamericana `lsb`, NBB Brazil `nbb`, LNB Argentina `lnb`, LUB Uruguay `lub`).
 8. **Australia NBL (`nbl`)**: Australian National Basketball League (includes Play-by-Play and 5-on-5 stint tracking).
-9. **Asia (`asia`)**: Asian continental and domestic competitions (East Asia Super League `easl`, WASL `wasl`, BCL Asia `bcl_asia`, FIBA Asia CC `fiba_asia_cc`, KBL South Korea `kbl`, PBA Philippines `pba`, CBA China `cba`, TPBL Taiwan `tpbl`).
+9. **Asia (`asia`)**: Asian continental and domestic competitions (East Asia Super League `easl`, WASL `wasl`, BCL Asia `bcl_asia`, FIBA Asia CC `fiba_asia_cc`, KBL South Korea `kbl`, PBA Philippines `pba`, TPBL Taiwan `tpbl`).
 10. **Japan B.League (`bleague`)**: Japan's B.LEAGUE PREMIER (B1) top tier, harvested from the official `bleague.jp` schedule feed and S3 game payloads (2021 onwards).
+11. **China CBA (`cba`)**: Chinese Basketball Association regular season and playoffs (2015-16 onwards), harvested from the official `data-server.cbaleague.com` schedule feeds and `data-count` box score payloads with Chinese-native team/player identity.
 
 ---
 
@@ -39,6 +40,7 @@ node run.js --league=nba --years=2024,2025
 # Multiple leagues and sub-competitions
 node run.js --league=asia --competitions=easl,kbl --years=2024
 node run.js --league=bleague --years=2024
+node run.js --league=cba --years=2024
 node run.js --league=southamerica --competitions=all --years=2024
 ```
 
@@ -46,8 +48,8 @@ node run.js --league=southamerica --competitions=all --years=2024
 
 | Flag | Format | Default | Description |
 |---|---|---|---|---
-| `--league` | `--league=nba,europe` | `wnba` | Comma-separated target leagues (`nba`, `wnba`, `europe`, `mexico`, `canada`, `puertorico`, `southamerica`, `nbl`, `asia`, `bleague`). |
-| `--competitions` | `--competitions=easl,kbl` | `euroleague` (Europe), `bcla` (South America), `bcl_asia` (Asia) | Comma-separated list or `all` for sub-competitions within Europe, South America, or Asia. (`bleague` is a standalone league; use `--league=bleague`.) |
+| `--league` | `--league=nba,europe` | `wnba` | Comma-separated target leagues (`nba`, `wnba`, `europe`, `mexico`, `canada`, `puertorico`, `southamerica`, `nbl`, `asia`, `bleague`, `cba`). |
+| `--competitions` | `--competitions=easl,kbl` | `euroleague` (Europe), `bcla` (South America), `bcl_asia` (Asia) | Comma-separated list or `all` for sub-competitions within Europe, South America, or Asia. (`bleague` and `cba` are standalone leagues; use `--league=bleague` / `--league=cba`.) |
 | `--years` | `--years=2024,2025` | Current Year | Comma-separated list of target season years. |
 | `--step` | `--step=extract,transform` | `extract,transform,load,sync` | Comma-separated pipeline stages (`extract`, `transform`, `load`, `sync`, `audit`). |
 | `--database` | `--database=my_d1_db` | `likelyhigh_db` | Cloudflare D1 production database binding name for `sync`. |
@@ -61,7 +63,7 @@ node run.js --league=southamerica --competitions=all --years=2024
 
 To avoid native C++ compilation issues and GLIBC version mismatches, the project uses a custom, zero-dependency migrations engine powered by Node.js's built-in `node:sqlite` (`DatabaseSync`) module.
 
-SQLite database files are stored per league or continent in `data/SQL/` (e.g. `NBA.sqlite`, `WNBA.sqlite`, `EUROPE.sqlite`, `MEXICO.sqlite`, `CANADA.sqlite`, `PUERTORICO.sqlite`, `SOUTHAMERICA.sqlite`, `NBL.sqlite`, `ASIA.sqlite`, `BLEAGUE.sqlite`).
+SQLite database files are stored per league or continent in `data/SQL/` (e.g. `NBA.sqlite`, `WNBA.sqlite`, `EUROPE.sqlite`, `MEXICO.sqlite`, `CANADA.sqlite`, `PUERTORICO.sqlite`, `SOUTHAMERICA.sqlite`, `NBL.sqlite`, `ASIA.sqlite`, `BLEAGUE.sqlite`, `CBA.sqlite`).
 
 ### Running Migrations Manually via CLI
 

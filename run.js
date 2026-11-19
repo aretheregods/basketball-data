@@ -16,6 +16,7 @@ import { SouthAmericaScraper } from './src/scrapers/southamerica/SouthAmericaScr
 import { NblScraper } from './src/scrapers/nbl/NblScraper.mjs';
 import { AsiaScraper } from './src/scrapers/asia/AsiaScraper.mjs';
 import { BLeagueScraper } from './src/scrapers/bleague/BLeagueScraper.mjs';
+import { CbaScraper } from './src/scrapers/cba/CbaScraper.mjs';
 import { extractStage } from './src/stages/1-extract.mjs';
 import { transformStage } from './src/stages/2-transform.mjs';
 import { loadStage } from './src/stages/3-load.mjs';
@@ -61,6 +62,7 @@ const LEAGUE_SCRAPERS = {
 	nbl: (options) => new NblScraper(options),
 	asia: (options) => new AsiaScraper(options),
 	bleague: (options) => new BLeagueScraper(options),
+	cba: (options) => new CbaScraper(options),
 };
 
 /**

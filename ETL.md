@@ -43,7 +43,7 @@ Each stage performs a highly targeted task:
 
 ## Supported Leagues & Sub-Competitions
 
-The pipeline supports 10 major league categories and numerous domestic and international sub-competitions:
+The pipeline supports 11 major league categories and numerous domestic and international sub-competitions:
 
 | League Code (`--league`) | Description & Included Competitions | Database File |
 |---|---|---|
@@ -55,8 +55,9 @@ The pipeline supports 10 major league categories and numerous domestic and inter
 | `puertorico` | Baloncesto Superior Nacional (BSN). | `data/SQL/PUERTORICO.sqlite` |
 | `southamerica` | South American Basketball: BCLA (`bcla`), LSB (`lsb`), NBB Brazil (`nbb`), LNB Argentina (`lnb`), LUB Uruguay (`lub`). | `data/SQL/SOUTHAMERICA.sqlite` |
 | `nbl` | Australian National Basketball League (Traditional, Play-by-Play). | `data/SQL/NBL.sqlite` |
-| `asia` | Asian Basketball: East Asia Super League (`easl`), WASL (`wasl`), BCL Asia (`bcl_asia`), FIBA Asia CC (`fiba_asia_cc`), KBL South Korea (`kbl`), PBA Philippines (`pba`), CBA China (`cba`), TPBL Taiwan (`tpbl`). | `data/SQL/ASIA.sqlite` |
+| `asia` | Asian Basketball: East Asia Super League (`easl`), WASL (`wasl`), BCL Asia (`bcl_asia`), FIBA Asia CC (`fiba_asia_cc`), KBL South Korea (`kbl`), PBA Philippines (`pba`), TPBL Taiwan (`tpbl`). | `data/SQL/ASIA.sqlite` |
 | `bleague` | Japan B.League B1 (B.LEAGUE PREMIER top tier), harvested from the official `bleague.jp` schedule feed with official S3 game payloads and same-source HTML embed fallback (2021 onwards). | `data/SQL/BLEAGUE.sqlite` |
+| `cba` | China CBA regular season (`matchTypeId` 1) and playoffs (`matchTypeId` 2), harvested from the official `data-server.cbaleague.com` schedule feeds (`/schedules/month` + `/schedules/day`) with POST `data-count` box score payloads and `baseInfo` metadata fallback (2015-16 onwards). | `data/SQL/CBA.sqlite` |
 
 ---
 
@@ -72,8 +73,8 @@ node run.js [options]
 
 | Flag | Format | Default | Description |
 |---|---|---|---|
-| `--league` | `--league=wnba` or `--league=asia,southamerica` | `wnba` | Comma-separated list of target leagues to process (`nba`, `wnba`, `europe`, `mexico`, `canada`, `puertorico`, `southamerica`, `nbl`, `asia`, `bleague`). |
-| `--competitions` | `--competitions=easl,kbl` | Default competition for targeted league (`euroleague`, `bcla`, `bcl_asia`) | Comma-separated list or `all` for sub-competitions within Europe, South America, or Asia. (`bleague` is a standalone league; use `--league=bleague`.) |
+| `--league` | `--league=wnba` or `--league=asia,southamerica` | `wnba` | Comma-separated list of target leagues to process (`nba`, `wnba`, `europe`, `mexico`, `canada`, `puertorico`, `southamerica`, `nbl`, `asia`, `bleague`, `cba`). |
+| `--competitions` | `--competitions=easl,kbl` | Default competition for targeted league (`euroleague`, `bcla`, `bcl_asia`) | Comma-separated list or `all` for sub-competitions within Europe, South America, or Asia. (`bleague` and `cba` are standalone leagues; use `--league=bleague` / `--league=cba`.) |
 | `--years` | `--years=2023` or `--years=2024,2025` | Current Year | Comma-separated list of target season years to process. |
 | `--step` | `--step=extract,transform` | `extract,transform,load,sync` | Comma-separated list of pipeline stages to run (`extract`, `transform`, `load`, `sync`, `audit`). |
 | `--database` | `--database=my_d1_db` | `likelyhigh_db` | Name of the target Cloudflare D1 database for the `sync` stage. |
@@ -91,7 +92,7 @@ node run.js [options]
 1. Queries the target scraper client for season game slugs (e.g., `nyl-vs-con-0012300001` or `ryukyu-vs-seoul-EASL2024_10001`).
 2. Extracts unique game IDs or codes from game slugs.
 3. Downloads the game's full boxscore or play-by-play payload from the API or webpage with retry-safe HTTP clients.
-4. Asserts that the received response matches the JSON Schema (e.g. `schemas/wnba/boxscore.json` or `schemas/asia/boxscore.json`).
+4. Asserts that the received response matches the JSON Schema (e.g. `schemas/wnba/boxscore.json`, `schemas/asia/boxscore.json`, or `schemas/cba/boxscore.json`).
 5. Saves the validated raw JSON directly to disk under `data/raw/<league>/<year>/` (or `data/raw/<league>/pbp/<year>/` for play-by-play).
 
 ### Directory Structure & Paths
@@ -268,14 +269,15 @@ Run the Asian basketball pipeline for EASL and KBL:
 node run.js --league=asia --competitions=easl,kbl --years=2024
 ```
 
-To run all Asian competitions (`easl`, `wasl`, `bcl_asia`, `fiba_asia_cc`, `kbl`, `pba`, `cba`, `tpbl`):
+To run all Asian competitions (`easl`, `wasl`, `bcl_asia`, `fiba_asia_cc`, `kbl`, `pba`, `tpbl`):
 ```bash
 node run.js --league=asia --competitions=all --years=2024
 ```
 
-Japan's B.League is a standalone league (not an Asia sub-competition):
+Japan's B.League and China's CBA are standalone leagues (not Asia sub-competitions):
 ```bash
 node run.js --league=bleague --years=2024
+node run.js --league=cba --years=2024
 ```
 
 ### 3. Play-by-Play Ingestion Examples (NBA, WNBA, NBL)
@@ -323,5 +325,14 @@ node run.js --step=audit
   BEGIN;
   DELETE FROM player_game_stats WHERE game_id LIKE 'BLEAGUE%';
   DELETE FROM team_game_stats  WHERE game_id LIKE 'BLEAGUE%';
+  COMMIT;
+  ```
+
+### Q: CBA moved out of `asia` — what about legacy `CBA%` rows in existing databases?
+* CBA is now a standalone league (`--league=cba`), and its rows are written to `data/SQL/CBA.sqlite` with `league = 'cba'` and Chinese-native team/player identity. Local `ASIA.sqlite` has already been purged. The production D1 `asia` database may still contain legacy English-identity rows; the following cleanup SQL is **documented for later execution** (not run automatically):
+  ```sql
+  BEGIN;
+  DELETE FROM player_game_stats WHERE game_id LIKE 'CBA%';
+  DELETE FROM team_game_stats  WHERE game_id LIKE 'CBA%';
   COMMIT;
   ```

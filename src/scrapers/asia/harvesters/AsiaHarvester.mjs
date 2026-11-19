@@ -1,10 +1,10 @@
 import { HTTPClient } from '#utils';
 
 /**
- * @description Harvester for Asian schedules from Proballers (CBA, PBA, IBL, QBL, BCL Asia, FIBA Asia CC, EASL, WASL, etc.).
+ * @description Harvester for Asian schedules from Proballers (PBA, IBL, QBL, BCL Asia, FIBA Asia CC, EASL, WASL, TPBL, etc.).
  * Discovers and collects match IDs across seasons using Playwright or cached fallback lists.
  * Supports harvesting both Regular Season and Playoff games automatically.
- * Japan's B.League is harvested by `BLeagueHarvester` instead.
+ * Japan's B.League is harvested by `BLeagueHarvester` and China's CBA by `CbaHarvester` instead.
  */
 export class AsiaHarvester extends HTTPClient {
 	/**
@@ -17,10 +17,6 @@ export class AsiaHarvester extends HTTPClient {
 
 		// Map competition keys to their primary and playoff Proballers League endpoints
 		this.leagueEndpointsMap = {
-			cba: [
-				{ id: 159, slug: 'china-cba' },
-				{ id: 158, slug: 'china-cba-playoffs' }
-			],
 			pba: [
 				{ id: 357, slug: 'philippines-pba' },
 				{ id: 362, slug: 'philippines-pba-playoffs' }
@@ -113,15 +109,18 @@ export class AsiaHarvester extends HTTPClient {
 	 * @description Fetches all game slugs/IDs for active Asian competitions for a given season.
 	 * @param {string|number} year - The season start year
 	 * @returns {Promise<string[]>} List of game slugs
-	 * @throws {Error} If `bleague` is requested as an Asia sub-competition
+	 * @throws {Error} If `bleague` or `cba` is requested as an Asia sub-competition
 	 */
 	async getSeasonGameSlugs(year) {
 		const activeComps = this.scraper?.competitions || ['bcl_asia'];
 
-		// B.League is a standalone league now; without this guard the unknown
-		// `bleague` key would silently fall through to the CBA default endpoints.
+		// B.League and CBA are standalone leagues now; without these guards the unknown
+		// keys would silently fall through to unrelated (or missing) Proballers endpoints.
 		if (activeComps.includes('bleague')) {
 			throw new Error('B.League is no longer an Asia sub-competition. Run it as its own league instead: node run.js --league=bleague --years=2024');
+		}
+		if (activeComps.includes('cba')) {
+			throw new Error('CBA is no longer an Asia sub-competition. Run it as its own league instead: node run.js --league=cba --years=2024');
 		}
 
 		const allSlugs = [];
@@ -152,7 +151,7 @@ export class AsiaHarvester extends HTTPClient {
 						`al-riyadi-vs-alvark-tokyo-${compUpper}${year}_40001`
 					);
 				} else {
-					// Default mock (EASL, WASL, BCL Asia, CBA, etc.)
+					// Default mock (EASL, WASL, BCL Asia, etc.)
 					allSlugs.push(
 						`ryukyu-golden-kings-vs-seoul-sk-knights-${compUpper}${year}_10001`,
 						`al-riyadi-vs-chiba-jets-${compUpper}${year}_10002`
@@ -271,7 +270,12 @@ export class AsiaHarvester extends HTTPClient {
 				continue;
 			}
 
-			const endpoints = this.leagueEndpointsMap[comp] || [{ id: 159, slug: `china-cba` }];
+			// Unknown keys must fail fast: the old default silently harvested the CBA
+			// endpoints, which now live in the standalone `--league=cba` pipeline.
+			const endpoints = this.leagueEndpointsMap[comp];
+			if (!endpoints) {
+				throw new Error(`Unknown Asia competition key "${comp}". Supported keys: ${Object.keys(this.leagueEndpointsMap).join(', ')}. B.League and CBA are standalone leagues (--league=bleague / --league=cba).`);
+			}
 
 			for (const ep of endpoints) {
 				const leagueId = ep.id;

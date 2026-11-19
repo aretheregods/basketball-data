@@ -3,6 +3,7 @@ import path from 'path';
 import { BaseNormalizer } from '#utils';
 import { transformEurope } from '../scrapers/europe/europe_transform.mjs';
 import { transformBLeague } from '../scrapers/bleague/bleague_transform.mjs';
+import { transformCBA } from '../scrapers/cba/cba_transform.mjs';
 import { getEuropeGamePrefix } from '../scrapers/europe/europe.mjs';
 import { EUROPE_LEAGUE_REGISTRY, resolveLeagueForCompetition } from '../db/europe_league_registry.mjs';
 
@@ -219,6 +220,38 @@ export async function transformStage(league, year, options = {}) {
 
 		console.log(`💾 Transformed output cached to ${cachePath}`);
 		console.log(`✅ Stage 2 [TRANSFORM] complete. Produced ${result.players.length} player rows, ${result.teams.length} team rows, and referential mappings.\n`);
+
+		return result;
+	}
+
+	if (league.toLowerCase() === 'cba' || league.toLowerCase().startsWith('cba')) {
+		const result = await transformCBA(rawDir, year);
+
+		// Apply generic system game score overrides if present
+		try {
+			const overridesPath = path.resolve('config', `${league}_overrides.json`);
+			const overridesContent = await fs.readFile(overridesPath, 'utf8');
+			const overrides = JSON.parse(overridesContent);
+			console.log(`🔧 Applying game score overrides from ${overridesPath}...`);
+			for (const team of result.teams) {
+				const gameOverride = overrides[team.game_id];
+				if (gameOverride && gameOverride[team.team_id] !== undefined) {
+					console.log(`🔧 Overriding team ${team.team_id} score in game ${team.game_id} to ${gameOverride[team.team_id]}`);
+					team.pts = Number(gameOverride[team.team_id]);
+				}
+			}
+		} catch (e) {
+			// Ignore if file doesn't exist or is unparseable
+		}
+
+		// Cache the transformed data to disk
+		const cacheDir = path.resolve('data/transformed', league, String(year));
+		await fs.mkdir(cacheDir, { recursive: true });
+		const cachePath = path.join(cacheDir, 'transformed.json');
+		await fs.writeFile(cachePath, JSON.stringify(result, null, 2), 'utf8');
+
+		console.log(`💾 Transformed output cached to ${cachePath}`);
+		console.log(`✅ Stage 2 [TRANSFORM] complete. Produced ${result.players.length} player rows and ${result.teams.length} team rows.\n`);
 
 		return result;
 	}

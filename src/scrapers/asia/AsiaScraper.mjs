@@ -6,9 +6,10 @@ import { parseAsiaHtml, parseAsiaFibaJson, parseAsiaRealGmHtml } from './parsers
 
 /**
  * @class AsiaScraper
- * @description Scraper and Orchestrator for Asian basketball competitions (EASL, WASL, BCL Asia, FIBA Asia CC, KBL, PBA, CBA, TPBL).
+ * @description Scraper and Orchestrator for Asian basketball competitions (EASL, WASL, BCL Asia, FIBA Asia CC, KBL, PBA, TPBL).
  * Fetches, caches, parses, and normalizes game box score statistics.
- * Japan's B.League is intentionally NOT handled here; it has its own standalone pipeline (`--league=bleague`).
+ * Japan's B.League and China's CBA are intentionally NOT handled here; they have their own
+ * standalone league pipelines (`--league=bleague`, `--league=cba`).
  */
 export class AsiaScraper extends HTTPClient {
 	/**
@@ -16,7 +17,7 @@ export class AsiaScraper extends HTTPClient {
 	 * @param {Object} [options={}] - Scraper options
 	 * @param {string|string[]} [options.competitions='bcl_asia'] - Comma-separated list or array of target competitions
 	 * @param {string} [options.boxscoreType='traditional'] - Box score metric type
-	 * @throws {Error} If `bleague` is requested as an Asia sub-competition
+	 * @throws {Error} If `bleague` or `cba` is requested as an Asia sub-competition
 	 */
 	constructor(options = {}) {
 		super('https://www.proballers.com');
@@ -24,7 +25,7 @@ export class AsiaScraper extends HTTPClient {
 		// Parse competitions list (can be 'all', or comma-separated list)
 		const rawComps = options.competitions || 'bcl_asia';
 		if (rawComps === 'all') {
-			this.competitions = ['easl', 'wasl', 'bcl_asia', 'fiba_asia_cc', 'kbl', 'pba', 'cba', 'tpbl'];
+			this.competitions = ['easl', 'wasl', 'bcl_asia', 'fiba_asia_cc', 'kbl', 'pba', 'tpbl'];
 		} else if (Array.isArray(rawComps)) {
 			this.competitions = rawComps;
 		} else {
@@ -34,6 +35,11 @@ export class AsiaScraper extends HTTPClient {
 		// B.League was extracted into its own standalone league pipeline.
 		if (this.competitions.includes('bleague')) {
 			throw new Error('B.League is no longer an Asia sub-competition. Run it as its own league instead: node run.js --league=bleague --years=2024');
+		}
+
+		// CBA was extracted into its own standalone league pipeline.
+		if (this.competitions.includes('cba')) {
+			throw new Error('CBA is no longer an Asia sub-competition. Run it as its own league instead: node run.js --league=cba --years=2024');
 		}
 
 		this.harvester = new AsiaHarvester(this);

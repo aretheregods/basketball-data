@@ -394,7 +394,7 @@ test('Asia Basketball Pipeline & Scraper Integration', async (t) => {
 			</html>
 		`;
 
-		const boxscore = parseAsiaHtml(sampleCollisionHtml, 'zhejiang-lions', 'shanxi-brave', 'zhejiang-lions-vs-shanxi-brave-CBA2024_99999', '2024');
+		const boxscore = parseAsiaHtml(sampleCollisionHtml, 'zhejiang-lions', 'shanxi-brave', 'zhejiang-lions-vs-shanxi-brave-BCLASIA2024_99999', '2024');
 
 		const zhejiangPlayers = boxscore.homeTeam.players;
 		assert.equal(zhejiangPlayers.length, 2, 'Should preserve both players named Wei Liu');
@@ -412,13 +412,36 @@ test('Asia Basketball Pipeline & Scraper Integration', async (t) => {
 		);
 
 		// Even a scraper whose competitions were set after construction is rejected at harvest time,
-		// otherwise the unknown key would fall through to the default CBA endpoints.
+		// otherwise the unknown key would fall through to unrelated (or missing) endpoints.
 		const scraper = new AsiaScraper({ competitions: 'bcl_asia' });
 		scraper.competitions = ['bleague'];
 		await assert.rejects(
 			() => scraper.harvester.getSeasonGameSlugs('2024'),
 			/B\.League is no longer an Asia sub-competition/
 		);
+	});
+
+	await t.test('AsiaScraper and AsiaHarvester should reject cba as an Asia sub-competition', async () => {
+		assert.throws(
+			() => new AsiaScraper({ competitions: 'bcl_asia,cba' }),
+			/CBA is no longer an Asia sub-competition/
+		);
+
+		// The `all` list must no longer route CBA through the Asia pipeline.
+		const allScraper = new AsiaScraper({ competitions: 'all' });
+		assert.ok(!allScraper.competitions.includes('cba'), "'all' must not include the standalone cba competition");
+
+		// Harvest-time guard as well: the key must never reach the Proballers endpoints.
+		const scraper = new AsiaScraper({ competitions: 'bcl_asia' });
+		scraper.competitions = ['cba'];
+		await assert.rejects(
+			() => scraper.harvester.getSeasonGameSlugs('2024'),
+			/CBA is no longer an Asia sub-competition/
+		);
+
+		// The standalone pipeline is the intended target for CBA runs.
+		const source = await fs.readFile(path.resolve('src/scrapers/asia/harvesters/AsiaHarvester.mjs'), 'utf8');
+		assert.ok(!source.includes('china-cba'), 'The Proballers CBA endpoints must be removed from the Asia harvester');
 	});
 
 	await t.test('Full Asia Multi-Competition Pipeline Integration: Extract -> Transform -> Load', async () => {
@@ -471,6 +494,10 @@ test('Asia Basketball Pipeline & Scraper Integration', async (t) => {
 			// B.League is a standalone league now; no BLEAGUE rows may remain under asia
 			const bleagueRows = db.prepare("SELECT * FROM player_game_stats WHERE game_id LIKE 'BLEAGUE%'").all();
 			assert.equal(bleagueRows.length, 0, 'No BLEAGUE rows should exist in the asia database');
+
+			// CBA is a standalone league now; no CBA rows may remain under asia
+			const cbaRows = db.prepare("SELECT * FROM player_game_stats WHERE game_id LIKE 'CBA%'").all();
+			assert.equal(cbaRows.length, 0, 'No CBA rows should exist in the asia database');
 		} finally {
 			if (db) db.close();
 		}
